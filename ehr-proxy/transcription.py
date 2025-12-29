@@ -88,9 +88,11 @@ class AssemblyAIProvider(TranscriptionProvider):
 
         url = f"{self.WEBSOCKET_URL}?sample_rate={self.sample_rate}"
         headers = {"Authorization": self.api_key}
+        print(f"🔌 AssemblyAI: Connecting to {url[:50]}...")
 
         try:
-            self.websocket = await websockets.connect(url, extra_headers=headers)
+            self.websocket = await websockets.connect(url, additional_headers=headers)
+            print("✅ AssemblyAI: WebSocket connected!")
             # Start background receiver
             self._receive_task = asyncio.create_task(self._receive_loop())
             print("AssemblyAI: Connected")
@@ -144,9 +146,16 @@ class AssemblyAIProvider(TranscriptionProvider):
         except Exception as e:
             print(f"AssemblyAI receive error: {e}")
 
+    _audio_chunk_count = 0
+
     async def send_audio(self, audio_data: bytes) -> None:
         """Send audio chunk (base64 encoded)"""
-        if self.websocket and self.websocket.open:
+        if self.websocket:
+            self._audio_chunk_count += 1
+            if self._audio_chunk_count == 1:
+                print(f"📤 AssemblyAI: Receiving audio (first chunk: {len(audio_data)} bytes)")
+            elif self._audio_chunk_count % 50 == 0:
+                print(f"📤 AssemblyAI: Sent {self._audio_chunk_count} audio chunks")
             # AssemblyAI expects base64 encoded audio
             encoded = base64.b64encode(audio_data).decode("utf-8")
             message = json.dumps({"audio_data": encoded})
@@ -216,7 +225,7 @@ class DeepgramProvider(TranscriptionProvider):
         headers = {"Authorization": f"Token {self.api_key}"}
 
         try:
-            self.websocket = await websockets.connect(url, extra_headers=headers)
+            self.websocket = await websockets.connect(url, additional_headers=headers)
             # Start background receiver
             self._receive_task = asyncio.create_task(self._receive_loop())
             print("Deepgram Nova-3 Medical: Connected")
@@ -282,7 +291,7 @@ class DeepgramProvider(TranscriptionProvider):
 
     async def send_audio(self, audio_data: bytes) -> None:
         """Send raw audio bytes (Deepgram accepts raw PCM)"""
-        if self.websocket and self.websocket.open:
+        if self.websocket:
             await self.websocket.send(audio_data)
 
     async def receive_transcription(self) -> AsyncGenerator[TranscriptionResult, None]:

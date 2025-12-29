@@ -141,10 +141,10 @@ class MainActivity : AppCompatActivity() {
         statusBar.addView(transcriptText)
         mainLayout.addView(statusBar)
 
-        // Voice commands grid - 2 columns
+        // Voice commands grid - 2 columns, 6 rows (12 buttons)
         val gridLayout = android.widget.GridLayout(this).apply {
             columnCount = 2
-            rowCount = 5
+            rowCount = 6
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                 0, 1f
@@ -349,6 +349,24 @@ class MainActivity : AppCompatActivity() {
         // Create audio streaming service
         audioStreamingService = AudioStreamingService(this) { result ->
             runOnUiThread {
+                // Check for voice command to stop transcription
+                val lower = result.text.lowercase()
+                if (result.isFinal && (lower.contains("stop transcri") ||
+                    lower.contains("close") || lower.contains("stop recording"))) {
+                    stopLiveTranscription()
+                    hideLiveTranscriptionOverlay()
+                    // Show the transcript without the stop command
+                    val cleanTranscript = liveTranscriptBuffer.toString()
+                        .replace(Regex("(?i)stop transcri\\w*"), "")
+                        .replace(Regex("(?i)close"), "")
+                        .replace(Regex("(?i)stop recording"), "")
+                        .trim()
+                    if (cleanTranscript.isNotEmpty()) {
+                        showTranscriptionCompleteOverlay(cleanTranscript)
+                    }
+                    return@runOnUiThread
+                }
+
                 if (result.isFinal) {
                     // Final transcript - add to buffer
                     if (liveTranscriptBuffer.isNotEmpty()) {
@@ -982,6 +1000,10 @@ class MainActivity : AppCompatActivity() {
             }
             lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
                 // Close any open overlay
+                if (isLiveTranscribing) {
+                    stopLiveTranscription()
+                    hideLiveTranscriptionOverlay()
+                }
                 hideDataOverlay()
             }
             lower.contains("clear") || lower.contains("reset") -> {

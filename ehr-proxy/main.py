@@ -604,7 +604,9 @@ async def websocket_transcribe(websocket: WebSocket):
 
     try:
         # Create transcription session
+        print(f"🎤 Creating session {session_id}...")
         session = await create_session(session_id)
+        print(f"🎤 Session created, provider connected: {session.is_active}")
 
         # Send connection confirmation
         await websocket.send_json({
