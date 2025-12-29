@@ -80,6 +80,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Safety-First**: Vital alerts always spoken, bypasses speech feedback toggle
 - **Speech-Friendly Names**: "blood pressure systolic", "respiratory rate" for clarity
 
+### Medication Interaction Alerts (NEW)
+- **Drug Database**: 18+ high-risk medications with 100+ interaction pairs
+- **Brand Name Recognition**: Coumadin→warfarin, Xanax→alprazolam, Vicodin→hydrocodone, etc.
+- **Severity Levels**: High (🔴), Moderate (🟡), Low (🟢) with clinical effects
+- **Spoken Alerts**: High-severity interactions announced via TTS on patient load
+- **Visual Display**: Drug interaction warnings shown at top of medications view
+- **Key Interactions**: Warfarin+NSAIDs, Opioids+Benzos (FDA black box), SSRIs+MAOIs, Statins+Macrolides
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

@@ -46,6 +46,7 @@ def load_code_database(filename):
 
 ICD10_DB = load_code_database("icd10_codes.json")
 CPT_DB = load_code_database("cpt_codes.json")
+DRUG_INTERACTIONS_DB = load_code_database("drug_interactions.json")
 
 # Critical lab value thresholds for safety alerts
 # Format: {lab_name_pattern: {"critical_low": val, "critical_high": val, "low": val, "high": val, "unit": str}}
@@ -186,6 +187,69 @@ def check_critical_vital(vital_name: str, value_str: str) -> tuple:
 
     return False, False, ""
 
+def normalize_medication_name(med_name: str) -> str:
+    """Normalize medication name to generic name using keywords database"""
+    med_lower = med_name.lower().strip()
+    keywords = DRUG_INTERACTIONS_DB.get("keywords", {})
+
+    # Check if it matches a brand name keyword
+    for brand, generic in keywords.items():
+        if brand in med_lower:
+            return generic
+
+    # Return first word (often the drug name without strength/form)
+    return med_lower.split()[0] if med_lower else med_lower
+
+def check_medication_interactions(medications: list) -> list:
+    """
+    Check for drug-drug interactions in patient's medication list.
+    Returns list of interaction dicts with drug1, drug2, severity, effect.
+    """
+    interactions = []
+    interactions_db = DRUG_INTERACTIONS_DB.get("interactions", {})
+
+    # Normalize all medication names
+    normalized_meds = [(med, normalize_medication_name(med)) for med in medications]
+
+    # Check each pair of medications
+    checked_pairs = set()
+    for i, (orig_med1, norm_med1) in enumerate(normalized_meds):
+        if norm_med1 not in interactions_db:
+            continue
+
+        drug_info = interactions_db[norm_med1]
+        interacts_with = drug_info.get("interacts_with", [])
+        effects = drug_info.get("effects", {})
+        severity = drug_info.get("severity", "moderate")
+
+        for j, (orig_med2, norm_med2) in enumerate(normalized_meds):
+            if i == j:
+                continue
+
+            # Check if this pair already checked (in either order)
+            pair_key = tuple(sorted([norm_med1, norm_med2]))
+            if pair_key in checked_pairs:
+                continue
+
+            # Check if norm_med2 or any keyword variant is in interacts_with
+            for interacting_drug in interacts_with:
+                if interacting_drug in norm_med2 or norm_med2 in interacting_drug:
+                    effect = effects.get(interacting_drug, effects.get(norm_med2, "Potential interaction"))
+                    interactions.append({
+                        "drug1": orig_med1,
+                        "drug2": orig_med2,
+                        "severity": severity,
+                        "effect": effect
+                    })
+                    checked_pairs.add(pair_key)
+                    break
+
+    # Sort by severity (high first)
+    severity_order = {"high": 0, "moderate": 1, "low": 2}
+    interactions.sort(key=lambda x: severity_order.get(x["severity"], 1))
+
+    return interactions
+
 app = FastAPI(
     title="MDx Vision EHR Proxy",
     description="Unified EHR access for AR glasses",
@@ -263,6 +327,13 @@ class ClinicalNote(BaseModel):
     content_preview: str = ""  # First 200 chars of content
 
 
+class MedicationInteraction(BaseModel):
+    drug1: str
+    drug2: str
+    severity: str = "moderate"  # high, moderate, low
+    effect: str = ""
+
+
 class PatientSummary(BaseModel):
     patient_id: str
     name: str
@@ -275,6 +346,8 @@ class PatientSummary(BaseModel):
     has_critical_vitals: bool = False      # Quick check for safety alerts
     allergies: List[str] = []
     medications: List[str] = []
+    medication_interactions: List[MedicationInteraction] = []  # Drug-drug interactions
+    has_interactions: bool = False  # Quick check for interaction alerts
     labs: List[LabResult] = []
     critical_labs: List[LabResult] = []  # Labs with is_critical=True
     abnormal_labs: List[LabResult] = []  # Labs with is_abnormal=True (includes critical)
@@ -793,6 +866,17 @@ def format_ar_display(summary: PatientSummary) -> str:
         lines.extend(crit_lines)
         lines.append("─" * 40)
 
+    # Show medication interactions warning (safety priority)
+    if summary.medication_interactions:
+        int_lines = []
+        for interaction in summary.medication_interactions[:3]:
+            flag = "🚨" if interaction.severity == "high" else "⚠️"
+            int_lines.append(f"{flag} {interaction.drug1} + {interaction.drug2}")
+            int_lines.append(f"   → {interaction.effect}")
+        lines.append("💊 DRUG INTERACTIONS:")
+        lines.extend(int_lines)
+        lines.append("─" * 40)
+
     if summary.vitals:
         # Format vitals with interpretation flags
         vital_parts = []
@@ -945,6 +1029,23 @@ async def get_patient(patient_id: str):
         for lab in critical_labs:
             print(f"   ‼️ {lab.name}: {lab.value} {lab.unit} ({lab.interpretation})")
 
+    # Check for medication interactions
+    interaction_dicts = check_medication_interactions(medications)
+    medication_interactions = [
+        MedicationInteraction(
+            drug1=i["drug1"],
+            drug2=i["drug2"],
+            severity=i["severity"],
+            effect=i["effect"]
+        ) for i in interaction_dicts
+    ]
+
+    if medication_interactions:
+        print(f"⚠️ MEDICATION INTERACTIONS DETECTED: {len(medication_interactions)}")
+        for interaction in medication_interactions:
+            severity_icon = "🚨" if interaction.severity == "high" else "⚠️"
+            print(f"   {severity_icon} {interaction.drug1} + {interaction.drug2}: {interaction.effect}")
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -956,6 +1057,8 @@ async def get_patient(patient_id: str):
         has_critical_vitals=len(critical_vitals) > 0,
         allergies=allergies,
         medications=medications,
+        medication_interactions=medication_interactions,
+        has_interactions=len(medication_interactions) > 0,
         labs=labs,
         critical_labs=critical_labs,
         abnormal_labs=abnormal_labs,

@@ -1810,6 +1810,7 @@ class MainActivity : AppCompatActivity() {
                 speakCriticalVitalAlerts(cached)  // Vitals first (most urgent)
                 speakAllergyWarnings(cached)
                 speakCriticalLabAlerts(cached)
+                speakMedicationInteractions(cached)
                 return
             } else {
                 statusText.text = "Offline - No cache"
@@ -1847,6 +1848,7 @@ class MainActivity : AppCompatActivity() {
                                 speakCriticalVitalAlerts(cached)  // Vitals first (most urgent)
                                 speakAllergyWarnings(cached)
                                 speakCriticalLabAlerts(cached)
+                                speakMedicationInteractions(cached)
                             } else {
                                 statusText.text = "Connection failed"
                                 transcriptText.text = "Error: ${e.message}"
@@ -1878,6 +1880,7 @@ class MainActivity : AppCompatActivity() {
                                 speakCriticalVitalAlerts(patient)
                                 speakAllergyWarnings(patient)
                                 speakCriticalLabAlerts(patient)
+                                speakMedicationInteractions(patient)
                             } catch (e: Exception) {
                                 showDataOverlay("Error", body ?: "No response")
                                 speakFeedback("Error loading patient")
@@ -2474,6 +2477,54 @@ class MainActivity : AppCompatActivity() {
             // Use QUEUE_FLUSH to speak vitals FIRST (most urgent safety alert)
             textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_FLUSH, null, "critical_vital_alert_${System.currentTimeMillis()}")
             Log.d(TAG, "Spoke critical vital alert: $count critical vitals")
+        }
+    }
+
+    /**
+     * Speak medication interaction alerts when patient is loaded (safety-critical)
+     * High severity interactions always spoken regardless of speech feedback toggle
+     */
+    private fun speakMedicationInteractions(patient: JSONObject) {
+        if (!isTtsReady || textToSpeech == null) return
+
+        val interactions = patient.optJSONArray("medication_interactions")
+        if (interactions != null && interactions.length() > 0) {
+            // Filter for high severity interactions
+            val highSeverityInteractions = mutableListOf<JSONObject>()
+            for (i in 0 until interactions.length()) {
+                val interaction = interactions.getJSONObject(i)
+                if (interaction.optString("severity", "") == "high") {
+                    highSeverityInteractions.add(interaction)
+                }
+            }
+
+            if (highSeverityInteractions.isEmpty()) return
+
+            val count = highSeverityInteractions.size
+            val interactionWord = if (count == 1) "drug interaction" else "drug interactions"
+
+            val speechBuilder = StringBuilder()
+            speechBuilder.append("Warning: Patient has $count high-risk $interactionWord. ")
+
+            // Speak up to 2 high severity interactions
+            for (i in 0 until minOf(count, 2)) {
+                val interaction = highSeverityInteractions[i]
+                val drug1 = interaction.optString("drug1", "").split(" ").firstOrNull() ?: "medication"
+                val drug2 = interaction.optString("drug2", "").split(" ").firstOrNull() ?: "medication"
+                val effect = interaction.optString("effect", "potential interaction")
+
+                // Simplify effect for speech (take first part before dash or period)
+                val shortEffect = effect.split(" - ").firstOrNull()?.split(".")?.firstOrNull() ?: effect
+
+                speechBuilder.append("$drug1 with $drug2: $shortEffect. ")
+            }
+            if (count > 2) {
+                speechBuilder.append("Plus ${count - 2} more interactions.")
+            }
+
+            // Use QUEUE_ADD so it plays after vitals/allergies/labs
+            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "medication_interaction_alert_${System.currentTimeMillis()}")
+            Log.d(TAG, "Spoke medication interaction alert: $count high-severity interactions")
         }
     }
 
@@ -3120,7 +3171,33 @@ class MainActivity : AppCompatActivity() {
 
     private fun formatMedications(patient: JSONObject): String {
         val meds = patient.optJSONArray("medications") ?: return "No medications recorded"
-        val sb = StringBuilder("💊 MEDICATIONS\n${"─".repeat(30)}\n")
+        val interactions = patient.optJSONArray("medication_interactions")
+
+        val sb = StringBuilder()
+
+        // Show drug interactions warning first if any
+        if (interactions != null && interactions.length() > 0) {
+            sb.append("⚠️ DRUG INTERACTIONS\n${"─".repeat(30)}\n")
+            for (i in 0 until minOf(interactions.length(), 5)) {
+                val inter = interactions.getJSONObject(i)
+                val drug1 = inter.optString("drug1", "").split(" ").firstOrNull() ?: "Drug1"
+                val drug2 = inter.optString("drug2", "").split(" ").firstOrNull() ?: "Drug2"
+                val severity = inter.optString("severity", "moderate")
+                val effect = inter.optString("effect", "Potential interaction")
+                val shortEffect = effect.split(" - ").firstOrNull()?.take(40) ?: effect.take(40)
+
+                val flag = when (severity) {
+                    "high" -> "🔴"
+                    "moderate" -> "🟡"
+                    else -> "🟢"
+                }
+                sb.append("$flag $drug1 + $drug2\n")
+                sb.append("   $shortEffect\n")
+            }
+            sb.append("${"─".repeat(30)}\n\n")
+        }
+
+        sb.append("💊 MEDICATIONS\n${"─".repeat(30)}\n")
         for (i in 0 until minOf(meds.length(), 8)) {
             sb.append("• ${meds.getString(i)}\n")
         }

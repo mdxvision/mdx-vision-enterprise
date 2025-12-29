@@ -1,0 +1,272 @@
+{
+  "interactions": {
+    "warfarin": {
+      "severity": "high",
+      "interacts_with": ["aspirin", "ibuprofen", "naproxen", "vitamin k", "vitamin e", "fish oil", "garlic", "ginkgo", "ginger"],
+      "effects": {
+        "aspirin": "Increased bleeding risk - major interaction",
+        "ibuprofen": "Increased bleeding risk and reduced warfarin effectiveness",
+        "naproxen": "Increased bleeding risk - avoid combination",
+        "vitamin k": "Reduced anticoagulant effect",
+        "vitamin e": "Increased bleeding risk",
+        "fish oil": "Increased bleeding risk",
+        "garlic": "Increased bleeding risk",
+        "ginkgo": "Increased bleeding risk",
+        "ginger": "Increased bleeding risk"
+      }
+    },
+    "metformin": {
+      "severity": "moderate",
+      "interacts_with": ["contrast dye", "alcohol", "furosemide"],
+      "effects": {
+        "contrast dye": "Risk of lactic acidosis - hold before imaging",
+        "alcohol": "Increased risk of lactic acidosis and hypoglycemia",
+        "furosemide": "May reduce metformin effectiveness"
+      }
+    },
+    "lisinopril": {
+      "severity": "high",
+      "interacts_with": ["potassium", "spironolactone", "losartan", "valsartan", "nsaids", "ibuprofen"],
+      "effects": {
+        "potassium": "Risk of hyperkalemia - monitor potassium levels",
+        "spironolactone": "Risk of severe hyperkalemia",
+        "losartan": "Dual RAAS blockade - increased risk of hypotension and renal failure",
+        "valsartan": "Dual RAAS blockade - increased risk of hypotension and renal failure",
+        "nsaids": "Reduced antihypertensive effect and renal risk",
+        "ibuprofen": "Reduced antihypertensive effect and renal risk"
+      }
+    },
+    "digoxin": {
+      "severity": "high",
+      "interacts_with": ["amiodarone", "verapamil", "quinidine", "erythromycin", "clarithromycin"],
+      "effects": {
+        "amiodarone": "Increased digoxin levels - reduce digoxin dose 50%",
+        "verapamil": "Increased digoxin levels and AV block risk",
+        "quinidine": "Increased digoxin levels - reduce digoxin dose 50%",
+        "erythromycin": "Increased digoxin levels",
+        "clarithromycin": "Increased digoxin levels"
+      }
+    },
+    "simvastatin": {
+      "severity": "high",
+      "interacts_with": ["amiodarone", "amlodipine", "diltiazem", "verapamil", "erythromycin", "clarithromycin", "grapefruit"],
+      "effects": {
+        "amiodarone": "Increased risk of rhabdomyolysis - limit simvastatin to 20mg",
+        "amlodipine": "Increased risk of myopathy - limit simvastatin to 20mg",
+        "diltiazem": "Increased risk of myopathy - limit simvastatin to 10mg",
+        "verapamil": "Increased risk of myopathy - limit simvastatin to 10mg",
+        "erythromycin": "Increased risk of rhabdomyolysis - avoid combination",
+        "clarithromycin": "Increased risk of rhabdomyolysis - avoid combination",
+        "grapefruit": "Increased statin levels and myopathy risk"
+      }
+    },
+    "atorvastatin": {
+      "severity": "moderate",
+      "interacts_with": ["erythromycin", "clarithromycin", "grapefruit", "cyclosporine"],
+      "effects": {
+        "erythromycin": "Increased statin levels - monitor for myopathy",
+        "clarithromycin": "Increased statin levels - monitor for myopathy",
+        "grapefruit": "Increased statin levels",
+        "cyclosporine": "Significantly increased atorvastatin levels"
+      }
+    },
+    "methotrexate": {
+      "severity": "high",
+      "interacts_with": ["nsaids", "ibuprofen", "naproxen", "trimethoprim", "bactrim", "penicillin"],
+      "effects": {
+        "nsaids": "Increased methotrexate toxicity - life-threatening",
+        "ibuprofen": "Increased methotrexate toxicity",
+        "naproxen": "Increased methotrexate toxicity",
+        "trimethoprim": "Increased methotrexate toxicity",
+        "bactrim": "Increased methotrexate toxicity - avoid combination",
+        "penicillin": "Reduced methotrexate clearance"
+      }
+    },
+    "lithium": {
+      "severity": "high",
+      "interacts_with": ["nsaids", "ibuprofen", "naproxen", "lisinopril", "losartan", "furosemide", "hydrochlorothiazide"],
+      "effects": {
+        "nsaids": "Increased lithium levels - toxicity risk",
+        "ibuprofen": "Increased lithium levels - toxicity risk",
+        "naproxen": "Increased lithium levels - toxicity risk",
+        "lisinopril": "Increased lithium levels",
+        "losartan": "Increased lithium levels",
+        "furosemide": "Increased lithium levels",
+        "hydrochlorothiazide": "Increased lithium levels - monitor closely"
+      }
+    },
+    "fluoxetine": {
+      "severity": "high",
+      "interacts_with": ["tramadol", "maois", "selegiline", "linezolid", "triptans", "sumatriptan"],
+      "effects": {
+        "tramadol": "Risk of serotonin syndrome and seizures",
+        "maois": "Risk of fatal serotonin syndrome - contraindicated",
+        "selegiline": "Risk of serotonin syndrome",
+        "linezolid": "Risk of serotonin syndrome",
+        "triptans": "Risk of serotonin syndrome",
+        "sumatriptan": "Risk of serotonin syndrome"
+      }
+    },
+    "sertraline": {
+      "severity": "high",
+      "interacts_with": ["tramadol", "maois", "selegiline", "linezolid", "triptans", "warfarin"],
+      "effects": {
+        "tramadol": "Risk of serotonin syndrome and seizures",
+        "maois": "Risk of fatal serotonin syndrome - contraindicated",
+        "selegiline": "Risk of serotonin syndrome",
+        "linezolid": "Risk of serotonin syndrome",
+        "triptans": "Risk of serotonin syndrome",
+        "warfarin": "Increased bleeding risk"
+      }
+    },
+    "clopidogrel": {
+      "severity": "high",
+      "interacts_with": ["omeprazole", "esomeprazole", "aspirin"],
+      "effects": {
+        "omeprazole": "Reduced clopidogrel effectiveness - use pantoprazole instead",
+        "esomeprazole": "Reduced clopidogrel effectiveness - use pantoprazole instead",
+        "aspirin": "Increased bleeding risk but often used together with monitoring"
+      }
+    },
+    "ciprofloxacin": {
+      "severity": "moderate",
+      "interacts_with": ["antacids", "calcium", "iron", "magnesium", "theophylline", "tizanidine", "warfarin"],
+      "effects": {
+        "antacids": "Reduced ciprofloxacin absorption - take 2 hours apart",
+        "calcium": "Reduced ciprofloxacin absorption",
+        "iron": "Reduced ciprofloxacin absorption",
+        "magnesium": "Reduced ciprofloxacin absorption",
+        "theophylline": "Increased theophylline levels - toxicity risk",
+        "tizanidine": "Markedly increased tizanidine levels - contraindicated",
+        "warfarin": "Increased anticoagulant effect"
+      }
+    },
+    "amiodarone": {
+      "severity": "high",
+      "interacts_with": ["warfarin", "digoxin", "simvastatin", "beta blockers", "metoprolol", "diltiazem", "verapamil"],
+      "effects": {
+        "warfarin": "Increased warfarin effect - reduce dose 30-50%",
+        "digoxin": "Increased digoxin levels - reduce dose 50%",
+        "simvastatin": "Increased risk of rhabdomyolysis",
+        "beta blockers": "Risk of bradycardia and heart block",
+        "metoprolol": "Risk of bradycardia and heart block",
+        "diltiazem": "Risk of severe bradycardia - avoid combination",
+        "verapamil": "Risk of severe bradycardia and heart block - avoid"
+      }
+    },
+    "insulin": {
+      "severity": "moderate",
+      "interacts_with": ["beta blockers", "metoprolol", "propranolol", "alcohol", "ace inhibitors", "lisinopril"],
+      "effects": {
+        "beta blockers": "May mask hypoglycemia symptoms",
+        "metoprolol": "May mask hypoglycemia symptoms",
+        "propranolol": "May mask hypoglycemia symptoms and prolong hypoglycemia",
+        "alcohol": "Risk of hypoglycemia",
+        "ace inhibitors": "May increase hypoglycemia risk",
+        "lisinopril": "May increase hypoglycemia risk"
+      }
+    },
+    "oxycodone": {
+      "severity": "high",
+      "interacts_with": ["benzodiazepines", "alprazolam", "lorazepam", "diazepam", "alcohol", "gabapentin", "pregabalin"],
+      "effects": {
+        "benzodiazepines": "Risk of fatal respiratory depression - FDA black box warning",
+        "alprazolam": "Risk of fatal respiratory depression",
+        "lorazepam": "Risk of fatal respiratory depression",
+        "diazepam": "Risk of fatal respiratory depression",
+        "alcohol": "Risk of fatal respiratory depression",
+        "gabapentin": "Increased CNS depression and respiratory risk",
+        "pregabalin": "Increased CNS depression and respiratory risk"
+      }
+    },
+    "hydrocodone": {
+      "severity": "high",
+      "interacts_with": ["benzodiazepines", "alprazolam", "lorazepam", "alcohol", "gabapentin"],
+      "effects": {
+        "benzodiazepines": "Risk of fatal respiratory depression - FDA black box warning",
+        "alprazolam": "Risk of fatal respiratory depression",
+        "lorazepam": "Risk of fatal respiratory depression",
+        "alcohol": "Risk of fatal respiratory depression",
+        "gabapentin": "Increased CNS depression"
+      }
+    },
+    "morphine": {
+      "severity": "high",
+      "interacts_with": ["benzodiazepines", "alprazolam", "lorazepam", "diazepam", "alcohol"],
+      "effects": {
+        "benzodiazepines": "Risk of fatal respiratory depression - FDA black box warning",
+        "alprazolam": "Risk of fatal respiratory depression",
+        "lorazepam": "Risk of fatal respiratory depression",
+        "diazepam": "Risk of fatal respiratory depression",
+        "alcohol": "Risk of fatal respiratory depression"
+      }
+    },
+    "potassium": {
+      "severity": "high",
+      "interacts_with": ["lisinopril", "losartan", "valsartan", "spironolactone", "amiloride", "triamterene"],
+      "effects": {
+        "lisinopril": "Risk of severe hyperkalemia",
+        "losartan": "Risk of severe hyperkalemia",
+        "valsartan": "Risk of severe hyperkalemia",
+        "spironolactone": "Risk of severe hyperkalemia - monitor closely",
+        "amiloride": "Risk of severe hyperkalemia",
+        "triamterene": "Risk of severe hyperkalemia"
+      }
+    }
+  },
+  "keywords": {
+    "coumadin": "warfarin",
+    "jantoven": "warfarin",
+    "glucophage": "metformin",
+    "prinivil": "lisinopril",
+    "zestril": "lisinopril",
+    "lanoxin": "digoxin",
+    "zocor": "simvastatin",
+    "lipitor": "atorvastatin",
+    "plavix": "clopidogrel",
+    "cipro": "ciprofloxacin",
+    "cordarone": "amiodarone",
+    "pacerone": "amiodarone",
+    "prozac": "fluoxetine",
+    "zoloft": "sertraline",
+    "oxycontin": "oxycodone",
+    "percocet": "oxycodone",
+    "vicodin": "hydrocodone",
+    "norco": "hydrocodone",
+    "xanax": "alprazolam",
+    "ativan": "lorazepam",
+    "valium": "diazepam",
+    "neurontin": "gabapentin",
+    "lyrica": "pregabalin",
+    "prilosec": "omeprazole",
+    "nexium": "esomeprazole",
+    "protonix": "pantoprazole",
+    "lopressor": "metoprolol",
+    "toprol": "metoprolol",
+    "cardizem": "diltiazem",
+    "calan": "verapamil",
+    "norvasc": "amlodipine",
+    "cozaar": "losartan",
+    "diovan": "valsartan",
+    "aldactone": "spironolactone",
+    "lasix": "furosemide",
+    "hctz": "hydrochlorothiazide",
+    "microzide": "hydrochlorothiazide",
+    "advil": "ibuprofen",
+    "motrin": "ibuprofen",
+    "aleve": "naproxen",
+    "ecotrin": "aspirin",
+    "bayer": "aspirin",
+    "biaxin": "clarithromycin",
+    "e-mycin": "erythromycin",
+    "ery-tab": "erythromycin",
+    "septra": "bactrim",
+    "ultram": "tramadol",
+    "imitrex": "sumatriptan"
+  },
+  "severity_levels": {
+    "high": "Major interaction - may be life-threatening or require intervention",
+    "moderate": "Significant interaction - may require monitoring or dose adjustment",
+    "low": "Minor interaction - monitor for effects"
+  }
+}

@@ -256,6 +256,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 28. **CPT Modifier Support** - 20+ modifiers (-25, -59, LT/RT, etc.) with keyword detection and auto-suggest -25 for E/M + procedure combinations
 29. **Critical Lab Alerts** - Auto-detect critical lab values (potassium, glucose, troponin, etc.) with spoken TTS alerts on patient load (safety-first, bypasses toggle)
 30. **Critical Vital Alerts** - Auto-detect critical vitals (BP >180, HR <40/>150, SpO2 <88%, Temp >104F) with spoken TTS alerts (safety-first, spoken before labs/allergies)
+31. **Medication Interaction Alerts** - Drug-drug interaction checking with 18+ medications, brand name recognition, severity levels, spoken TTS alerts for high-severity interactions
 
 ## Next Up (Recommended)
 
