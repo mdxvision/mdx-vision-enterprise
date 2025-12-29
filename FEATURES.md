@@ -62,10 +62,16 @@ Based on US Patent 15/237,980 and product requirements.
 | Feature | Status | Location |
 |---------|--------|----------|
 | [x] SOAP note generation | Done | `ehr-proxy/main.py` |
+| [x] Progress note generation | Done | `ehr-proxy/main.py` |
+| [x] H&P note generation | Done | `ehr-proxy/main.py` |
+| [x] Consult note generation | Done | `ehr-proxy/main.py` |
 | [x] Real-time transcription | Done | AssemblyAI/Deepgram WebSocket |
 | [x] AI-structured notes | Done | Template + Claude API option |
 | [x] Live transcription streaming | Done | `AudioStreamingService.kt` |
-| [ ] Template selection | Pending | - |
+| [x] Template selection | Done | Voice commands + UI |
+| [x] Note type auto-detection | Done | Keyword analysis with confidence |
+| [x] Speaker diarization | Done | Multi-speaker detection |
+| [x] Medical vocabulary boost | Done | 500+ terms in `medical_vocabulary.py` |
 | [ ] Voice dictation to EHR | Future | - |
 | [x] Auto-coding (ICD-10) | Done | `ehr-proxy/main.py` (90+ codes) |
 | [x] Auto-coding (CPT) | Done | `ehr-proxy/main.py` (100+ codes) |
@@ -147,10 +153,18 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Show meds" | Done |
 | [x] "Show labs" | Done |
 | [x] "Show procedures" | Done |
+| [x] "Show immunizations" | Done |
 | [x] "Start note" | Done |
 | [x] "Save note" | Done |
 | [x] "Clear cache" | Done |
 | [x] "Live transcribe" | Done |
+| [x] "SOAP note" | Done |
+| [x] "Progress note" | Done |
+| [x] "H&P note" | Done |
+| [x] "Consult note" | Done |
+| [x] "Auto note" | Done |
+| [x] "Increase/decrease font" | Done |
+| [x] "Auto scroll on/off" | Done |
 
 ---
 
@@ -170,13 +184,22 @@ Based on US Patent 15/237,980 and product requirements.
 
 ## Next Priority Items
 
-1. ~~**Camera Barcode Scanning**~~ - ✅ Done (ML Kit)
-2. **Epic Integration** - Complete with credentials
-3. ~~**AI Clinical Notes**~~ - ✅ Done (SOAP + ICD-10 + CPT)
-4. **Vuzix HUD Overlay** - True AR display mode
-5. ~~**Offline Mode**~~ - ✅ Done (SharedPreferences cache)
-6. **HIPAA Audit Logging** - Security compliance
-7. **User Authentication** - OAuth2/SMART on FHIR
+### Completed
+1. ~~**Camera Barcode Scanning**~~ - Done (ML Kit)
+2. ~~**AI Clinical Notes**~~ - Done (SOAP, Progress, H&P, Consult + ICD-10 + CPT)
+3. ~~**Offline Mode**~~ - Done (SharedPreferences cache)
+4. ~~**Multiple Note Templates**~~ - Done (4 types with voice selection)
+5. ~~**Speaker Diarization**~~ - Done (AssemblyAI/Deepgram)
+6. ~~**Medical Vocabulary Boost**~~ - Done (500+ terms)
+7. ~~**Note Type Auto-Detection**~~ - Done (keyword analysis)
+
+### Upcoming
+1. **Epic Integration** - Complete with credentials
+2. **Vuzix HUD Overlay** - True AR display mode
+3. **HIPAA Audit Logging** - Security compliance
+4. **User Authentication** - OAuth2/SMART on FHIR
+5. **Speaker Context from Chart** - Use patient/doctor names from appointment
+6. **Push Notes to EHR** - FHIR DocumentReference
 
 ---
 
