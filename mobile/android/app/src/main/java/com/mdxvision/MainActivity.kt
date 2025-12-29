@@ -968,6 +968,61 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Note edit focused")
     }
 
+    private fun showVoiceCommandHelp() {
+        val helpText = """
+            |🎤 VOICE COMMANDS
+            |${"─".repeat(30)}
+            |
+            |📋 PATIENT DATA
+            |• "Load patient" - Load test patient
+            |• "Find [name]" - Search patients
+            |• "Scan wristband" - Scan barcode
+            |
+            |🏥 CLINICAL INFO
+            |• "Show vitals" - Display vitals
+            |• "Show allergies" - Display allergies
+            |• "Show meds" - Display medications
+            |• "Show labs" - Display lab results
+            |• "Show procedures" - Display procedures
+            |• "Show immunizations" - Display vaccines
+            |• "Show conditions" - Display diagnoses
+            |• "Show care plans" - Display care plans
+            |• "Show notes" - Display clinical notes
+            |
+            |📝 DOCUMENTATION
+            |• "Start note" - Begin documentation
+            |• "Live transcribe" - Real-time transcription
+            |• "Stop transcription" - End transcription
+            |• "SOAP note" - Set note type to SOAP
+            |• "Progress note" - Set to Progress Note
+            |• "H&P note" - Set to H&P
+            |• "Consult note" - Set to Consult
+            |• "Auto note" - Auto-detect note type
+            |
+            |💾 NOTE MANAGEMENT
+            |• "Edit note" - Focus note for editing
+            |• "Reset note" - Restore original note
+            |• "Save note" - Sign off and save
+            |
+            |⚙️ SETTINGS
+            |• "My name is Dr. [Name]" - Set clinician
+            |• "Increase font" - Larger text
+            |• "Decrease font" - Smaller text
+            |• "Auto scroll on/off" - Toggle scroll
+            |
+            |🔧 OTHER
+            |• "Hey MDx [command]" - Wake word
+            |• "Close" - Dismiss overlay
+            |• "Clear cache" - Clear offline data
+            |• "Help" - Show this help
+        """.trimMargin()
+
+        showDataOverlay("Voice Commands", helpText)
+        statusText.text = "Voice Command Help"
+        transcriptText.text = "Say any command or 'close'"
+        Log.d(TAG, "Showing voice command help")
+    }
+
     private fun saveCurrentNote() {
         // Show sign-off confirmation dialog before saving
         showSignOffConfirmation()
@@ -1739,6 +1794,10 @@ class MainActivity : AppCompatActivity() {
             lower.contains("clinical note") || lower.contains("show notes") || lower.contains("patient notes") || lower.contains("previous notes") || lower.contains("history notes") -> {
                 // Show clinical notes from EHR
                 fetchPatientSection("clinical_notes")
+            }
+            lower == "help" || lower.contains("what can i say") || lower.contains("voice commands") || lower.contains("show commands") || lower.contains("list commands") || lower.contains("available commands") -> {
+                // Show voice command help
+                showVoiceCommandHelp()
             }
             lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
                 // Close any open overlay

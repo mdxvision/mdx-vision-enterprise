@@ -201,6 +201,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Reset note" / "Undo changes" | Done | Restore note to original |
 | [x] "Show care plans" | Done | Display patient care plans |
 | [x] "Show notes" / "Clinical notes" | Done | Display existing clinical notes |
+| [x] "Help" / "What can I say" | Done | Show all voice commands |
 
 ---
 
