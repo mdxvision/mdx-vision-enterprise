@@ -6,6 +6,14 @@ This file provides context for Claude Code when working on this project.
 
 MDx Vision is an AR smart glasses platform for healthcare documentation. It implements **US Patent 15/237,980** - voice-activated AR glasses that connect to EHR systems.
 
+**Key Features:**
+- Voice-activated patient lookup from EHR
+- Wake word detection ("Hey MDx")
+- Real-time transcription via AssemblyAI/Deepgram
+- AI-powered SOAP note generation
+- ICD-10 code suggestions from conversation
+- Barcode scanning for patient wristbands
+
 ## Key Directories
 
 ```
@@ -19,14 +27,28 @@ MDx Vision is an AR smart glasses platform for healthcare documentation. It impl
 ## Current Development Focus
 
 ### Working Components
-- **Android App**: Native Kotlin app with voice recognition, patient lookup
+- **Android App**: Native Kotlin app with voice recognition, patient lookup, live transcription
 - **Cerner Integration**: Live FHIR R4 sandbox connection
 - **EHR Proxy**: FastAPI service bridging AR glasses to EHR
+- **Real-time Transcription**: AssemblyAI/Deepgram WebSocket streaming
+- **SOAP Note Generation**: AI-powered clinical documentation with ICD-10 codes
 - **Web Dashboard**: Next.js 14 running on port 5173
 
-### In Progress
-- Epic FHIR integration (awaiting credentials)
-- Camera barcode scanning for patient wristbands
+### Voice Commands (12 buttons)
+| Command | Action |
+|---------|--------|
+| HEY MDX MODE | Toggle wake word listening |
+| LOAD PATIENT | Load test patient |
+| FIND PATIENT | Search by name |
+| SCAN WRISTBAND | Barcode scanner |
+| SHOW VITALS | Display vitals |
+| SHOW ALLERGIES | Display allergies |
+| SHOW MEDS | Display medications |
+| SHOW LABS | Display lab results |
+| SHOW PROCEDURES | Display procedures |
+| START NOTE | Begin documentation mode |
+| LIVE TRANSCRIBE | Real-time transcription |
+| (Immunizations) | "Show immunizations" voice command |
 
 ## Development Commands
 
@@ -37,10 +59,13 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 ./gradlew assembleDebug
 ```
 
-### EHR Proxy
+### EHR Proxy with Transcription
 ```bash
 cd ehr-proxy
-python main.py  # Runs on port 8002
+ASSEMBLYAI_API_KEY=your_key python main.py  # Port 8002
+
+# Or with Deepgram
+TRANSCRIPTION_PROVIDER=deepgram DEEPGRAM_API_KEY=your_key python main.py
 ```
 
 ### Web Dashboard
@@ -51,8 +76,8 @@ npm run dev  # Runs on port 5173
 
 ### Android Emulator
 ```bash
-# Start emulator
-emulator -avd MDxVision
+# ADB path on this machine
+/opt/homebrew/share/android-commandlinetools/platform-tools/adb
 
 # Install APK
 adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
@@ -64,18 +89,48 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 ## Key Files
 
 ### Android App
-- `mobile/android/app/src/main/java/com/mdxvision/MainActivity.kt` - Main activity with voice recognition
-- `mobile/android/app/src/main/AndroidManifest.xml` - Permissions and Vuzix config
+- `MainActivity.kt` - Main activity with voice recognition, wake word, live transcription
+- `AudioStreamingService.kt` - WebSocket audio streaming to backend
+- `BarcodeScannerActivity.kt` - ML Kit barcode scanning
 
-### EHR Integration
-- `ehr-proxy/main.py` - FastAPI proxy for Cerner FHIR
+### EHR Proxy
+- `ehr-proxy/main.py` - FastAPI proxy, SOAP notes, ICD-10 codes, WebSocket endpoints
+- `ehr-proxy/transcription.py` - AssemblyAI/Deepgram dual-provider abstraction
+- `ehr-proxy/.env.example` - API key configuration template
+
+### Backend (Java)
 - `backend/src/main/java/com/mdxvision/fhir/UnifiedEhrService.java` - Multi-EHR abstraction
 - `backend/src/main/java/com/mdxvision/fhir/CernerFhirService.java` - Cerner client
 - `backend/src/main/java/com/mdxvision/fhir/EpicFhirService.java` - Epic client
-- `backend/src/main/java/com/mdxvision/fhir/VeradigmFhirService.java` - Veradigm client
 
-### Configuration
-- `backend/src/main/resources/application.yml` - All EHR endpoints and credentials
+## API Endpoints
+
+### EHR Proxy (port 8002)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/patient/{id}` | GET | Get patient summary |
+| `/api/v1/patient/search?name=` | GET | Search patients by name |
+| `/api/v1/patient/mrn/{mrn}` | GET | Get patient by MRN |
+| `/api/v1/notes/generate` | POST | Generate SOAP note |
+| `/api/v1/notes/quick` | POST | Quick note for AR display |
+| `/api/v1/transcription/status` | GET | Check transcription config |
+| `/ws/transcribe` | WebSocket | Real-time transcription |
+| `/ws/transcribe/{provider}` | WebSocket | Transcription with specific provider |
+
+### Test Requests
+```bash
+# Get patient
+curl http://localhost:8002/api/v1/patient/12724066
+
+# Generate SOAP note with ICD-10 codes
+curl -X POST http://localhost:8002/api/v1/notes/quick \
+  -H "Content-Type: application/json" \
+  -d '{"transcript": "Patient has headache and fever", "chief_complaint": "Headache"}'
+
+# Check transcription status
+curl http://localhost:8002/api/v1/transcription/status
+```
 
 ## EHR Sandbox URLs
 
@@ -92,20 +147,27 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 - **Name**: SMARTS SR., NANCYS II
 - **DOB**: 1990-09-15
 
-```bash
-curl http://localhost:8002/api/v1/patient/12724066
+## Architecture
+
+### Real-Time Transcription Flow
 ```
-
-## Patent Claims Implementation
-
-See `FEATURES.md` for detailed checklist of patent claim implementations.
-
-## Architecture Notes
+[Android Mic]
+    ↓ PCM Audio (16kHz, 16-bit)
+[AudioStreamingService.kt]
+    ↓ WebSocket
+[EHR Proxy /ws/transcribe]
+    ↓ WebSocket
+[AssemblyAI / Deepgram]
+    ↓ Transcript JSON
+[Android App - Live Display]
+    ↓ On Stop
+[SOAP Note Generator + ICD-10]
+```
 
 ### AR Glasses Data Flow
 ```
 [Vuzix Blade 2]
-    ↓ Voice Command
+    ↓ Voice Command / Wake Word
 [Android App]
     ↓ HTTP Request
 [EHR Proxy :8002]
@@ -121,6 +183,18 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 - Web dashboard runs on port 5173
 - Backend API runs on port 8080
 
+## Environment Variables
+
+```bash
+# Transcription
+TRANSCRIPTION_PROVIDER=assemblyai  # or "deepgram"
+ASSEMBLYAI_API_KEY=your_key
+DEEPGRAM_API_KEY=your_key
+
+# AI Notes
+CLAUDE_API_KEY=your_key
+```
+
 ## Common Issues
 
 ### Java not found
@@ -128,13 +202,31 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 ```
 
-### ADB device not found
+### ADB path
 ```bash
-adb kill-server && adb start-server
+/opt/homebrew/share/android-commandlinetools/platform-tools/adb
 ```
 
 ### Port already in use
 ```bash
-lsof -i :8002  # Find process
-kill -9 <PID>  # Kill it
+lsof -ti:8002 | xargs kill -9
 ```
+
+### Emulator mic not working
+Enable "Virtual microphone uses host audio input" in emulator Extended Controls → Microphone
+
+### websockets library compatibility
+Use `additional_headers` instead of `extra_headers` for newer versions.
+
+## Patent Claims Implementation
+
+See `FEATURES.md` for detailed checklist of patent claim implementations.
+
+## Recent Changes (Dec 2024)
+
+1. **Real-time Transcription** - AssemblyAI/Deepgram WebSocket streaming
+2. **Wake Word Detection** - "Hey MDx" hands-free activation
+3. **ICD-10 Code Suggestions** - Auto-detect diagnosis codes from transcript
+4. **Live Transcription UI** - Full-screen overlay with real-time text
+5. **Voice Commands in Transcription** - Say "close" or "stop transcription"
+6. **12-Button Command Grid** - All voice commands as tappable buttons
