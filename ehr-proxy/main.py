@@ -424,7 +424,7 @@ async def generate_soap_with_claude(transcript: str, chief_complaint: str = None
                 "max_tokens": 1024,
                 "messages": [{
                     "role": "user",
-                    "content": f"""Generate a SOAP note with ICD-10 codes from this clinical encounter transcript.
+                    "content": f"""Generate a SOAP note with ICD-10 and CPT codes from this clinical encounter transcript.
 
 Chief Complaint: {chief_complaint or 'See transcript'}
 
@@ -437,10 +437,12 @@ Return a JSON object with these exact fields:
 - assessment: Clinical assessment and diagnosis
 - plan: Treatment plan and follow-up
 - summary: 1-2 sentence summary
-- icd10_codes: Array of objects with "code" and "description" for each suggested ICD-10 diagnosis code (max 5 most relevant)
+- icd10_codes: Array of objects with "code" and "description" for each suggested ICD-10 diagnosis code (max 5)
+- cpt_codes: Array of objects with "code" and "description" for each suggested CPT procedure/service code (max 5)
 
-Example icd10_codes format:
-[{{"code": "J06.9", "description": "Acute upper respiratory infection, unspecified"}}]
+Example formats:
+icd10_codes: [{{"code": "J06.9", "description": "Acute upper respiratory infection"}}]
+cpt_codes: [{{"code": "99213", "description": "Office visit, established patient, low complexity"}}]
 
 Return ONLY valid JSON, no markdown or explanation."""
                 }]
@@ -531,13 +533,56 @@ def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict
     if not icd10_codes:
         icd10_codes.append({"code": "Z00.00", "description": "General adult medical examination"})
 
+    # CPT code suggestions based on visit type and procedures
+    cpt_codes = []
+    cpt_map = {
+        # E/M Office Visits
+        "new patient": {"code": "99203", "description": "Office visit, new patient, low complexity"},
+        "established": {"code": "99213", "description": "Office visit, established patient, low complexity"},
+        "follow up": {"code": "99214", "description": "Office visit, established patient, moderate complexity"},
+        "comprehensive": {"code": "99215", "description": "Office visit, established patient, high complexity"},
+        # Common Procedures
+        "x-ray": {"code": "71046", "description": "Chest X-ray, 2 views"},
+        "xray": {"code": "71046", "description": "Chest X-ray, 2 views"},
+        "ekg": {"code": "93000", "description": "Electrocardiogram, complete"},
+        "ecg": {"code": "93000", "description": "Electrocardiogram, complete"},
+        "blood draw": {"code": "36415", "description": "Venipuncture, routine"},
+        "lab": {"code": "36415", "description": "Venipuncture, routine"},
+        "injection": {"code": "96372", "description": "Therapeutic injection, SC/IM"},
+        "vaccine": {"code": "90471", "description": "Immunization administration"},
+        "flu shot": {"code": "90686", "description": "Influenza vaccine, quadrivalent"},
+        "suture": {"code": "12001", "description": "Simple wound repair"},
+        "stitches": {"code": "12001", "description": "Simple wound repair"},
+        "splint": {"code": "29125", "description": "Application of short arm splint"},
+        "cast": {"code": "29075", "description": "Application of elbow cast"},
+        "nebulizer": {"code": "94640", "description": "Nebulizer treatment"},
+        "breathing treatment": {"code": "94640", "description": "Nebulizer treatment"},
+        "strep test": {"code": "87880", "description": "Strep A test, rapid"},
+        "urinalysis": {"code": "81003", "description": "Urinalysis, automated"},
+        "glucose": {"code": "82947", "description": "Glucose, blood test"},
+        "physical exam": {"code": "99395", "description": "Preventive visit, 18-39 years"},
+        "annual": {"code": "99395", "description": "Preventive visit, 18-39 years"},
+        "wellness": {"code": "99395", "description": "Preventive visit, 18-39 years"},
+    }
+
+    for keyword, code_info in cpt_map.items():
+        if keyword in transcript_lower and code_info not in cpt_codes:
+            cpt_codes.append(code_info)
+        if len(cpt_codes) >= 5:
+            break
+
+    # Default E/M code if none detected
+    if not cpt_codes:
+        cpt_codes.append({"code": "99213", "description": "Office visit, established patient, low complexity"})
+
     return {
         "subjective": subjective,
         "objective": objective,
         "assessment": assessment,
         "plan": plan,
         "summary": summary,
-        "icd10_codes": icd10_codes
+        "icd10_codes": icd10_codes,
+        "cpt_codes": cpt_codes
     }
 
 
@@ -566,6 +611,16 @@ def format_soap_display(note: dict) -> str:
         lines.append("")
         lines.append("▸ ICD-10 CODES:")
         for code_info in icd10_codes[:5]:
+            code = code_info.get("code", "")
+            desc = code_info.get("description", "")
+            lines.append(f"  • {code}: {desc[:40]}")
+
+    # Add CPT codes if present
+    cpt_codes = note.get("cpt_codes", [])
+    if cpt_codes:
+        lines.append("")
+        lines.append("▸ CPT CODES:")
+        for code_info in cpt_codes[:5]:
             code = code_info.get("code", "")
             desc = code_info.get("description", "")
             lines.append(f"  • {code}: {desc[:40]}")
