@@ -13,10 +13,14 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Voice command parsing | Done | `MainActivity.kt:288-312` |
 | [ ] Wake word detection ("Hey MDx") | Pending | - |
 | [ ] Continuous listening mode | Pending | - |
-| [x] Command: "Load patient {id}" | Done | `MainActivity.kt:293-298` |
-| [x] Command: "Find {name}" | Done | `MainActivity.kt:300-305` |
-| [ ] Command: "Start documentation" | Pending | - |
-| [ ] Command: "Add to note" | Pending | - |
+| [x] Command: "Load patient {id}" | Done | `MainActivity.kt` |
+| [x] Command: "Find {name}" | Done | `MainActivity.kt` |
+| [x] Command: "Start note" | Done | `MainActivity.kt` |
+| [x] Command: "Show vitals" | Done | `MainActivity.kt` |
+| [x] Command: "Show allergies" | Done | `MainActivity.kt` |
+| [x] Command: "Show meds" | Done | `MainActivity.kt` |
+| [x] Command: "Scan wristband" | Done | `MainActivity.kt` |
+| [ ] Wake word ("Hey MDx") | Pending | - |
 
 ### Patient Identification (Claims 5-7)
 

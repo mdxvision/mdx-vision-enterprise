@@ -487,12 +487,115 @@ class MainActivity : AppCompatActivity() {
                 // Voice command to scan wristband
                 startBarcodeScanner()
             }
+            lower.contains("show vitals") || lower.contains("vitals") -> {
+                // Show vitals only
+                fetchPatientSection("vitals")
+            }
+            lower.contains("allergies") || lower.contains("allergy") -> {
+                // Show allergies
+                fetchPatientSection("allergies")
+            }
+            lower.contains("medication") || lower.contains("meds") || lower.contains("drugs") -> {
+                // Show medications
+                fetchPatientSection("medications")
+            }
+            lower.contains("labs") || lower.contains("laboratory") || lower.contains("results") -> {
+                // Show lab results
+                fetchPatientSection("labs")
+            }
             else -> {
                 // Display transcribed text
                 transcriptText.text = "\"$transcript\""
                 Log.d(TAG, "Voice command: $transcript")
             }
         }
+    }
+
+    private fun fetchPatientSection(section: String) {
+        statusText.text = "Loading ${section}..."
+        patientDataText.text = ""
+
+        Thread {
+            try {
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/patient/$TEST_PATIENT_ID")
+                    .get()
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Fetch error: ${e.message}")
+                        runOnUiThread {
+                            statusText.text = "Failed to load"
+                            patientDataText.text = "Error: ${e.message}"
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "Patient data for $section: $body")
+
+                        runOnUiThread {
+                            try {
+                                val patient = JSONObject(body ?: "{}")
+                                val display = when (section) {
+                                    "vitals" -> formatVitals(patient)
+                                    "allergies" -> formatAllergies(patient)
+                                    "medications" -> formatMedications(patient)
+                                    "labs" -> formatLabs(patient)
+                                    else -> patient.optString("display_text", "No data")
+                                }
+                                statusText.text = section.uppercase()
+                                patientDataText.text = display
+                            } catch (e: Exception) {
+                                patientDataText.text = "Parse error: ${e.message}"
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch $section: ${e.message}")
+            }
+        }.start()
+    }
+
+    private fun formatVitals(patient: JSONObject): String {
+        val vitals = patient.optJSONArray("vitals") ?: return "No vitals recorded"
+        val sb = StringBuilder("VITALS\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(vitals.length(), 6)) {
+            val v = vitals.getJSONObject(i)
+            sb.append("• ${v.getString("name")}: ${v.getString("value")}${v.getString("unit")}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatAllergies(patient: JSONObject): String {
+        val allergies = patient.optJSONArray("allergies") ?: return "No allergies recorded"
+        val sb = StringBuilder("⚠ ALLERGIES\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(allergies.length(), 8)) {
+            sb.append("• ${allergies.getString(i)}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatMedications(patient: JSONObject): String {
+        val meds = patient.optJSONArray("medications") ?: return "No medications recorded"
+        val sb = StringBuilder("💊 MEDICATIONS\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(meds.length(), 8)) {
+            sb.append("• ${meds.getString(i)}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatLabs(patient: JSONObject): String {
+        val labs = patient.optJSONArray("labs") ?: return "No lab results"
+        if (labs.length() == 0) return "No lab results available"
+        val sb = StringBuilder("🔬 LAB RESULTS\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(labs.length(), 8)) {
+            val l = labs.getJSONObject(i)
+            sb.append("• ${l.getString("name")}: ${l.getString("value")}${l.optString("unit", "")}\n")
+        }
+        return sb.toString()
     }
 
     private fun searchPatients(name: String) {
