@@ -1626,6 +1626,10 @@ class MainActivity : AppCompatActivity() {
                 // Show conditions/problems
                 fetchPatientSection("conditions")
             }
+            lower.contains("care plan") || lower.contains("treatment plan") || lower.contains("care plans") -> {
+                // Show care plans
+                fetchPatientSection("care_plans")
+            }
             lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
                 // Close any open overlay
                 if (isLiveTranscribing) {
@@ -1726,6 +1730,7 @@ class MainActivity : AppCompatActivity() {
                 "procedures" -> formatProcedures(patient)
                 "immunizations" -> formatImmunizations(patient)
                 "conditions" -> formatConditions(patient)
+                "care_plans" -> formatCarePlans(patient)
                 else -> patient.optString("display_text", "No data")
             }
             showDataOverlay(title, content)
@@ -1769,6 +1774,7 @@ class MainActivity : AppCompatActivity() {
                                     "procedures" -> formatProcedures(patient)
                                     "immunizations" -> formatImmunizations(patient)
                                     "conditions" -> formatConditions(patient)
+                                    "care_plans" -> formatCarePlans(patient)
                                     else -> patient.optString("display_text", "No data")
                                 }
                                 showDataOverlay(title, content)
@@ -1863,6 +1869,33 @@ class MainActivity : AppCompatActivity() {
             val onset = cond.optString("onset", "")
             if (onset.isNotEmpty()) sb.append(" (since $onset)")
             sb.append("\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatCarePlans(patient: JSONObject): String {
+        val plans = patient.optJSONArray("care_plans") ?: return "No care plans recorded"
+        if (plans.length() == 0) return "No care plans recorded"
+        val sb = StringBuilder("📑 CARE PLANS\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(plans.length(), 10)) {
+            val plan = plans.getJSONObject(i)
+            sb.append("• ${plan.getString("title")}")
+            val status = plan.optString("status", "")
+            if (status.isNotEmpty()) sb.append(" [$status]")
+            val intent = plan.optString("intent", "")
+            if (intent.isNotEmpty()) sb.append(" ($intent)")
+            sb.append("\n")
+            // Show period if available
+            val periodStart = plan.optString("period_start", "")
+            val periodEnd = plan.optString("period_end", "")
+            if (periodStart.isNotEmpty() || periodEnd.isNotEmpty()) {
+                sb.append("  Period: ${periodStart.ifEmpty { "?" }} → ${periodEnd.ifEmpty { "ongoing" }}\n")
+            }
+            // Show description if available
+            val description = plan.optString("description", "")
+            if (description.isNotEmpty()) {
+                sb.append("  ${description.take(100)}${if (description.length > 100) "..." else ""}\n")
+            }
         }
         return sb.toString()
     }

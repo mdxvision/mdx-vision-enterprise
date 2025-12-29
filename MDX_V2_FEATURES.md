@@ -78,7 +78,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Procedures | Done | Procedure resource |
 | [x] Immunizations | Done | Immunization resource |
 | [x] Conditions/Problems | Done | Condition resource via FHIR |
-| [ ] Care plans | Pending | CarePlan resource |
+| [x] Care plans | Done | CarePlan resource via FHIR |
 | [ ] Clinical notes read | Pending | DocumentReference |
 
 ### Patient Identification
@@ -199,6 +199,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "My name is Dr. [Name]" | Done | Set clinician name for speaker context |
 | [x] "Edit note" | Done | Focus on note for editing |
 | [x] "Reset note" / "Undo changes" | Done | Restore note to original |
+| [x] "Show care plans" | Done | Display patient care plans |
 
 ---
 

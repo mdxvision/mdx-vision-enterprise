@@ -168,6 +168,7 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "My name is Dr. [Name]" | Done |
 | [x] "Edit note" | Done |
 | [x] "Reset note" / "Undo changes" | Done |
+| [x] "Show care plans" | Done |
 
 ---
 

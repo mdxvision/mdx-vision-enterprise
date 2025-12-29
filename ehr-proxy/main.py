@@ -98,6 +98,16 @@ class Condition(BaseModel):
     category: str = ""
 
 
+class CarePlan(BaseModel):
+    title: str
+    status: str = ""
+    intent: str = ""
+    category: str = ""
+    period_start: str = ""
+    period_end: str = ""
+    description: str = ""
+
+
 class PatientSummary(BaseModel):
     patient_id: str
     name: str
@@ -111,6 +121,7 @@ class PatientSummary(BaseModel):
     procedures: List[Procedure] = []
     immunizations: List[Immunization] = []
     conditions: List[Condition] = []
+    care_plans: List[CarePlan] = []
     display_text: str = ""
 
 
@@ -398,6 +409,63 @@ def extract_conditions(bundle: dict) -> List[Condition]:
     return conditions
 
 
+def extract_care_plans(bundle: dict) -> List[CarePlan]:
+    """Extract care plans from FHIR CarePlan bundle"""
+    care_plans = []
+    for entry in bundle.get("entry", [])[:10]:
+        plan = entry.get("resource", {})
+
+        # Get care plan title
+        title = plan.get("title", "")
+        if not title:
+            # Try to get from category or description
+            categories = plan.get("category", [])
+            if categories:
+                cat_coding = categories[0].get("coding", [])
+                if cat_coding:
+                    title = cat_coding[0].get("display", cat_coding[0].get("code", ""))
+            if not title:
+                title = plan.get("description", "Care Plan")[:50]
+
+        # Get status (draft, active, on-hold, revoked, completed, entered-in-error, unknown)
+        status = plan.get("status", "")
+
+        # Get intent (proposal, plan, order, option)
+        intent = plan.get("intent", "")
+
+        # Get category
+        category = ""
+        categories = plan.get("category", [])
+        if categories:
+            cat_coding = categories[0].get("coding", [])
+            if cat_coding:
+                category = cat_coding[0].get("display", cat_coding[0].get("code", ""))
+
+        # Get period
+        period_start = ""
+        period_end = ""
+        period = plan.get("period", {})
+        if period:
+            period_start = period.get("start", "")[:10] if period.get("start") else ""
+            period_end = period.get("end", "")[:10] if period.get("end") else ""
+
+        # Get description
+        description = plan.get("description", "")
+
+        if title:
+            care_plans.append(CarePlan(
+                title=title,
+                status=status,
+                intent=intent,
+                category=category,
+                period_start=period_start,
+                period_end=period_end,
+                description=description[:200] if description else ""  # Truncate long descriptions
+            ))
+
+    return care_plans
+
+
 def format_ar_display(summary: PatientSummary) -> str:
     """Format patient data for AR glasses display"""
     lines = [
@@ -430,6 +498,10 @@ def format_ar_display(summary: PatientSummary) -> str:
     if summary.conditions:
         cond_str = ", ".join([c.name for c in summary.conditions[:4]])
         lines.append(f"📋 CONDITIONS: {cond_str}")
+
+    if summary.care_plans:
+        plan_str = ", ".join([f"{p.title} [{p.status}]" for p in summary.care_plans[:3]])
+        lines.append(f"📑 CARE PLANS: {plan_str}")
 
     return "\n".join(lines)
 
@@ -493,6 +565,16 @@ async def get_patient(patient_id: str):
         traceback.print_exc()
         conditions = []
 
+    # Fetch care plans
+    try:
+        care_plan_bundle = await fetch_fhir(f"CarePlan?patient={patient_id}&_count=10")
+        print(f"🔍 CarePlan bundle type: {care_plan_bundle.get('resourceType', 'N/A')}, entries: {len(care_plan_bundle.get('entry', []))}")
+        care_plans = extract_care_plans(care_plan_bundle)
+        print(f"✓ Fetched {len(care_plans)} care plans")
+    except Exception as e:
+        print(f"⚠️ Could not fetch care plans: {e}")
+        care_plans = []
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -504,7 +586,8 @@ async def get_patient(patient_id: str):
         labs=labs,
         procedures=procedures,
         immunizations=immunizations,
-        conditions=conditions
+        conditions=conditions,
+        care_plans=care_plans
     )
     summary.display_text = format_ar_display(summary)
 
