@@ -223,12 +223,12 @@ Based on US Patent 15/237,980 and product requirements.
 23. ~~**Critical Vital Alerts**~~ - Done (BP, HR, SpO2, Temp thresholds with TTS alerts, spoken first)
 24. ~~**Medication Interaction Alerts**~~ - Done (Drug-drug interaction checking, brand name recognition, severity-based TTS alerts)
 25. ~~**Push Notes to EHR**~~ - Done (FHIR DocumentReference POST, voice commands, LOINC codes, status tracking)
+26. ~~**HIPAA Audit Logging**~~ - Done (JSON audit logs, PHI access tracking, note operations, safety events, rotating file storage)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
 2. **Vuzix HUD Overlay** - True AR display mode
-3. **HIPAA Audit Logging** - Security compliance
-4. **User Authentication** - OAuth2/SMART on FHIR
+3. **User Authentication** - OAuth2/SMART on FHIR
 
 ---
 

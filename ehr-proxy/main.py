@@ -7,7 +7,7 @@ Run: python main.py
 Test: curl http://localhost:8002/api/v1/patient/12724066
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
@@ -33,6 +33,9 @@ from medical_vocabulary import (
     detect_specialty_from_transcript,
     get_vocabulary_for_patient
 )
+
+# Import HIPAA audit logging
+from audit import audit_logger, AuditAction
 
 # Load code databases
 def load_code_database(filename):
@@ -939,8 +942,14 @@ async def root():
 
 
 @app.get("/api/v1/patient/{patient_id}", response_model=PatientSummary)
-async def get_patient(patient_id: str):
+async def get_patient(patient_id: str, request: Request):
     """Get patient summary by ID - optimized for AR glasses"""
+
+    # Get request context for audit
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("User-Agent", "")
+    user_id = request.headers.get("X-User-Id")
+    user_name = request.headers.get("X-Clinician-Name")
 
     # Fetch patient demographics
     patient_data = await fetch_fhir(f"Patient/{patient_id}")
@@ -1021,6 +1030,17 @@ async def get_patient(patient_id: str):
         for v in critical_vitals:
             print(f"   ‼️ {v.name}: {v.value} {v.unit} ({v.interpretation})")
 
+        # HIPAA Audit: Log critical vital alerts
+        for v in critical_vitals:
+            audit_logger.log_safety_event(
+                action=AuditAction.CRITICAL_ALERT,
+                patient_id=patient_id,
+                details=f"Critical {v.name}: {v.value} {v.unit}",
+                severity="high",
+                alert_type="vital",
+                value=f"{v.value} {v.unit}"
+            )
+
     # Filter critical and abnormal labs for safety alerts
     critical_labs = [lab for lab in labs if lab.is_critical]
     abnormal_labs = [lab for lab in labs if lab.is_abnormal]
@@ -1029,6 +1049,17 @@ async def get_patient(patient_id: str):
         print(f"🚨 CRITICAL LABS DETECTED: {len(critical_labs)}")
         for lab in critical_labs:
             print(f"   ‼️ {lab.name}: {lab.value} {lab.unit} ({lab.interpretation})")
+
+        # HIPAA Audit: Log critical lab alerts
+        for lab in critical_labs:
+            audit_logger.log_safety_event(
+                action=AuditAction.CRITICAL_ALERT,
+                patient_id=patient_id,
+                details=f"Critical {lab.name}: {lab.value} {lab.unit}",
+                severity="high",
+                alert_type="lab",
+                value=f"{lab.value} {lab.unit}"
+            )
 
     # Check for medication interactions
     interaction_dicts = check_medication_interactions(medications)
@@ -1046,6 +1077,17 @@ async def get_patient(patient_id: str):
         for interaction in medication_interactions:
             severity_icon = "🚨" if interaction.severity == "high" else "⚠️"
             print(f"   {severity_icon} {interaction.drug1} + {interaction.drug2}: {interaction.effect}")
+
+        # HIPAA Audit: Log drug interactions (only high severity)
+        high_severity = [i for i in medication_interactions if i.severity == "high"]
+        for interaction in high_severity:
+            audit_logger.log_safety_event(
+                action=AuditAction.DRUG_INTERACTION,
+                patient_id=patient_id,
+                details=f"{interaction.drug1} + {interaction.drug2}: {interaction.effect}",
+                severity=interaction.severity,
+                alert_type="drug_interaction"
+            )
 
     summary = PatientSummary(
         patient_id=patient_id,
@@ -1072,18 +1114,44 @@ async def get_patient(patient_id: str):
     )
     summary.display_text = format_ar_display(summary)
 
+    # Build details of what was accessed
+    accessed_resources = []
+    if vitals: accessed_resources.append("vitals")
+    if allergies: accessed_resources.append("allergies")
+    if medications: accessed_resources.append("medications")
+    if labs: accessed_resources.append("labs")
+    if conditions: accessed_resources.append("conditions")
+    if procedures: accessed_resources.append("procedures")
+    if immunizations: accessed_resources.append("immunizations")
+    if care_plans: accessed_resources.append("care_plans")
+    if clinical_notes: accessed_resources.append("notes")
+
+    # HIPAA Audit: Log PHI access
+    audit_logger.log_phi_access(
+        action=AuditAction.VIEW_PATIENT,
+        patient_id=patient_id,
+        patient_name=name,
+        endpoint=f"/api/v1/patient/{patient_id}",
+        status="success",
+        details=",".join(accessed_resources),
+        user_id=user_id,
+        user_name=user_name,
+        ip_address=ip_address,
+        user_agent=user_agent
+    )
+
     return summary
 
 
 @app.get("/api/v1/patient/{patient_id}/display")
-async def get_patient_display(patient_id: str):
+async def get_patient_display(patient_id: str, request: Request):
     """Get AR-optimized display text for patient"""
-    summary = await get_patient(patient_id)
+    summary = await get_patient(patient_id, request)
     return {"patient_id": patient_id, "display": summary.display_text}
 
 
 @app.get("/api/v1/patient/search", response_model=List[SearchResult])
-async def search_patients(name: str):
+async def search_patients(name: str, request: Request):
     """Search patients by name - for voice command 'Find patient...'"""
     bundle = await fetch_fhir(f"Patient?name={name}&_count=10")
 
@@ -1097,20 +1165,54 @@ async def search_patients(name: str):
             gender=patient.get("gender", "unknown")
         ))
 
+    # HIPAA Audit: Log patient search
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.SEARCH_PATIENT,
+        patient_id="search",
+        endpoint="/api/v1/patient/search",
+        status="success",
+        details=f"query={name}, results={len(results)}",
+        ip_address=ip_address,
+        user_agent=request.headers.get("User-Agent", "")
+    )
+
     return results
 
 
 @app.get("/api/v1/patient/mrn/{mrn}", response_model=PatientSummary)
-async def get_patient_by_mrn(mrn: str):
+async def get_patient_by_mrn(mrn: str, request: Request):
     """Get patient by MRN (wristband barcode scan)"""
     bundle = await fetch_fhir(f"Patient?identifier={mrn}&_count=1")
 
     entries = bundle.get("entry", [])
     if not entries:
+        # Audit failed lookup
+        ip_address = request.client.host if request.client else None
+        audit_logger.log_phi_access(
+            action=AuditAction.LOOKUP_MRN,
+            patient_id="not_found",
+            endpoint=f"/api/v1/patient/mrn/{mrn}",
+            status="failure",
+            details=f"MRN {mrn} not found",
+            ip_address=ip_address
+        )
         raise HTTPException(status_code=404, detail="Patient not found")
 
     patient_id = entries[0].get("resource", {}).get("id")
-    return await get_patient(patient_id)
+
+    # Audit successful MRN lookup
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.LOOKUP_MRN,
+        patient_id=patient_id,
+        endpoint=f"/api/v1/patient/mrn/{mrn}",
+        status="success",
+        details=f"MRN {mrn} resolved to patient {patient_id}",
+        ip_address=ip_address
+    )
+
+    return await get_patient(patient_id, request)
 
 
 # ============ Clinical Notes API ============
@@ -2353,6 +2455,18 @@ async def save_note(request: SaveNoteRequest):
         print(f"📝 Note saved{edited_indicator}{signed_indicator}: {note_id} for patient {request.patient_id}")
         print(f"   Summary: {request.summary[:50]}..." if request.summary else "   (No summary)")
 
+        # HIPAA Audit: Log note save
+        audit_logger.log_note_operation(
+            action=AuditAction.SAVE_NOTE,
+            note_id=note_id,
+            patient_id=request.patient_id,
+            note_type=request.note_type,
+            status="success",
+            details=f"length={len(request.display_text)}",
+            signed_by=request.signed_by,
+            was_edited=request.was_edited
+        )
+
         # Auto-push to EHR if requested
         push_result = None
         if request.push_to_ehr:
@@ -2381,20 +2495,45 @@ async def save_note(request: SaveNoteRequest):
 
 
 @app.get("/api/v1/notes/{note_id}")
-async def get_saved_note(note_id: str):
+async def get_saved_note(note_id: str, request: Request):
     """Retrieve a saved note by ID"""
     if note_id in saved_notes:
-        return saved_notes[note_id]
+        note = saved_notes[note_id]
+
+        # HIPAA Audit: Log note retrieval
+        ip_address = request.client.host if request.client else None
+        audit_logger.log_note_operation(
+            action=AuditAction.VIEW_NOTES,
+            note_id=note_id,
+            patient_id=note.get("patient_id"),
+            note_type=note.get("note_type"),
+            status="success",
+            ip_address=ip_address
+        )
+
+        return note
     raise HTTPException(status_code=404, detail="Note not found")
 
 
 @app.get("/api/v1/patient/{patient_id}/notes")
-async def get_patient_notes(patient_id: str):
+async def get_patient_notes(patient_id: str, request: Request):
     """Get all saved notes for a patient"""
     patient_notes = [
         note for note in saved_notes.values()
         if note["patient_id"] == patient_id
     ]
+
+    # HIPAA Audit: Log notes list access
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.VIEW_NOTES,
+        patient_id=patient_id,
+        endpoint=f"/api/v1/patient/{patient_id}/notes",
+        status="success",
+        details=f"retrieved {len(patient_notes)} notes",
+        ip_address=ip_address
+    )
+
     return {
         "patient_id": patient_id,
         "count": len(patient_notes),
@@ -2403,7 +2542,7 @@ async def get_patient_notes(patient_id: str):
 
 
 @app.post("/api/v1/notes/{note_id}/push")
-async def push_note_endpoint(note_id: str):
+async def push_note_endpoint(note_id: str, request: Request):
     """
     Push a saved note to the EHR as a FHIR DocumentReference.
 
@@ -2415,6 +2554,20 @@ async def push_note_endpoint(note_id: str):
 
     if not result.get("success") and result.get("error") == "Note not found":
         raise HTTPException(status_code=404, detail="Note not found")
+
+    # HIPAA Audit: Log push attempt
+    note = saved_notes.get(note_id, {})
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_note_operation(
+        action=AuditAction.PUSH_NOTE,
+        note_id=note_id,
+        patient_id=note.get("patient_id"),
+        note_type=note.get("note_type"),
+        status="success" if result.get("success") else "failure",
+        details=result.get("error") or result.get("fhir_id", ""),
+        fhir_id=result.get("fhir_id"),
+        ip_address=ip_address
+    )
 
     return result
 

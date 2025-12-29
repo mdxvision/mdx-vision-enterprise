@@ -96,6 +96,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Status Tracking**: Tracks pushed_to_ehr, fhir_document_id, pushed_at
 - **Graceful Degradation**: Handles sandbox read-only (403) with clear messaging
 
+### HIPAA Audit Logging (NEW)
+- **Persistent Logs**: JSON-structured audit logs with 10MB rotation
+- **PHI Access Tracking**: All patient data views logged with user/IP/timestamp
+- **Note Operations**: Save, push, retrieve all audited
+- **Safety Events**: Critical vitals, labs, and drug interactions logged
+- **Compliance Ready**: Structured format for audit review and analysis
+- **Log Location**: `ehr-proxy/logs/audit.log`
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection
