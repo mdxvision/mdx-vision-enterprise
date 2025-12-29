@@ -969,6 +969,110 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveCurrentNote() {
+        // Show sign-off confirmation dialog before saving
+        showSignOffConfirmation()
+    }
+
+    private fun showSignOffConfirmation() {
+        val note = lastGeneratedNote
+        if (note == null) {
+            Toast.makeText(this, "No note to save. Generate a note first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val patientName = currentPatientData?.optString("name") ?: "Unknown Patient"
+        val noteType = note.optString("note_type", currentNoteType)
+        val wasEdited = isNoteEditing
+        val editedLabel = if (wasEdited) " (edited)" else ""
+
+        // Build confirmation dialog
+        val dialogView = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 32, 48, 16)
+        }
+
+        // Header
+        val headerText = TextView(this).apply {
+            text = "📋 Sign Off & Save Note"
+            textSize = 20f
+            setTextColor(0xFF10B981.toInt())
+            setPadding(0, 0, 0, 24)
+        }
+        dialogView.addView(headerText)
+
+        // Patient info
+        val patientText = TextView(this).apply {
+            text = "Patient: $patientName"
+            textSize = 16f
+            setTextColor(0xFF1F2937.toInt())
+            setPadding(0, 0, 0, 8)
+        }
+        dialogView.addView(patientText)
+
+        // Note type
+        val noteTypeText = TextView(this).apply {
+            text = "Note Type: $noteType$editedLabel"
+            textSize = 16f
+            setTextColor(0xFF1F2937.toInt())
+            setPadding(0, 0, 0, 8)
+        }
+        dialogView.addView(noteTypeText)
+
+        // Clinician
+        val clinicianText = TextView(this).apply {
+            text = "Signed by: $clinicianName"
+            textSize = 16f
+            setTextColor(0xFF1F2937.toInt())
+            setPadding(0, 0, 0, 16)
+        }
+        dialogView.addView(clinicianText)
+
+        // Confirmation checkbox
+        val confirmCheckbox = android.widget.CheckBox(this).apply {
+            text = "I confirm this clinical note is accurate and complete"
+            textSize = 14f
+            setTextColor(0xFF374151.toInt())
+            setPadding(0, 8, 0, 8)
+        }
+        dialogView.addView(confirmCheckbox)
+
+        // Disclaimer
+        val disclaimerText = TextView(this).apply {
+            text = "This note will be saved to the patient's medical record."
+            textSize = 12f
+            setTextColor(0xFF6B7280.toInt())
+            setPadding(0, 16, 0, 0)
+        }
+        dialogView.addView(disclaimerText)
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setPositiveButton("Sign & Save", null)  // Set to null initially to prevent auto-dismiss
+            .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
+            .create()
+
+        dialog.setOnShowListener {
+            val signButton = dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+            signButton.isEnabled = false  // Disable until checkbox is checked
+
+            confirmCheckbox.setOnCheckedChangeListener { _, isChecked ->
+                signButton.isEnabled = isChecked
+            }
+
+            signButton.setOnClickListener {
+                if (confirmCheckbox.isChecked) {
+                    dialog.dismiss()
+                    performNoteSave()
+                } else {
+                    Toast.makeText(this, "Please confirm the note is accurate", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        dialog.show()
+    }
+
+    private fun performNoteSave() {
         val note = lastGeneratedNote
         val transcript = lastNoteTranscript
         val patientId = currentPatientData?.optString("patient_id")
@@ -989,12 +1093,14 @@ class MainActivity : AppCompatActivity() {
             try {
                 val json = JSONObject().apply {
                     put("patient_id", patientId ?: TEST_PATIENT_ID)
-                    put("note_type", "SOAP")
+                    put("note_type", currentNoteType)
                     put("display_text", noteContent)  // Use edited content
                     put("summary", note.optString("summary", ""))
                     put("transcript", transcript ?: "")
                     put("timestamp", note.optString("timestamp", ""))
                     put("was_edited", wasEdited)  // Flag if note was manually edited
+                    put("signed_by", clinicianName)  // Clinician who signed off
+                    put("signed_at", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).format(java.util.Date()))
                 }
 
                 val request = Request.Builder()

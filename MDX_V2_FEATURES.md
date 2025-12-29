@@ -117,7 +117,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Retrieve saved notes | Done | GET `/notes/{id}` |
 | [x] Patient note history | Done | GET `/patient/{id}/notes` |
 | [x] Edit note | Done | EditText in overlay, reset button, voice commands |
-| [ ] Sign/authenticate note | Pending | Digital signature |
+| [x] Sign/authenticate note | Done | Confirmation dialog with checkbox, signed_by tracking |
 | [ ] Push to EHR | Pending | FHIR DocumentReference |
 | [ ] Note versioning | Pending | Track changes |
 

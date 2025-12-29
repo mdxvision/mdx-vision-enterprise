@@ -244,14 +244,15 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 16. **Specialty Vocabulary Auto-Load** - Detects cardiology/pulmonology/etc from patient conditions
 17. **Edit Note Before Save** - EditText overlay with reset button, voice commands ("edit note", "reset note")
 18. **Care Plans Display** - FHIR CarePlan resource with voice command ("show care plans")
+19. **Note Sign-Off Workflow** - Confirmation dialog with checkbox, signed_by/signed_at tracking
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| **Note sign-off workflow** | Confirm before final save |
 | **Clinical notes read** | FHIR DocumentReference for existing notes |
+| **Note preview before generate** | Show transcript summary before AI generation |
 
 ### Medium Effort
 | Feature | Notes |

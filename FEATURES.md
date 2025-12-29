@@ -76,6 +76,7 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Auto-coding (ICD-10) | Done | `ehr-proxy/main.py` (90+ codes) |
 | [x] Auto-coding (CPT) | Done | `ehr-proxy/main.py` (100+ codes) |
 | [x] Save note to EHR | Done | `ehr-proxy/main.py` (simulated) |
+| [x] Note sign-off workflow | Done | Confirmation dialog with checkbox |
 
 ---
 
@@ -199,6 +200,8 @@ Based on US Patent 15/237,980 and product requirements.
 8. ~~**Speaker Context from Chart**~~ - Done (maps Speaker 0/1 to patient/clinician names)
 9. ~~**Specialty Vocabulary Auto-Load**~~ - Done (detects specialty from patient conditions/ICD-10)
 10. ~~**Edit Note Before Save**~~ - Done (EditText with reset, voice commands)
+11. ~~**Care Plans Display**~~ - Done (FHIR CarePlan with voice command)
+12. ~~**Note Sign-Off Workflow**~~ - Done (Confirmation dialog with checkbox)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
