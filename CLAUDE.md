@@ -263,6 +263,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 35. **Vital Trends** - Historical vital value comparison (BP, HR, SpO2, etc.) with trend icons, delta display, TTS alerts
 36. **Patient Photo Display** - FHIR photo extraction with base64/URL support, initials placeholder, circular avatar in header
 37. **Patient Search History** - Recently viewed patients list, quick load by number ("load 1"), voice commands, relative timestamps
+38. **Session Timeout** - HIPAA compliance auto-lock after 5 min inactivity, configurable timeout, voice commands ("lock session", "unlock", "timeout N min")
 
 ## Next Up (Recommended)
 

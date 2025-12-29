@@ -181,6 +181,9 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Show history" / "Recent patients" | Done |
 | [x] "Load [N]" - Load from history | Done |
 | [x] "Clear history" | Done |
+| [x] "Lock session" / "Lock" | Done |
+| [x] "Unlock" | Done |
+| [x] "Timeout [N] min" - Set timeout | Done |
 
 ---
 
@@ -231,6 +234,7 @@ Based on US Patent 15/237,980 and product requirements.
 28. ~~**Vital Trends**~~ - Done (Historical comparison for BP/HR/SpO2/etc, trend icons, TTS alerts)
 29. ~~**Patient Photo Display**~~ - Done (FHIR photo or initials placeholder, circular avatar in header)
 30. ~~**Patient Search History**~~ - Done (Recently viewed patients list, quick load by number, voice commands, relative timestamps)
+31. ~~**Session Timeout**~~ - Done (HIPAA compliance auto-lock after inactivity, configurable timeout, voice commands, lock screen overlay)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

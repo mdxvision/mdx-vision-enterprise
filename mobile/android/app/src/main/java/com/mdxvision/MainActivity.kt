@@ -67,6 +67,10 @@ class MainActivity : AppCompatActivity() {
         // Patient history
         private const val HISTORY_KEY = "patient_history"
         private const val MAX_HISTORY_SIZE = 10
+        // Session timeout (HIPAA compliance)
+        private const val PREF_SESSION_TIMEOUT = "session_timeout_minutes"
+        private const val DEFAULT_SESSION_TIMEOUT_MINUTES = 5
+        private const val SESSION_CHECK_INTERVAL_MS = 30_000L // Check every 30 seconds
     }
 
     // Offline cache
@@ -131,6 +135,14 @@ class MainActivity : AppCompatActivity() {
     private var isTtsReady: Boolean = false
     private var isSpeechFeedbackEnabled: Boolean = true  // Audible confirmations for actions
 
+    // Session timeout for HIPAA compliance
+    private var lastActivityTime: Long = System.currentTimeMillis()
+    private var isSessionLocked: Boolean = false
+    private var sessionTimeoutMinutes: Int = DEFAULT_SESSION_TIMEOUT_MINUTES
+    private var sessionCheckHandler: android.os.Handler? = null
+    private var sessionCheckRunnable: Runnable? = null
+    private var lockScreenOverlay: android.widget.FrameLayout? = null
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -158,6 +170,10 @@ class MainActivity : AppCompatActivity() {
         loadFontSizeSetting()
         loadClinicianName()
         loadSpeechFeedbackSetting()
+        loadSessionTimeoutSetting()
+
+        // Start session timeout checker for HIPAA compliance
+        startSessionTimeoutChecker()
 
         // Register network callback for auto-sync of offline drafts
         registerNetworkCallback()
@@ -1394,6 +1410,11 @@ class MainActivity : AppCompatActivity() {
             |• "Load [N]" - Load patient from history
             |• "Clear history" - Clear patient history
             |
+            |🔐 SECURITY
+            |• "Lock session" - Lock for HIPAA
+            |• "Unlock" - Unlock session
+            |• "Timeout [N] min" - Set timeout
+            |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
             |• "Close" - Dismiss overlay
@@ -2151,6 +2172,232 @@ class MainActivity : AppCompatActivity() {
         cachePrefs.edit().clear().apply()
         Toast.makeText(this, "Patient cache cleared", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Cache cleared")
+    }
+
+    // ============ Session Timeout Methods (HIPAA Compliance) ============
+
+    /**
+     * Update last activity timestamp. Call this on any user interaction.
+     */
+    private fun updateLastActivity() {
+        lastActivityTime = System.currentTimeMillis()
+    }
+
+    /**
+     * Start the session timeout checker.
+     * Runs periodically to check if session should be locked.
+     */
+    private fun startSessionTimeoutChecker() {
+        sessionCheckHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        sessionCheckRunnable = object : Runnable {
+            override fun run() {
+                checkSessionTimeout()
+                sessionCheckHandler?.postDelayed(this, SESSION_CHECK_INTERVAL_MS)
+            }
+        }
+        sessionCheckHandler?.postDelayed(sessionCheckRunnable!!, SESSION_CHECK_INTERVAL_MS)
+        Log.d(TAG, "Session timeout checker started (${sessionTimeoutMinutes} min timeout)")
+    }
+
+    /**
+     * Stop the session timeout checker.
+     */
+    private fun stopSessionTimeoutChecker() {
+        sessionCheckRunnable?.let { sessionCheckHandler?.removeCallbacks(it) }
+        sessionCheckHandler = null
+        sessionCheckRunnable = null
+        Log.d(TAG, "Session timeout checker stopped")
+    }
+
+    /**
+     * Check if session has timed out and lock if needed.
+     */
+    private fun checkSessionTimeout() {
+        if (isSessionLocked) return
+
+        val elapsed = System.currentTimeMillis() - lastActivityTime
+        val timeoutMs = sessionTimeoutMinutes * 60 * 1000L
+
+        if (elapsed >= timeoutMs) {
+            Log.d(TAG, "Session timeout - locking after ${elapsed / 1000}s inactivity")
+            lockSession()
+        }
+    }
+
+    /**
+     * Lock the session - hide PHI and show lock screen.
+     */
+    private fun lockSession() {
+        if (isSessionLocked) return
+
+        isSessionLocked = true
+        Log.d(TAG, "Session locked for HIPAA compliance")
+
+        // Stop any active transcription
+        if (isLiveTranscribing) {
+            stopLiveTranscription()
+        }
+
+        // Stop TTS
+        textToSpeech?.stop()
+
+        // Hide any data overlays
+        hideDataOverlay()
+        hideLiveTranscriptionOverlay()
+
+        // Show lock screen
+        showLockScreenOverlay()
+
+        // Update status
+        statusText.text = "Session Locked"
+        transcriptText.text = "Tap or say 'unlock' to continue"
+        patientDataText.text = ""
+
+        // Speak lock notification
+        speakFeedback("Session locked due to inactivity")
+    }
+
+    /**
+     * Unlock the session.
+     */
+    private fun unlockSession() {
+        if (!isSessionLocked) return
+
+        isSessionLocked = false
+        updateLastActivity()
+
+        // Hide lock screen
+        hideLockScreenOverlay()
+
+        // Restore status
+        statusText.text = "Session Unlocked"
+        transcriptText.text = "Ready for commands"
+
+        // Speak unlock confirmation
+        speakFeedback("Session unlocked")
+
+        Log.d(TAG, "Session unlocked")
+    }
+
+    /**
+     * Show the lock screen overlay.
+     */
+    private fun showLockScreenOverlay() {
+        if (lockScreenOverlay != null) return
+
+        val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        lockScreenOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xF0121212.toInt())
+            isClickable = true
+            isFocusable = true
+
+            setOnClickListener {
+                unlockSession()
+            }
+        }
+
+        val lockContent = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(48, 48, 48, 48)
+        }
+
+        // Lock icon
+        val lockIcon = TextView(this).apply {
+            text = "🔒"
+            textSize = 72f
+            gravity = android.view.Gravity.CENTER
+        }
+
+        // Lock message
+        val lockMessage = TextView(this).apply {
+            text = "Session Locked"
+            textSize = 28f
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 24, 0, 16)
+        }
+
+        // HIPAA message
+        val hipaaMessage = TextView(this).apply {
+            text = "For HIPAA compliance, this session\nwas locked due to inactivity."
+            textSize = 16f
+            setTextColor(0xFFAAAAAA.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, 32)
+        }
+
+        // Unlock instruction
+        val unlockInstruction = TextView(this).apply {
+            text = "Tap anywhere or say \"unlock\" to continue"
+            textSize = 14f
+            setTextColor(0xFF4CAF50.toInt())
+            gravity = android.view.Gravity.CENTER
+        }
+
+        // Timeout info
+        val timeoutInfo = TextView(this).apply {
+            text = "Timeout: ${sessionTimeoutMinutes} minutes"
+            textSize = 12f
+            setTextColor(0xFF666666.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 48, 0, 0)
+        }
+
+        lockContent.addView(lockIcon)
+        lockContent.addView(lockMessage)
+        lockContent.addView(hipaaMessage)
+        lockContent.addView(unlockInstruction)
+        lockContent.addView(timeoutInfo)
+
+        val contentParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.CENTER
+        }
+
+        lockScreenOverlay?.addView(lockContent, contentParams)
+
+        val overlayParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        )
+
+        rootView.addView(lockScreenOverlay, overlayParams)
+        Log.d(TAG, "Lock screen overlay shown")
+    }
+
+    /**
+     * Hide the lock screen overlay.
+     */
+    private fun hideLockScreenOverlay() {
+        lockScreenOverlay?.let {
+            val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+            rootView.removeView(it)
+            lockScreenOverlay = null
+            Log.d(TAG, "Lock screen overlay hidden")
+        }
+    }
+
+    /**
+     * Set session timeout duration in minutes.
+     */
+    private fun setSessionTimeout(minutes: Int) {
+        sessionTimeoutMinutes = minutes.coerceIn(1, 60)
+        cachePrefs.edit().putInt(PREF_SESSION_TIMEOUT, sessionTimeoutMinutes).apply()
+        Toast.makeText(this, "Session timeout set to $sessionTimeoutMinutes minutes", Toast.LENGTH_SHORT).show()
+        speakFeedback("Session timeout set to $sessionTimeoutMinutes minutes")
+        Log.d(TAG, "Session timeout set to $sessionTimeoutMinutes minutes")
+    }
+
+    /**
+     * Load session timeout setting from preferences.
+     */
+    private fun loadSessionTimeoutSetting() {
+        sessionTimeoutMinutes = cachePrefs.getInt(PREF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT_MINUTES)
+        Log.d(TAG, "Loaded session timeout: $sessionTimeoutMinutes minutes")
     }
 
     // ============ Patient History Methods ============
@@ -3288,6 +3535,18 @@ class MainActivity : AppCompatActivity() {
         // Parse voice commands for patient lookup
         val lower = transcript.lowercase()
 
+        // Update activity on any voice command
+        updateLastActivity()
+
+        // If session is locked, only process unlock command
+        if (isSessionLocked) {
+            if (lower.contains("unlock")) {
+                unlockSession()
+            }
+            startVoiceRecognition()
+            return
+        }
+
         when {
             lower.contains("patient") && lower.contains("load") -> {
                 // Extract patient ID if mentioned
@@ -3433,6 +3692,25 @@ class MainActivity : AppCompatActivity() {
             lower.contains("clear history") -> {
                 clearPatientHistory()
                 hideDataOverlay()
+            }
+            // Session timeout voice commands (HIPAA compliance)
+            lower.contains("lock session") || lower == "lock" -> {
+                lockSession()
+            }
+            lower.contains("unlock") -> {
+                if (isSessionLocked) {
+                    unlockSession()
+                } else {
+                    Toast.makeText(this, "Session is not locked", Toast.LENGTH_SHORT).show()
+                }
+            }
+            lower.contains("timeout") && Regex("(\\d+)\\s*min").containsMatchIn(lower) -> {
+                // Set timeout: "timeout 10 minutes", "set timeout 5 min"
+                val match = Regex("(\\d+)\\s*min").find(lower)
+                if (match != null) {
+                    val minutes = match.groupValues[1].toIntOrNull() ?: DEFAULT_SESSION_TIMEOUT_MINUTES
+                    setSessionTimeout(minutes)
+                }
             }
             lower.contains("load ") && Regex("load\\s+(\\d+)").containsMatchIn(lower) -> {
                 // Load patient from history by number (e.g., "load 1", "load 2")
@@ -3963,6 +4241,21 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Update activity on resume and restart timeout checker
+        updateLastActivity()
+        if (sessionCheckHandler == null) {
+            startSessionTimeoutChecker()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Stop timeout checker when app is in background
+        stopSessionTimeoutChecker()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (::speechRecognizer.isInitialized) {
@@ -3975,5 +4268,13 @@ class MainActivity : AppCompatActivity() {
         textToSpeech?.shutdown()
         // Clean up network callback
         unregisterNetworkCallback()
+        // Clean up session timeout checker
+        stopSessionTimeoutChecker()
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
+        // Update activity on any touch event
+        updateLastActivity()
+        return super.dispatchTouchEvent(ev)
     }
 }

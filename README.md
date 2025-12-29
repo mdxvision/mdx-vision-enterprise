@@ -132,6 +132,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Voice Commands**: "show history", "recent patients", "clear history"
 - **Persistent**: History survives app restarts
 
+### Session Timeout (NEW)
+- **HIPAA Compliance**: Auto-lock after configurable inactivity period
+- **Default 5 Minutes**: Adjustable from 1-60 minutes via voice
+- **Lock Screen**: Full-screen overlay hides all PHI when locked
+- **Touch/Voice Unlock**: Tap anywhere or say "unlock" to continue
+- **Activity Tracking**: Touch, voice commands reset the timeout
+- **Voice Commands**: "lock session", "unlock", "timeout 10 minutes"
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection
