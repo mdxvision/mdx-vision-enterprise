@@ -44,7 +44,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var transcriptText: TextView
     private lateinit var patientDataText: TextView
-    private val httpClient = OkHttpClient()
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     // Documentation mode
     private var isDocumentationMode = false
@@ -526,14 +530,22 @@ class MainActivity : AppCompatActivity() {
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Insufficient permissions"
                 SpeechRecognizer.ERROR_NETWORK -> "Network error"
                 SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-                SpeechRecognizer.ERROR_NO_MATCH -> "No match"
+                SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected"
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy"
                 SpeechRecognizer.ERROR_SERVER -> "Server error"
-                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timeout"
+                SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
                 else -> "Unknown error"
             }
             Log.e(TAG, "Speech error: $errorMessage")
-            statusText.text = "Error: $errorMessage"
+
+            // Don't overwrite status with errors - just show in transcript area briefly
+            transcriptText.text = errorMessage
+            statusText.text = "MDx Vision"
+
+            // Continue listening in documentation mode
+            if (isDocumentationMode) {
+                transcriptText.postDelayed({ startVoiceRecognition() }, 1000)
+            }
         }
 
         override fun onResults(results: Bundle?) {
