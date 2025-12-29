@@ -1736,6 +1736,10 @@ class MainActivity : AppCompatActivity() {
                 // Show care plans
                 fetchPatientSection("care_plans")
             }
+            lower.contains("clinical note") || lower.contains("show notes") || lower.contains("patient notes") || lower.contains("previous notes") || lower.contains("history notes") -> {
+                // Show clinical notes from EHR
+                fetchPatientSection("clinical_notes")
+            }
             lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
                 // Close any open overlay
                 if (isLiveTranscribing) {
@@ -1837,6 +1841,7 @@ class MainActivity : AppCompatActivity() {
                 "immunizations" -> formatImmunizations(patient)
                 "conditions" -> formatConditions(patient)
                 "care_plans" -> formatCarePlans(patient)
+                "clinical_notes" -> formatClinicalNotes(patient)
                 else -> patient.optString("display_text", "No data")
             }
             showDataOverlay(title, content)
@@ -1881,6 +1886,7 @@ class MainActivity : AppCompatActivity() {
                                     "immunizations" -> formatImmunizations(patient)
                                     "conditions" -> formatConditions(patient)
                                     "care_plans" -> formatCarePlans(patient)
+                                    "clinical_notes" -> formatClinicalNotes(patient)
                                     else -> patient.optString("display_text", "No data")
                                 }
                                 showDataOverlay(title, content)
@@ -2002,6 +2008,43 @@ class MainActivity : AppCompatActivity() {
             if (description.isNotEmpty()) {
                 sb.append("  ${description.take(100)}${if (description.length > 100) "..." else ""}\n")
             }
+        }
+        return sb.toString()
+    }
+
+    private fun formatClinicalNotes(patient: JSONObject): String {
+        val notes = patient.optJSONArray("clinical_notes") ?: return "No clinical notes found"
+        if (notes.length() == 0) return "No clinical notes found"
+        val sb = StringBuilder("📄 CLINICAL NOTES\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(notes.length(), 10)) {
+            val note = notes.getJSONObject(i)
+            sb.append("• ${note.getString("title")}")
+            val docType = note.optString("doc_type", "")
+            if (docType.isNotEmpty() && docType != note.getString("title")) {
+                sb.append(" ($docType)")
+            }
+            sb.append("\n")
+            // Show date and author
+            val date = note.optString("date", "")
+            val author = note.optString("author", "")
+            if (date.isNotEmpty() || author.isNotEmpty()) {
+                sb.append("  ")
+                if (date.isNotEmpty()) sb.append("Date: $date")
+                if (date.isNotEmpty() && author.isNotEmpty()) sb.append(" | ")
+                if (author.isNotEmpty()) sb.append("By: $author")
+                sb.append("\n")
+            }
+            // Show status
+            val status = note.optString("status", "")
+            if (status.isNotEmpty()) {
+                sb.append("  Status: $status\n")
+            }
+            // Show content preview if available
+            val preview = note.optString("content_preview", "")
+            if (preview.isNotEmpty()) {
+                sb.append("  ${preview.take(100)}${if (preview.length > 100) "..." else ""}\n")
+            }
+            sb.append("\n")
         }
         return sb.toString()
     }

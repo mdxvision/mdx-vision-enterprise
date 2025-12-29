@@ -170,6 +170,7 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Edit note" | Done |
 | [x] "Reset note" / "Undo changes" | Done |
 | [x] "Show care plans" | Done |
+| [x] "Show notes" / "Clinical notes" | Done |
 
 ---
 
@@ -202,6 +203,7 @@ Based on US Patent 15/237,980 and product requirements.
 10. ~~**Edit Note Before Save**~~ - Done (EditText with reset, voice commands)
 11. ~~**Care Plans Display**~~ - Done (FHIR CarePlan with voice command)
 12. ~~**Note Sign-Off Workflow**~~ - Done (Confirmation dialog with checkbox)
+13. ~~**Clinical Notes Read**~~ - Done (FHIR DocumentReference with voice command)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

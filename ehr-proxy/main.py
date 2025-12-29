@@ -108,6 +108,15 @@ class CarePlan(BaseModel):
     description: str = ""
 
 
+class ClinicalNote(BaseModel):
+    title: str
+    doc_type: str = ""  # e.g., "Progress Note", "Discharge Summary"
+    date: str = ""
+    author: str = ""
+    status: str = ""
+    content_preview: str = ""  # First 200 chars of content
+
+
 class PatientSummary(BaseModel):
     patient_id: str
     name: str
@@ -122,6 +131,7 @@ class PatientSummary(BaseModel):
     immunizations: List[Immunization] = []
     conditions: List[Condition] = []
     care_plans: List[CarePlan] = []
+    clinical_notes: List[ClinicalNote] = []
     display_text: str = ""
 
 
@@ -466,6 +476,85 @@ def extract_care_plans(bundle: dict) -> List[CarePlan]:
     return care_plans
 
 
+def extract_clinical_notes(bundle: dict) -> List[ClinicalNote]:
+    """Extract clinical notes from FHIR DocumentReference bundle"""
+    notes = []
+    for entry in bundle.get("entry", [])[:10]:
+        doc = entry.get("resource", {})
+
+        # Get document title/description
+        title = doc.get("description", "")
+        if not title:
+            # Try to get from type
+            doc_type_obj = doc.get("type", {})
+            if doc_type_obj:
+                type_coding = doc_type_obj.get("coding", [])
+                if type_coding:
+                    title = type_coding[0].get("display", type_coding[0].get("code", "Clinical Note"))
+
+        # Get document type/category
+        doc_type = ""
+        category = doc.get("category", [])
+        if category:
+            cat_coding = category[0].get("coding", [])
+            if cat_coding:
+                doc_type = cat_coding[0].get("display", cat_coding[0].get("code", ""))
+        if not doc_type:
+            # Fallback to type field
+            doc_type_obj = doc.get("type", {})
+            if doc_type_obj:
+                type_coding = doc_type_obj.get("coding", [])
+                if type_coding:
+                    doc_type = type_coding[0].get("display", "Note")
+
+        # Get date
+        date = ""
+        if "date" in doc:
+            date = doc["date"][:10] if len(doc["date"]) >= 10 else doc["date"]
+        elif "context" in doc and "period" in doc["context"]:
+            period = doc["context"]["period"]
+            date = period.get("start", "")[:10] if period.get("start") else ""
+
+        # Get author
+        author = ""
+        authors = doc.get("author", [])
+        if authors:
+            author_ref = authors[0]
+            if isinstance(author_ref, dict):
+                author = author_ref.get("display", author_ref.get("reference", ""))
+
+        # Get status
+        status = doc.get("status", "")
+
+        # Get content preview (from attachment or contained)
+        content_preview = ""
+        content = doc.get("content", [])
+        if content:
+            attachment = content[0].get("attachment", {})
+            # Try to get data (base64 encoded) or title
+            if "data" in attachment:
+                import base64
+                try:
+                    decoded = base64.b64decode(attachment["data"]).decode("utf-8", errors="ignore")
+                    content_preview = decoded[:200]
+                except:
+                    content_preview = ""
+            elif "title" in attachment:
+                content_preview = attachment["title"]
+
+        if title or doc_type:
+            notes.append(ClinicalNote(
+                title=title or doc_type or "Clinical Note",
+                doc_type=doc_type,
+                date=date,
+                author=author,
+                status=status,
+                content_preview=content_preview[:200] if content_preview else ""
+            ))
+
+    return notes
+
+
 def format_ar_display(summary: PatientSummary) -> str:
     """Format patient data for AR glasses display"""
     lines = [
@@ -502,6 +591,10 @@ def format_ar_display(summary: PatientSummary) -> str:
     if summary.care_plans:
         plan_str = ", ".join([f"{p.title} [{p.status}]" for p in summary.care_plans[:3]])
         lines.append(f"📑 CARE PLANS: {plan_str}")
+
+    if summary.clinical_notes:
+        notes_str = ", ".join([f"{n.title} ({n.date})" for n in summary.clinical_notes[:3]])
+        lines.append(f"📄 NOTES: {notes_str}")
 
     return "\n".join(lines)
 
@@ -575,6 +668,16 @@ async def get_patient(patient_id: str):
         print(f"⚠️ Could not fetch care plans: {e}")
         care_plans = []
 
+    # Fetch clinical notes (DocumentReference)
+    try:
+        doc_bundle = await fetch_fhir(f"DocumentReference?patient={patient_id}&_count=10")
+        print(f"🔍 DocumentReference bundle type: {doc_bundle.get('resourceType', 'N/A')}, entries: {len(doc_bundle.get('entry', []))}")
+        clinical_notes = extract_clinical_notes(doc_bundle)
+        print(f"✓ Fetched {len(clinical_notes)} clinical notes")
+    except Exception as e:
+        print(f"⚠️ Could not fetch clinical notes: {e}")
+        clinical_notes = []
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -587,7 +690,8 @@ async def get_patient(patient_id: str):
         procedures=procedures,
         immunizations=immunizations,
         conditions=conditions,
-        care_plans=care_plans
+        care_plans=care_plans,
+        clinical_notes=clinical_notes
     )
     summary.display_text = format_ar_display(summary)
 

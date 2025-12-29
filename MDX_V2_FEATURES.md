@@ -79,7 +79,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Immunizations | Done | Immunization resource |
 | [x] Conditions/Problems | Done | Condition resource via FHIR |
 | [x] Care plans | Done | CarePlan resource via FHIR |
-| [ ] Clinical notes read | Pending | DocumentReference |
+| [x] Clinical notes read | Done | DocumentReference via FHIR |
 
 ### Patient Identification
 | Feature | Status | Implementation |
@@ -200,6 +200,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Edit note" | Done | Focus on note for editing |
 | [x] "Reset note" / "Undo changes" | Done | Restore note to original |
 | [x] "Show care plans" | Done | Display patient care plans |
+| [x] "Show notes" / "Clinical notes" | Done | Display existing clinical notes |
 
 ---
 
