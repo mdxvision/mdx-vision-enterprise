@@ -8,23 +8,33 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Android/Vuzix App | **Working** | Voice commands, patient lookup, live transcription |
+| Android/Vuzix App | **Working** | 30+ voice commands, patient lookup, live transcription |
 | Cerner Integration | **Working** | Live sandbox data |
 | Epic Integration | Pending | Credentials needed |
 | Veradigm Integration | Ready | Service implemented |
 | Real-time Transcription | **Working** | AssemblyAI/Deepgram with speaker diarization |
-| AI Clinical Notes | **Working** | SOAP, Progress, H&P, Consult notes |
+| AI Clinical Notes | **Working** | SOAP, Progress, H&P, Consult notes with preview |
 | Medical Coding | **Working** | ICD-10 (90+) & CPT (100+) auto-detection |
+| Text-to-Speech | **Working** | Patient briefings, action confirmations |
 | Web Dashboard | **Working** | localhost:5173 |
 | Camera/Barcode | **Working** | Patient wristband scan via ML Kit |
 
 ## Key Features
 
-### Voice Commands
+### Voice Commands (30+)
 - **Wake Word**: "Hey MDx" for hands-free activation
 - **12-Button Grid**: Tap or speak commands for all functions
 - **Patient Data**: Load, search, scan wristband
-- **Clinical**: Start note, live transcribe, show vitals/meds/allergies/labs
+- **Clinical**: Show vitals/meds/allergies/labs/conditions/care plans/notes
+- **Documentation**: Start note, live transcribe, generate, save
+- **Settings**: Font size, auto-scroll, speech feedback, clinician name
+- **Help**: Say "Help" to see all available voice commands
+
+### Hands-Free Patient Briefing (NEW)
+- **Quick Summary**: "Patient summary" shows key info at a glance
+- **Spoken Briefing**: "Brief me" reads patient info aloud while walking
+- **Safety First**: Allergies always spoken first
+- **Natural Speech**: Dates and vitals formatted for clarity ("September 15th, 1990")
 
 ### Real-Time Transcription
 - **Dual Provider**: AssemblyAI or Deepgram
@@ -32,18 +42,29 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Speaker Context**: Maps Speaker 0/1 to patient/clinician names from chart
 - **Medical Vocabulary**: 500+ terms for improved accuracy
 - **Specialty Auto-Detection**: Detects cardiology/pulmonology/orthopedics/neurology/pediatrics from ICD-10
+- **Transcript Preview**: Review word count, detected topics before generating note
 
 ### AI Clinical Documentation
 - **Note Types**: SOAP, Progress Note, H&P, Consult Note
 - **Auto-Detection**: Analyzes transcript to suggest appropriate note format
 - **Medical Coding**: ICD-10 (90+ codes) and CPT (100+ codes) auto-extraction
-- **Edit Before Save**: Modify AI-generated notes before saving (voice: "edit note", "reset note")
+- **Preview Before Generate**: See captured topics, word count, re-record option
+- **Edit Before Save**: Modify AI-generated notes before saving
+- **Sign-Off Workflow**: Confirmation dialog with clinician attestation
 - **Template + AI**: Works with or without Claude API
+
+### Speech Feedback (NEW)
+- **Action Confirmations**: "Patient loaded", "Recording started", "Note saved"
+- **Error Announcements**: Spoken alerts for connection issues
+- **Toggleable**: Say "speech feedback" to enable/disable
+- **Conversational EHR**: True hands-free, eyes-free operation
 
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection
 - **Multi-EHR**: Epic and Veradigm ready (credentials needed)
+- **Clinical Notes**: Read existing notes from EHR (DocumentReference)
+- **Care Plans**: Display patient care plans from EHR
 
 ## Architecture
 
