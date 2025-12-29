@@ -55,6 +55,8 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 
 ### Speech Feedback (NEW)
 - **Action Confirmations**: "Patient loaded", "Recording started", "Note saved"
+- **Allergy Warnings**: Critical allergies automatically spoken aloud when patient loads
+- **Safety-First**: Allergy warnings always active, even when feedback disabled
 - **Error Announcements**: Spoken alerts for connection issues
 - **Toggleable**: Say "speech feedback" to enable/disable
 - **Conversational EHR**: True hands-free, eyes-free operation

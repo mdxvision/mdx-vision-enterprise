@@ -234,6 +234,8 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Vital names for speech | Done | "B M I", "Blood pressure" |
 | [x] Stop speaking command | Done | Voice command |
 | [x] Speech rate optimization | Done | 0.9x for medical clarity |
+| [x] Allergy warnings auto-speak | Done | `speakAllergyWarnings()` |
+| [x] Safety-first alerts | Done | Bypasses toggle for allergies |
 
 ---
 
@@ -325,6 +327,7 @@ Based on MDx v2.0 Brief Technical Description document.
 8. Text-to-Speech patient briefing (hands-free while walking)
 9. Transcript preview with topic detection before note generation
 10. Speech feedback for action confirmations (toggleable)
+11. Automatic allergy warnings spoken when patient loads (safety-first)
 
 ### Next Priorities
 1. Epic/Veradigm live integration

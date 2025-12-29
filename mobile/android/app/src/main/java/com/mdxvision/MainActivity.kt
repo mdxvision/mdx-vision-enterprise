@@ -1724,6 +1724,9 @@ class MainActivity : AppCompatActivity() {
                 showDataOverlay("📴 OFFLINE: $name", displayText + "\n\n⚠️ Showing cached data")
                 statusText.text = "Offline Mode"
                 transcriptText.text = "Using cached data"
+                // Speech feedback and allergy warnings even when offline
+                speakFeedback("Patient $name loaded from cache")
+                speakAllergyWarnings(cached)
                 return
             } else {
                 statusText.text = "Offline - No cache"
@@ -1756,9 +1759,13 @@ class MainActivity : AppCompatActivity() {
                                 showDataOverlay("📴 CACHED: $name", displayText + "\n\n⚠️ Network error - showing cached data")
                                 statusText.text = "Using cache"
                                 transcriptText.text = "Network unavailable"
+                                // Speech feedback and allergy warnings from cache
+                                speakFeedback("Patient $name loaded from cache")
+                                speakAllergyWarnings(cached)
                             } else {
                                 statusText.text = "Connection failed"
                                 transcriptText.text = "Error: ${e.message}"
+                                speakFeedback("Failed to load patient")
                             }
                         }
                     }
@@ -1781,6 +1788,9 @@ class MainActivity : AppCompatActivity() {
 
                                 // Speech feedback
                                 speakFeedback("Patient $name loaded")
+
+                                // Allergy warnings (safety-critical - always spoken)
+                                speakAllergyWarnings(patient)
                             } catch (e: Exception) {
                                 showDataOverlay("Error", body ?: "No response")
                                 speakFeedback("Error loading patient")
@@ -1928,6 +1938,35 @@ class MainActivity : AppCompatActivity() {
     private fun speakFeedback(message: String) {
         if (isSpeechFeedbackEnabled && isTtsReady && textToSpeech != null) {
             textToSpeech?.speak(message, TextToSpeech.QUEUE_ADD, null, "feedback_${System.currentTimeMillis()}")
+        }
+    }
+
+    /**
+     * Speak allergy warnings when patient is loaded (safety-critical)
+     * Always speaks allergies regardless of speech feedback toggle for patient safety
+     */
+    private fun speakAllergyWarnings(patient: JSONObject) {
+        if (!isTtsReady || textToSpeech == null) return
+
+        val allergies = patient.optJSONArray("allergies")
+        if (allergies != null && allergies.length() > 0) {
+            val count = allergies.length()
+            val allergyWord = if (count == 1) "allergy" else "allergies"
+
+            val speechBuilder = StringBuilder()
+            speechBuilder.append("Alert: Patient has $count known $allergyWord. ")
+
+            // Speak up to 5 allergies
+            for (i in 0 until minOf(count, 5)) {
+                speechBuilder.append("${allergies.getString(i)}. ")
+            }
+            if (count > 5) {
+                speechBuilder.append("And ${count - 5} more.")
+            }
+
+            // Use QUEUE_ADD so it plays after "Patient loaded" message
+            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "allergy_warning_${System.currentTimeMillis()}")
+            Log.d(TAG, "Spoke allergy warning: $count allergies")
         }
     }
 
