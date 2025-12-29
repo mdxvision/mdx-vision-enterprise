@@ -26,6 +26,20 @@ from transcription import (
     TranscriptionSession, TRANSCRIPTION_PROVIDER
 )
 
+# Load code databases
+def load_code_database(filename):
+    """Load ICD-10 or CPT code database from JSON file"""
+    filepath = os.path.join(os.path.dirname(__file__), filename)
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load {filename}: {e}")
+        return {"codes": {}, "keywords": {}}
+
+ICD10_DB = load_code_database("icd10_codes.json")
+CPT_DB = load_code_database("cpt_codes.json")
+
 app = FastAPI(
     title="MDx Vision EHR Proxy",
     description="Unified EHR access for AR glasses",
@@ -609,6 +623,20 @@ def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict
         "anaphylaxis": {"code": "T78.2XXA", "description": "Anaphylactic shock, unspecified"},
     }
 
+    # First try JSON database keywords, then fall back to inline map
+    icd10_keywords = ICD10_DB.get("keywords", {})
+    icd10_all_codes = {}
+    for category in ICD10_DB.get("codes", {}).values():
+        icd10_all_codes.update(category)
+
+    for keyword, code in icd10_keywords.items():
+        if keyword in transcript_lower and len(icd10_codes) < 5:
+            desc = icd10_all_codes.get(code, "")
+            code_info = {"code": code, "description": desc}
+            if code_info not in icd10_codes:
+                icd10_codes.append(code_info)
+
+    # Fall back to inline map if not enough codes found
     for keyword, code_info in icd10_map.items():
         if keyword in transcript_lower and code_info not in icd10_codes:
             icd10_codes.append(code_info)
@@ -738,6 +766,20 @@ def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict
         "foreign body removal": {"code": "10120", "description": "Foreign body removal, simple"},
     }
 
+    # First try JSON database keywords for CPT
+    cpt_keywords = CPT_DB.get("keywords", {})
+    cpt_all_codes = {}
+    for category in CPT_DB.get("codes", {}).values():
+        cpt_all_codes.update(category)
+
+    for keyword, code in cpt_keywords.items():
+        if keyword in transcript_lower and len(cpt_codes) < 5:
+            desc = cpt_all_codes.get(code, "")
+            code_info = {"code": code, "description": desc}
+            if code_info not in cpt_codes:
+                cpt_codes.append(code_info)
+
+    # Fall back to inline map if not enough codes found
     for keyword, code_info in cpt_map.items():
         if keyword in transcript_lower and code_info not in cpt_codes:
             cpt_codes.append(code_info)
