@@ -371,6 +371,185 @@ class MainActivity : AppCompatActivity() {
         transcriptText.text = "Say 'close' to dismiss"
     }
 
+    /**
+     * Show patient data overlay with photo
+     * Displays patient photo (or initials) at the top, followed by patient data
+     */
+    private fun showPatientDataOverlay(patient: JSONObject) {
+        val name = patient.optString("name", "Unknown")
+        val displayText = patient.optString("display_text", "No data")
+        val photoUrl = patient.optString("photo_url", "")
+
+        // Remove existing overlay if any
+        dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dataOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            // Header with photo and name
+            val headerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, 16)
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+
+            // Patient photo or initials placeholder
+            val photoSize = 64
+            val photoView = android.widget.ImageView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(photoSize, photoSize).apply {
+                    marginEnd = 16
+                }
+                scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+
+                // Make it circular with a background
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(0xFF374151.toInt())
+                }
+                clipToOutline = true
+                outlineProvider = object : android.view.ViewOutlineProvider() {
+                    override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                        outline.setOval(0, 0, view.width, view.height)
+                    }
+                }
+            }
+
+            // Load photo or show initials
+            if (photoUrl.isNotEmpty()) {
+                loadPatientPhoto(photoView, photoUrl)
+            } else {
+                // Show initials placeholder
+                showInitialsPlaceholder(photoView, name, photoSize)
+            }
+            headerLayout.addView(photoView)
+
+            // Patient name
+            val nameText = TextView(context).apply {
+                text = "Patient: $name"
+                textSize = getTitleFontSize()
+                setTextColor(0xFF10B981.toInt())
+            }
+            headerLayout.addView(nameText)
+
+            innerLayout.addView(headerLayout)
+
+            // Scrollable content
+            val scrollView = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+            }
+
+            val contentText = TextView(context).apply {
+                text = displayText
+                textSize = getContentFontSize()
+                setTextColor(0xFFF8FAFC.toInt())
+                setLineSpacing(4f, 1.2f)
+            }
+            scrollView.addView(contentText)
+            innerLayout.addView(scrollView)
+
+            // Close button
+            val closeButton = android.widget.Button(context).apply {
+                text = "CLOSE (or say 'close')"
+                setBackgroundColor(0xFF475569.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                setPadding(32, 24, 32, 24)
+                setOnClickListener { hideDataOverlay() }
+            }
+            innerLayout.addView(closeButton)
+
+            addView(innerLayout)
+        }
+
+        rootView.addView(dataOverlay)
+        statusText.text = "Patient: $name"
+        transcriptText.text = "Say 'close' to dismiss"
+    }
+
+    /**
+     * Load patient photo from URL or base64 data URI
+     */
+    private fun loadPatientPhoto(imageView: android.widget.ImageView, photoUrl: String) {
+        try {
+            if (photoUrl.startsWith("data:")) {
+                // Base64 data URI
+                val base64Data = photoUrl.substringAfter("base64,")
+                val imageBytes = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
+                val bitmap = android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                imageView.setImageBitmap(bitmap)
+            } else {
+                // URL - load asynchronously
+                Thread {
+                    try {
+                        val url = java.net.URL(photoUrl)
+                        val connection = url.openConnection() as java.net.HttpURLConnection
+                        connection.doInput = true
+                        connection.connect()
+                        val input = connection.inputStream
+                        val bitmap = android.graphics.BitmapFactory.decodeStream(input)
+                        runOnUiThread {
+                            imageView.setImageBitmap(bitmap)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to load patient photo: ${e.message}")
+                    }
+                }.start()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing patient photo: ${e.message}")
+        }
+    }
+
+    /**
+     * Show initials placeholder when no photo is available
+     */
+    private fun showInitialsPlaceholder(imageView: android.widget.ImageView, name: String, size: Int) {
+        // Extract initials (first letter of first and last name)
+        val parts = name.split(" ", ",").filter { it.isNotBlank() }
+        val initials = when {
+            parts.size >= 2 -> "${parts[0].first()}${parts[1].first()}"
+            parts.isNotEmpty() -> parts[0].take(2)
+            else -> "?"
+        }.uppercase()
+
+        // Create a bitmap with initials
+        val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+
+        // Draw circle background
+        val bgPaint = android.graphics.Paint().apply {
+            color = 0xFF6366F1.toInt()  // Indigo color
+            isAntiAlias = true
+        }
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, bgPaint)
+
+        // Draw initials
+        val textPaint = android.graphics.Paint().apply {
+            color = 0xFFFFFFFF.toInt()
+            textSize = size * 0.4f
+            textAlign = android.graphics.Paint.Align.CENTER
+            isAntiAlias = true
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        val textY = size / 2f - (textPaint.descent() + textPaint.ascent()) / 2
+        canvas.drawText(initials, size / 2f, textY, textPaint)
+
+        imageView.setImageBitmap(bitmap)
+    }
+
     private fun hideDataOverlay() {
         dataOverlay?.let { overlay ->
             (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
@@ -1771,9 +1950,7 @@ class MainActivity : AppCompatActivity() {
                                         cachePatientData(patientId, body ?: "{}")
                                     }
 
-                                    val name = patient.optString("name", "Unknown")
-                                    val displayText = patient.optString("display_text", "No data")
-                                    showDataOverlay("Patient: $name", displayText)
+                                    showPatientDataOverlay(patient)
                                 } catch (e: Exception) {
                                     showDataOverlay("Patient Found", body ?: "No response")
                                 }
@@ -1878,8 +2055,7 @@ class MainActivity : AppCompatActivity() {
                                 cachePatientData(patientId, body ?: "{}")
 
                                 val name = patient.optString("name", "Unknown")
-                                val displayText = patient.optString("display_text", "No data")
-                                showDataOverlay("Patient: $name", displayText)
+                                showPatientDataOverlay(patient)
 
                                 // Speech feedback
                                 speakFeedback("Patient $name loaded")

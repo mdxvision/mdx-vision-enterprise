@@ -355,6 +355,7 @@ class PatientSummary(BaseModel):
     date_of_birth: str
     gender: str
     mrn: Optional[str] = None
+    photo_url: Optional[str] = None  # Patient photo URL or base64 data URI
     vitals: List[VitalSign] = []
     critical_vitals: List[VitalSign] = []  # Vitals with is_critical=True
     abnormal_vitals: List[VitalSign] = []  # Vitals with is_abnormal=True
@@ -471,6 +472,36 @@ def extract_patient_name(patient: dict) -> str:
     if names:
         return names[0].get("text", "Unknown")
     return "Unknown"
+
+
+def extract_patient_photo(patient: dict) -> Optional[str]:
+    """
+    Extract patient photo from FHIR Patient resource.
+
+    FHIR Patient.photo can contain:
+    - Inline base64 data (contentType + data)
+    - URL reference (url)
+
+    Returns:
+        Photo URL or base64 data URI, or None if no photo
+    """
+    photos = patient.get("photo", [])
+    if not photos:
+        return None
+
+    photo = photos[0]  # Use first photo
+
+    # Check for URL reference
+    if photo.get("url"):
+        return photo["url"]
+
+    # Check for inline base64 data
+    if photo.get("data") and photo.get("contentType"):
+        content_type = photo["contentType"]
+        data = photo["data"]
+        return f"data:{content_type};base64,{data}"
+
+    return None
 
 
 def extract_vitals(bundle: dict) -> List[VitalSign]:
@@ -1097,6 +1128,7 @@ async def get_patient(patient_id: str, request: Request):
     name = extract_patient_name(patient_data)
     dob = patient_data.get("birthDate", "Unknown")
     gender = patient_data.get("gender", "unknown")
+    photo_url = extract_patient_photo(patient_data)
 
     # Fetch vitals (50 for trend analysis)
     vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=50&_sort=-date")
@@ -1231,6 +1263,7 @@ async def get_patient(patient_id: str, request: Request):
         name=name,
         date_of_birth=dob,
         gender=gender,
+        photo_url=photo_url,
         vitals=vitals,
         critical_vitals=critical_vitals,
         abnormal_vitals=abnormal_vitals,

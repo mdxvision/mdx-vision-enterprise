@@ -118,6 +118,13 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Spoken Alerts**: TTS announces significant vital trends on patient load
 - **Clinical Value**: Track BP, HR, SpO2, temperature trends over time
 
+### Patient Photo Display (NEW)
+- **FHIR Photo Support**: Extracts patient photo from FHIR Patient.photo field
+- **Base64 & URL**: Supports inline base64 data URIs and external URLs
+- **Initials Placeholder**: Shows patient initials in colored circle when no photo
+- **Circular Avatar**: Clean, professional display in patient header
+- **Quick Identification**: Visual confirmation of correct patient
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection
