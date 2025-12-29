@@ -166,6 +166,8 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Increase/decrease font" | Done |
 | [x] "Auto scroll on/off" | Done |
 | [x] "My name is Dr. [Name]" | Done |
+| [x] "Edit note" | Done |
+| [x] "Reset note" / "Undo changes" | Done |
 
 ---
 
@@ -195,6 +197,7 @@ Based on US Patent 15/237,980 and product requirements.
 7. ~~**Note Type Auto-Detection**~~ - Done (keyword analysis)
 8. ~~**Speaker Context from Chart**~~ - Done (maps Speaker 0/1 to patient/clinician names)
 9. ~~**Specialty Vocabulary Auto-Load**~~ - Done (detects specialty from patient conditions/ICD-10)
+10. ~~**Edit Note Before Save**~~ - Done (EditText with reset, voice commands)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
@@ -202,7 +205,6 @@ Based on US Patent 15/237,980 and product requirements.
 3. **HIPAA Audit Logging** - Security compliance
 4. **User Authentication** - OAuth2/SMART on FHIR
 5. **Push Notes to EHR** - FHIR DocumentReference
-6. **Edit Note Before Save** - Allow modifications
 
 ---
 

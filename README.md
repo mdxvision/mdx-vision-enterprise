@@ -37,6 +37,7 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Note Types**: SOAP, Progress Note, H&P, Consult Note
 - **Auto-Detection**: Analyzes transcript to suggest appropriate note format
 - **Medical Coding**: ICD-10 (90+ codes) and CPT (100+ codes) auto-extraction
+- **Edit Before Save**: Modify AI-generated notes before saving (voice: "edit note", "reset note")
 - **Template + AI**: Works with or without Claude API
 
 ### EHR Integration

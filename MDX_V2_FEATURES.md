@@ -116,7 +116,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Note ID generation | Done | Unique identifiers |
 | [x] Retrieve saved notes | Done | GET `/notes/{id}` |
 | [x] Patient note history | Done | GET `/patient/{id}/notes` |
-| [ ] Edit note | Pending | Modify before save |
+| [x] Edit note | Done | EditText in overlay, reset button, voice commands |
 | [ ] Sign/authenticate note | Pending | Digital signature |
 | [ ] Push to EHR | Pending | FHIR DocumentReference |
 | [ ] Note versioning | Pending | Track changes |
@@ -197,6 +197,8 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Consult note" | Done | Set note type to Consult |
 | [x] "Auto note" | Done | Set note type to Auto-detect |
 | [x] "My name is Dr. [Name]" | Done | Set clinician name for speaker context |
+| [x] "Edit note" | Done | Focus on note for editing |
+| [x] "Reset note" / "Undo changes" | Done | Restore note to original |
 
 ---
 

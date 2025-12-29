@@ -242,14 +242,15 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 14. **Medical Vocabulary Boost** - 500+ medical terms for improved transcription accuracy
 15. **Speaker Context from Chart** - Maps "Speaker 0/1" to patient/clinician names from loaded chart
 16. **Specialty Vocabulary Auto-Load** - Detects cardiology/pulmonology/etc from patient conditions
+17. **Edit Note Before Save** - EditText overlay with reset button, voice commands ("edit note", "reset note")
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| **Edit note before save** | Allow modifications before saving |
 | **Care plans display** | FHIR CarePlan resource |
+| **Note sign-off workflow** | Confirm before final save |
 
 ### Medium Effort
 | Feature | Notes |

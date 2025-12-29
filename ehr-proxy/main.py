@@ -1487,6 +1487,7 @@ class SaveNoteRequest(BaseModel):
     summary: str = ""
     transcript: str = ""
     timestamp: str = ""
+    was_edited: bool = False  # True if note was manually edited before saving
 
 
 @app.post("/api/v1/notes/save")
@@ -1515,13 +1516,15 @@ async def save_note(request: SaveNoteRequest):
             "transcript": request.transcript,
             "timestamp": request.timestamp or datetime.now().isoformat(),
             "created_at": datetime.now().isoformat(),
-            "status": "final"
+            "status": "final",
+            "was_edited": request.was_edited  # Track if clinician manually edited
         }
 
         # Store in memory (simulated EHR storage)
         saved_notes[note_id] = note_record
 
-        print(f"📝 Note saved: {note_id} for patient {request.patient_id}")
+        edited_indicator = " (edited)" if request.was_edited else ""
+        print(f"📝 Note saved{edited_indicator}: {note_id} for patient {request.patient_id}")
         print(f"   Summary: {request.summary[:50]}..." if request.summary else "   (No summary)")
 
         return {

@@ -90,6 +90,11 @@ class MainActivity : AppCompatActivity() {
     private var lastGeneratedNote: JSONObject? = null
     private var lastNoteTranscript: String? = null
 
+    // Editable note content (for edit before save)
+    private var editableNoteContent: String? = null
+    private var noteEditText: android.widget.EditText? = null
+    private var isNoteEditing: Boolean = false
+
     // Font size for accessibility
     private var currentFontSizeLevel: Int = FONT_SIZE_MEDIUM
 
@@ -765,6 +770,10 @@ class MainActivity : AppCompatActivity() {
         // Remove existing overlay if any
         dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
 
+        // Store original content for editing
+        editableNoteContent = content
+        isNoteEditing = false
+
         val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
 
         dataOverlay = android.widget.FrameLayout(this).apply {
@@ -780,43 +789,107 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
-            // Title
+            // Title row with edit indicator
+            val titleRow = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, 16)
+            }
+
             val titleText = TextView(context).apply {
                 text = title
                 textSize = getTitleFontSize()
                 setTextColor(0xFF10B981.toInt())
-                setPadding(0, 0, 0, 16)
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
-            innerLayout.addView(titleText)
+            titleRow.addView(titleText)
 
-            // Scrollable content
+            // Edit mode indicator
+            val editIndicator = TextView(context).apply {
+                text = "📝 EDITABLE"
+                textSize = 14f
+                setTextColor(0xFF3B82F6.toInt())
+            }
+            titleRow.addView(editIndicator)
+            innerLayout.addView(titleRow)
+
+            // Hint text for editing
+            val hintText = TextView(context).apply {
+                text = "Tap note to edit before saving"
+                textSize = 12f
+                setTextColor(0xFF94A3B8.toInt())
+                setPadding(0, 0, 0, 8)
+            }
+            innerLayout.addView(hintText)
+
+            // Scrollable editable content
             val scrollView = android.widget.ScrollView(context).apply {
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
                 )
+                setBackgroundColor(0xFF1E293B.toInt())
             }
 
-            val contentText = TextView(context).apply {
-                text = content
+            // EditText for editable note content
+            noteEditText = android.widget.EditText(context).apply {
+                setText(content)
                 textSize = getContentFontSize()
                 setTextColor(0xFFF8FAFC.toInt())
+                setHintTextColor(0xFF64748B.toInt())
                 setLineSpacing(4f, 1.2f)
+                setBackgroundColor(0x00000000) // Transparent background
+                setPadding(16, 16, 16, 16)
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                        android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                        android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                isSingleLine = false
+                minLines = 10
+
+                // Track when user edits
+                addTextChangedListener(object : android.text.TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                        isNoteEditing = true
+                        editableNoteContent = s?.toString()
+                    }
+                    override fun afterTextChanged(s: android.text.Editable?) {}
+                })
             }
-            scrollView.addView(contentText)
+            scrollView.addView(noteEditText)
             innerLayout.addView(scrollView)
 
-            // Button row with Save and Close
+            // Button row with Edit actions, Save, and Close
             val buttonRow = android.widget.LinearLayout(context).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 setPadding(0, 16, 0, 0)
             }
 
+            // Reset button (restore original)
+            val resetButton = android.widget.Button(context).apply {
+                text = "↩ RESET"
+                setBackgroundColor(0xFF6366F1.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+                    marginEnd = 4
+                }
+                setOnClickListener {
+                    noteEditText?.setText(content)
+                    editableNoteContent = content
+                    isNoteEditing = false
+                    Toast.makeText(context, "Note reset to original", Toast.LENGTH_SHORT).show()
+                }
+            }
+            buttonRow.addView(resetButton)
+
             val saveButton = android.widget.Button(context).apply {
-                text = "💾 SAVE NOTE"
+                text = "💾 SAVE"
                 setBackgroundColor(0xFF22C55E.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
                 layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginEnd = 8
+                    marginStart = 4
+                    marginEnd = 4
                 }
                 setOnClickListener { saveCurrentNote() }
             }
@@ -826,10 +899,18 @@ class MainActivity : AppCompatActivity() {
                 text = "CLOSE"
                 setBackgroundColor(0xFF475569.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
-                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = 8
+                textSize = 14f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+                    marginStart = 4
                 }
-                setOnClickListener { hideDataOverlay() }
+                setOnClickListener {
+                    // Warn if there are unsaved edits
+                    if (isNoteEditing) {
+                        confirmDiscardEdits()
+                    } else {
+                        hideDataOverlay()
+                    }
+                }
             }
             buttonRow.addView(closeButton)
 
@@ -839,7 +920,52 @@ class MainActivity : AppCompatActivity() {
 
         rootView.addView(dataOverlay)
         statusText.text = title
-        transcriptText.text = "Say 'save note' or 'close'"
+        transcriptText.text = "Edit note, then 'save note' or 'close'"
+    }
+
+    private fun confirmDiscardEdits() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Unsaved Changes")
+            .setMessage("You have unsaved edits. Discard changes?")
+            .setPositiveButton("Discard") { _, _ ->
+                isNoteEditing = false
+                editableNoteContent = null
+                noteEditText = null
+                hideDataOverlay()
+            }
+            .setNegativeButton("Keep Editing", null)
+            .show()
+    }
+
+    private fun resetNoteEdits() {
+        val note = lastGeneratedNote
+        if (note == null || noteEditText == null) {
+            Toast.makeText(this, "No note to reset", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val originalContent = note.optString("display_text", "")
+        noteEditText?.setText(originalContent)
+        editableNoteContent = originalContent
+        isNoteEditing = false
+        Toast.makeText(this, "Note reset to original", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Note restored"
+        Log.d(TAG, "Note edits reset to original")
+    }
+
+    private fun focusNoteEdit() {
+        if (noteEditText == null) {
+            Toast.makeText(this, "No note open for editing", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Focus on EditText and show keyboard
+        noteEditText?.requestFocus()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        imm.showSoftInput(noteEditText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        Toast.makeText(this, "Editing note...", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Tap to edit note text"
+        Log.d(TAG, "Note edit focused")
     }
 
     private fun saveCurrentNote() {
@@ -852,18 +978,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Use edited content if available, otherwise use original
+        val noteContent = editableNoteContent ?: note.optString("display_text", "")
+        val wasEdited = isNoteEditing
+
         statusText.text = "Saving note..."
-        transcriptText.text = "Uploading to EHR"
+        transcriptText.text = if (wasEdited) "Saving edited note..." else "Uploading to EHR"
 
         Thread {
             try {
                 val json = JSONObject().apply {
                     put("patient_id", patientId ?: TEST_PATIENT_ID)
                     put("note_type", "SOAP")
-                    put("display_text", note.optString("display_text", ""))
+                    put("display_text", noteContent)  // Use edited content
                     put("summary", note.optString("summary", ""))
                     put("transcript", transcript ?: "")
                     put("timestamp", note.optString("timestamp", ""))
+                    put("was_edited", wasEdited)  // Flag if note was manually edited
                 }
 
                 val request = Request.Builder()
@@ -891,12 +1022,16 @@ class MainActivity : AppCompatActivity() {
                                 val noteId = result.optString("note_id", "")
 
                                 if (success) {
-                                    Toast.makeText(this@MainActivity, "Note saved! ID: $noteId", Toast.LENGTH_LONG).show()
+                                    val editMsg = if (wasEdited) " (edited)" else ""
+                                    Toast.makeText(this@MainActivity, "Note saved$editMsg! ID: $noteId", Toast.LENGTH_LONG).show()
                                     statusText.text = "Note saved"
                                     transcriptText.text = "ID: $noteId"
-                                    // Clear the saved note
+                                    // Clear the saved note and editing state
                                     lastGeneratedNote = null
                                     lastNoteTranscript = null
+                                    editableNoteContent = null
+                                    noteEditText = null
+                                    isNoteEditing = false
                                     hideDataOverlay()
                                 } else {
                                     val message = result.optString("message", "Save failed")
@@ -1442,6 +1577,14 @@ class MainActivity : AppCompatActivity() {
             lower.contains("save note") || lower.contains("save the note") || lower.contains("submit note") -> {
                 // Voice command to save the current note
                 saveCurrentNote()
+            }
+            lower.contains("reset note") || lower.contains("undo changes") || lower.contains("undo edit") || lower.contains("restore note") -> {
+                // Voice command to reset edited note to original
+                resetNoteEdits()
+            }
+            lower.contains("edit note") || lower.contains("modify note") -> {
+                // Voice command to focus on note editing (bring up keyboard)
+                focusNoteEdit()
             }
             lower.contains("live transcri") || lower.contains("start transcri") || lower.contains("transcribe") -> {
                 // Voice command to start/stop live transcription
