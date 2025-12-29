@@ -46,6 +46,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var patientDataText: TextView
     private val httpClient = OkHttpClient()
 
+    // Documentation mode
+    private var isDocumentationMode = false
+    private val documentationTranscripts = mutableListOf<String>()
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -128,6 +132,13 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(scanButton)
 
+        // Start Note button (AI Clinical Documentation)
+        val noteButton = android.widget.Button(this).apply {
+            text = "Start Note"
+            setOnClickListener { toggleDocumentationMode() }
+        }
+        layout.addView(noteButton)
+
         // Patient data display
         patientDataText = TextView(this).apply {
             text = ""
@@ -143,6 +154,80 @@ class MainActivity : AppCompatActivity() {
     private fun startBarcodeScanner() {
         val intent = Intent(this, BarcodeScannerActivity::class.java)
         barcodeLauncher.launch(intent)
+    }
+
+    private fun toggleDocumentationMode() {
+        isDocumentationMode = !isDocumentationMode
+
+        if (isDocumentationMode) {
+            // Start documentation mode
+            documentationTranscripts.clear()
+            statusText.text = "DOCUMENTING..."
+            transcriptText.text = "Speak to document. Tap 'Start Note' again to generate."
+            patientDataText.text = ""
+            patientDataText.setTextColor(0xFFFFB800.toInt()) // Yellow for documentation
+            startVoiceRecognition()
+        } else {
+            // End documentation mode - generate note
+            if (documentationTranscripts.isNotEmpty()) {
+                generateClinicalNote(documentationTranscripts.joinToString(" "))
+            } else {
+                statusText.text = "MDx Vision"
+                transcriptText.text = "No transcript captured"
+            }
+        }
+    }
+
+    private fun generateClinicalNote(transcript: String) {
+        statusText.text = "Generating SOAP Note..."
+        patientDataText.text = ""
+
+        Thread {
+            try {
+                val json = JSONObject().apply {
+                    put("transcript", transcript)
+                    put("chief_complaint", "See transcript")
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/notes/quick")
+                    .post(json.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Note generation error: ${e.message}")
+                        runOnUiThread {
+                            statusText.text = "Note Generation Failed"
+                            patientDataText.text = "Error: ${e.message}"
+                            patientDataText.setTextColor(0xFF10B981.toInt())
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "Generated note: $body")
+
+                        runOnUiThread {
+                            statusText.text = "SOAP Note Generated"
+                            try {
+                                val result = JSONObject(body ?: "{}")
+                                val displayText = result.optString("display_text", "No note generated")
+                                patientDataText.text = displayText
+                                patientDataText.setTextColor(0xFF10B981.toInt())
+                            } catch (e: Exception) {
+                                patientDataText.text = body ?: "No response"
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to generate note: ${e.message}")
+                runOnUiThread {
+                    patientDataText.text = "Error: ${e.message}"
+                }
+            }
+        }.start()
     }
 
     private fun fetchPatientByMrn(mrn: String) {
@@ -364,6 +449,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processTranscript(transcript: String) {
+        // If in documentation mode, collect transcripts
+        if (isDocumentationMode) {
+            documentationTranscripts.add(transcript)
+            val count = documentationTranscripts.size
+            transcriptText.text = "Recording... ($count segments)\nLatest: \"$transcript\""
+            patientDataText.text = "Tap 'Start Note' to generate SOAP note"
+
+            // Continue listening
+            startVoiceRecognition()
+            return
+        }
+
         // Parse voice commands for patient lookup
         val lower = transcript.lowercase()
 
@@ -381,6 +478,14 @@ class MainActivity : AppCompatActivity() {
                 if (name.isNotEmpty()) {
                     searchPatients(name)
                 }
+            }
+            lower.contains("start note") || lower.contains("start documentation") -> {
+                // Voice command to start documentation
+                toggleDocumentationMode()
+            }
+            lower.contains("scan") || lower.contains("wristband") -> {
+                // Voice command to scan wristband
+                startBarcodeScanner()
             }
             else -> {
                 // Display transcribed text

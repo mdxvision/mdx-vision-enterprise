@@ -1,9 +1,10 @@
 """
 MDx Vision - EHR Proxy Service
 Connects AR glasses to Cerner (and other EHRs) via FHIR R4
+Includes AI clinical note generation
 
 Run: python main.py
-Test: curl http://localhost:8001/api/v1/patient/12724066
+Test: curl http://localhost:8002/api/v1/patient/12724066
 """
 
 from fastapi import FastAPI, HTTPException
@@ -12,6 +13,9 @@ import httpx
 from pydantic import BaseModel
 from typing import Optional, List
 import uvicorn
+import os
+import re
+from datetime import datetime
 
 app = FastAPI(
     title="MDx Vision EHR Proxy",
@@ -54,6 +58,28 @@ class SearchResult(BaseModel):
     name: str
     date_of_birth: str
     gender: str
+
+
+# Clinical Notes Models
+class NoteRequest(BaseModel):
+    transcript: str
+    patient_id: Optional[str] = None
+    note_type: str = "SOAP"
+    chief_complaint: Optional[str] = None
+
+
+class SOAPNote(BaseModel):
+    subjective: str
+    objective: str
+    assessment: str
+    plan: str
+    summary: str
+    timestamp: str
+    display_text: str = ""
+
+
+# Claude API for AI-powered notes (optional)
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
 
 async def fetch_fhir(endpoint: str) -> dict:
@@ -212,6 +238,167 @@ async def get_patient_by_mrn(mrn: str):
 
     patient_id = entries[0].get("resource", {}).get("id")
     return await get_patient(patient_id)
+
+
+# ============ Clinical Notes API ============
+
+async def generate_soap_with_claude(transcript: str, chief_complaint: str = None) -> dict:
+    """Generate SOAP note using Claude API"""
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 1024,
+                "messages": [{
+                    "role": "user",
+                    "content": f"""Generate a SOAP note from this clinical encounter transcript.
+
+Chief Complaint: {chief_complaint or 'See transcript'}
+
+Transcript:
+{transcript}
+
+Return a JSON object with these exact fields:
+- subjective: Patient's reported symptoms and history
+- objective: Observable findings, vitals, exam results
+- assessment: Clinical assessment and diagnosis
+- plan: Treatment plan and follow-up
+- summary: 1-2 sentence summary
+
+Return ONLY valid JSON, no markdown or explanation."""
+                }]
+            }
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            content = result["content"][0]["text"]
+            # Parse JSON from response
+            import json
+            # Clean up response if needed
+            content = content.strip()
+            if content.startswith("```"):
+                content = re.sub(r'^```json?\n?', '', content)
+                content = re.sub(r'\n?```$', '', content)
+            return json.loads(content)
+        else:
+            raise Exception(f"Claude API error: {response.status_code}")
+
+
+def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict:
+    """Generate SOAP note using template-based extraction (no AI required)"""
+
+    # Simple keyword extraction for demo
+    transcript_lower = transcript.lower()
+
+    # Extract subjective (symptoms patient reports)
+    symptom_keywords = ["pain", "ache", "hurt", "fever", "cough", "tired", "nausea",
+                       "dizzy", "headache", "sore", "swelling", "bleeding"]
+    symptoms = [kw for kw in symptom_keywords if kw in transcript_lower]
+
+    subjective = f"Patient presents with: {', '.join(symptoms) if symptoms else 'symptoms as described'}. "
+    subjective += f"Chief complaint: {chief_complaint or 'See transcript'}. "
+    subjective += f"Patient states: \"{transcript[:200]}...\""
+
+    # Extract objective (observable findings)
+    vital_patterns = re.findall(r'(\d+/\d+|\d+\.\d+|\d+ degrees?|\d+ bpm)', transcript)
+    objective = "Vital signs: " + (", ".join(vital_patterns) if vital_patterns else "To be recorded") + ". "
+    objective += "Physical exam findings as documented."
+
+    # Assessment
+    assessment = f"Clinical presentation consistent with reported symptoms. "
+    assessment += "Further evaluation may be needed."
+
+    # Plan
+    plan = "1. Continue current treatment\n"
+    plan += "2. Monitor symptoms\n"
+    plan += "3. Follow up as needed\n"
+    plan += "4. Return if symptoms worsen"
+
+    # Summary
+    summary = f"Patient encounter documented. Primary concern: {chief_complaint or 'as described'}."
+
+    return {
+        "subjective": subjective,
+        "objective": objective,
+        "assessment": assessment,
+        "plan": plan,
+        "summary": summary
+    }
+
+
+def format_soap_display(note: dict) -> str:
+    """Format SOAP note for AR display"""
+    lines = [
+        "═══ CLINICAL NOTE ═══",
+        f"📝 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "─" * 25,
+        "▸ SUBJECTIVE:",
+        note["subjective"][:150] + "..." if len(note["subjective"]) > 150 else note["subjective"],
+        "",
+        "▸ OBJECTIVE:",
+        note["objective"][:100] + "..." if len(note["objective"]) > 100 else note["objective"],
+        "",
+        "▸ ASSESSMENT:",
+        note["assessment"][:100] + "..." if len(note["assessment"]) > 100 else note["assessment"],
+        "",
+        "▸ PLAN:",
+        note["plan"][:150] + "..." if len(note["plan"]) > 150 else note["plan"],
+        "─" * 25,
+        f"Summary: {note['summary'][:100]}"
+    ]
+    return "\n".join(lines)
+
+
+@app.post("/api/v1/notes/generate", response_model=SOAPNote)
+async def generate_clinical_note(request: NoteRequest):
+    """Generate SOAP note from voice transcript - for AR documentation"""
+
+    try:
+        # Try Claude API if available
+        if CLAUDE_API_KEY:
+            note_data = await generate_soap_with_claude(
+                request.transcript,
+                request.chief_complaint
+            )
+        else:
+            # Fallback to template-based generation
+            note_data = generate_soap_template(
+                request.transcript,
+                request.chief_complaint
+            )
+
+        note = SOAPNote(
+            subjective=note_data.get("subjective", ""),
+            objective=note_data.get("objective", ""),
+            assessment=note_data.get("assessment", ""),
+            plan=note_data.get("plan", ""),
+            summary=note_data.get("summary", ""),
+            timestamp=datetime.now().isoformat()
+        )
+        note.display_text = format_soap_display(note_data)
+
+        return note
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Note generation failed: {str(e)}")
+
+
+@app.post("/api/v1/notes/quick")
+async def quick_note(request: NoteRequest):
+    """Quick note for AR display - returns just the formatted text"""
+    note = await generate_clinical_note(request)
+    return {
+        "display_text": note.display_text,
+        "summary": note.summary,
+        "timestamp": note.timestamp
+    }
 
 
 if __name__ == "__main__":
