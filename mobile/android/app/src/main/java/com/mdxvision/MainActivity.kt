@@ -92,6 +92,9 @@ class MainActivity : AppCompatActivity() {
     private var lastGeneratedNote: JSONObject? = null
     private var lastNoteTranscript: String? = null
 
+    // Pending transcript for preview (before note generation)
+    private var pendingTranscript: String? = null
+
     // Editable note content (for edit before save)
     private var editableNoteContent: String? = null
     private var noteEditText: android.widget.EditText? = null
@@ -598,6 +601,12 @@ class MainActivity : AppCompatActivity() {
     private fun showTranscriptionCompleteOverlay(transcript: String) {
         hideLiveTranscriptionOverlay()
 
+        // Store for voice command access
+        pendingTranscript = transcript
+
+        // Analyze the transcript for preview
+        val analysis = analyzeTranscript(transcript)
+
         val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
 
         dataOverlay = android.widget.FrameLayout(this).apply {
@@ -613,18 +622,72 @@ class MainActivity : AppCompatActivity() {
                 )
             }
 
+            // Title
             val title = TextView(context).apply {
-                text = "✓ TRANSCRIPTION COMPLETE"
+                text = "📋 TRANSCRIPT PREVIEW"
                 textSize = getTitleFontSize()
                 setTextColor(0xFF10B981.toInt())
-                setPadding(0, 0, 0, 16)
+                setPadding(0, 0, 0, 8)
             }
             innerLayout.addView(title)
 
+            // Stats row
+            val statsText = TextView(context).apply {
+                text = "📊 ${analysis.wordCount} words • ~${analysis.estimatedMinutes} min • ${getNoteTypeDisplayName()}"
+                textSize = getContentFontSize() - 2f
+                setTextColor(0xFF94A3B8.toInt())
+                setPadding(0, 0, 0, 12)
+            }
+            innerLayout.addView(statsText)
+
+            // Detected topics (if any)
+            if (analysis.detectedTopics.isNotEmpty()) {
+                val topicsLayout = android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setBackgroundColor(0xFF1E293B.toInt())
+                    setPadding(16, 12, 16, 12)
+                    val params = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    params.bottomMargin = 12
+                    layoutParams = params
+                }
+
+                val topicsTitle = TextView(context).apply {
+                    text = "🔍 Key Topics Detected:"
+                    textSize = getContentFontSize() - 1f
+                    setTextColor(0xFF60A5FA.toInt())
+                    setPadding(0, 0, 0, 4)
+                }
+                topicsLayout.addView(topicsTitle)
+
+                val topicsList = TextView(context).apply {
+                    text = analysis.detectedTopics.joinToString(" • ")
+                    textSize = getContentFontSize() - 2f
+                    setTextColor(0xFFE2E8F0.toInt())
+                }
+                topicsLayout.addView(topicsList)
+
+                innerLayout.addView(topicsLayout)
+            }
+
+            // Transcript preview label
+            val previewLabel = TextView(context).apply {
+                text = "📝 Transcript:"
+                textSize = getContentFontSize() - 1f
+                setTextColor(0xFF94A3B8.toInt())
+                setPadding(0, 0, 0, 4)
+            }
+            innerLayout.addView(previewLabel)
+
+            // Scrollable transcript
             val scrollView = android.widget.ScrollView(context).apply {
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
                 )
+                setBackgroundColor(0xFF1E293B.toInt())
+                setPadding(12, 12, 12, 12)
             }
 
             val contentText = TextView(context).apply {
@@ -636,18 +699,29 @@ class MainActivity : AppCompatActivity() {
             scrollView.addView(contentText)
             innerLayout.addView(scrollView)
 
+            // Hint text
+            val hintText = TextView(context).apply {
+                text = "💡 Say \"generate note\", \"re-record\", or \"close\""
+                textSize = getContentFontSize() - 3f
+                setTextColor(0xFF64748B.toInt())
+                setPadding(0, 8, 0, 8)
+                gravity = android.view.Gravity.CENTER
+            }
+            innerLayout.addView(hintText)
+
             // Button row
             val buttonRow = android.widget.LinearLayout(context).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
-                setPadding(0, 16, 0, 0)
+                setPadding(0, 8, 0, 0)
             }
 
             val generateNoteBtn = android.widget.Button(context).apply {
-                text = "GENERATE NOTE"
+                text = "✓ GENERATE"
                 setBackgroundColor(0xFF10B981.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
                 layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginEnd = 8
+                    marginEnd = 4
                 }
                 setOnClickListener {
                     hideDataOverlay()
@@ -656,12 +730,29 @@ class MainActivity : AppCompatActivity() {
             }
             buttonRow.addView(generateNoteBtn)
 
+            val reRecordBtn = android.widget.Button(context).apply {
+                text = "🔄 RE-RECORD"
+                setBackgroundColor(0xFFF59E0B.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 4
+                    marginEnd = 4
+                }
+                setOnClickListener {
+                    hideDataOverlay()
+                    toggleLiveTranscription() // Start new transcription
+                }
+            }
+            buttonRow.addView(reRecordBtn)
+
             val closeBtn = android.widget.Button(context).apply {
-                text = "CLOSE"
+                text = "✕ CLOSE"
                 setBackgroundColor(0xFF475569.toInt())
                 setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
                 layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = 8
+                    marginStart = 4
                 }
                 setOnClickListener { hideDataOverlay() }
             }
@@ -672,7 +763,58 @@ class MainActivity : AppCompatActivity() {
         }
 
         rootView.addView(dataOverlay)
-        statusText.text = "MDx Vision"
+        statusText.text = "Review Transcript"
+        transcriptText.text = "${analysis.wordCount} words captured"
+    }
+
+    /**
+     * Analyze transcript to extract useful preview information
+     */
+    private data class TranscriptAnalysis(
+        val wordCount: Int,
+        val estimatedMinutes: Int,
+        val detectedTopics: List<String>
+    )
+
+    private fun analyzeTranscript(transcript: String): TranscriptAnalysis {
+        val words = transcript.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val wordCount = words.size
+        // Average speaking rate is ~150 words per minute
+        val estimatedMinutes = maxOf(1, (wordCount / 150.0).toInt())
+
+        // Detect medical topics from transcript
+        val topics = mutableListOf<String>()
+        val lower = transcript.lowercase()
+
+        // Symptoms & complaints
+        if (lower.contains("pain") || lower.contains("hurt") || lower.contains("ache")) topics.add("Pain")
+        if (lower.contains("headache") || lower.contains("migraine")) topics.add("Headache")
+        if (lower.contains("fever") || lower.contains("temperature")) topics.add("Fever")
+        if (lower.contains("cough") || lower.contains("cold") || lower.contains("congestion")) topics.add("Respiratory")
+        if (lower.contains("nausea") || lower.contains("vomit") || lower.contains("diarrhea")) topics.add("GI symptoms")
+        if (lower.contains("dizzy") || lower.contains("vertigo") || lower.contains("lightheaded")) topics.add("Dizziness")
+        if (lower.contains("fatigue") || lower.contains("tired") || lower.contains("weak")) topics.add("Fatigue")
+        if (lower.contains("rash") || lower.contains("itch") || lower.contains("skin")) topics.add("Skin")
+        if (lower.contains("chest pain") || lower.contains("palpitation") || lower.contains("shortness of breath")) topics.add("Cardiac")
+        if (lower.contains("anxiety") || lower.contains("depress") || lower.contains("stress")) topics.add("Mental health")
+
+        // Conditions
+        if (lower.contains("diabetes") || lower.contains("blood sugar") || lower.contains("glucose")) topics.add("Diabetes")
+        if (lower.contains("hypertension") || lower.contains("blood pressure") || lower.contains("bp")) topics.add("Hypertension")
+        if (lower.contains("asthma") || lower.contains("inhaler") || lower.contains("wheez")) topics.add("Asthma")
+
+        // Procedures/actions
+        if (lower.contains("exam") || lower.contains("physical")) topics.add("Physical exam")
+        if (lower.contains("lab") || lower.contains("blood test") || lower.contains("bloodwork")) topics.add("Lab work")
+        if (lower.contains("x-ray") || lower.contains("ct scan") || lower.contains("mri") || lower.contains("imaging")) topics.add("Imaging")
+        if (lower.contains("prescri") || lower.contains("medication") || lower.contains("refill")) topics.add("Prescription")
+        if (lower.contains("follow up") || lower.contains("follow-up") || lower.contains("return visit")) topics.add("Follow-up")
+
+        return TranscriptAnalysis(
+            wordCount = wordCount,
+            estimatedMinutes = estimatedMinutes,
+            detectedTopics = topics.take(5) // Limit to top 5 topics
+        )
     }
 
     private fun generateClinicalNote(transcript: String) {
@@ -1013,6 +1155,12 @@ class MainActivity : AppCompatActivity() {
             |• "H&P note" - Set to H&P
             |• "Consult note" - Set to Consult
             |• "Auto note" - Auto-detect note type
+            |
+            |📋 TRANSCRIPT PREVIEW
+            |• "Generate note" - Create note from transcript
+            |• "Looks good" - Confirm and generate
+            |• "Re-record" - Start over
+            |• "Try again" - Discard and re-record
             |
             |💾 NOTE MANAGEMENT
             |• "Edit note" - Focus note for editing
@@ -2032,6 +2180,23 @@ class MainActivity : AppCompatActivity() {
             lower.contains("stop transcri") -> {
                 // Voice command to stop live transcription
                 if (isLiveTranscribing) stopLiveTranscription()
+            }
+            // Transcript preview voice commands
+            lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
+                // Generate note from pending transcript
+                pendingTranscript?.let { pending ->
+                    hideDataOverlay()
+                    generateClinicalNote(pending)
+                    pendingTranscript = null
+                } ?: run {
+                    transcriptText.text = "No transcript to generate from"
+                }
+            }
+            lower.contains("re-record") || lower.contains("rerecord") || lower.contains("record again") || lower.contains("try again") -> {
+                // Start new transcription (discard current)
+                pendingTranscript = null
+                hideDataOverlay()
+                toggleLiveTranscription()
             }
             lower.contains("scan") || lower.contains("wristband") -> {
                 // Voice command to scan wristband

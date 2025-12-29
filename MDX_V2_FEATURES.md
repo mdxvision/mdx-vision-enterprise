@@ -205,6 +205,21 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Patient summary" / "Quick summary" | Done | Show visual patient summary |
 | [x] "Brief me" / "Tell me about patient" | Done | TTS reads summary aloud |
 | [x] "Stop talking" / "Be quiet" | Done | Stop TTS speech |
+| [x] "Generate note" / "Looks good" | Done | Generate from preview |
+| [x] "Re-record" / "Try again" | Done | Restart transcription |
+
+---
+
+## Transcript Preview Features
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| [x] Word count display | Done | `analyzeTranscript()` |
+| [x] Duration estimate | Done | ~150 words/min calculation |
+| [x] Topic detection | Done | 20+ medical keyword patterns |
+| [x] Scrollable transcript | Done | Full transcript visible |
+| [x] Re-record option | Done | Button + voice command |
+| [x] Generate confirmation | Done | "Looks good" voice command |
 
 ---
 
@@ -280,7 +295,7 @@ Based on MDx v2.0 Brief Technical Description document.
 
 ## Implementation Summary
 
-**Completed:** 70+ features
+**Completed:** 75+ features
 **Pending:** 25+ features
 **Future:** 5+ features
 
@@ -293,6 +308,7 @@ Based on MDx v2.0 Brief Technical Description document.
 6. 12-button voice command grid
 7. Wake word activation
 8. Text-to-Speech patient briefing (hands-free while walking)
+9. Transcript preview with topic detection before note generation
 
 ### Next Priorities
 1. Epic/Veradigm live integration
