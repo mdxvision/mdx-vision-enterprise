@@ -22,7 +22,7 @@ from datetime import datetime
 
 # Import transcription service
 from transcription import (
-    create_session, get_session, end_session,
+    create_session, get_session, end_session, set_session_speaker_context,
     TranscriptionSession, TRANSCRIPTION_PROVIDER
 )
 
@@ -1577,11 +1577,13 @@ async def websocket_transcribe(websocket: WebSocket):
     Protocol:
     1. Client connects
     2. Server sends: {"type": "connected", "session_id": "...", "provider": "..."}
-    3. Client sends audio chunks as binary data (16-bit PCM, 16kHz)
-    4. Server sends transcription results:
-       {"type": "transcript", "text": "...", "is_final": true/false}
-    5. Client sends: {"type": "stop"} to end session
-    6. Server sends: {"type": "ended", "full_transcript": "..."}
+    3. Client optionally sends speaker context:
+       {"type": "speaker_context", "clinician": "Dr. Smith", "patient": "John Doe", "others": [...]}
+    4. Client sends audio chunks as binary data (16-bit PCM, 16kHz)
+    5. Server sends transcription results:
+       {"type": "transcript", "text": "...", "is_final": true/false, "speaker": "Dr. Smith"}
+    6. Client sends: {"type": "stop"} to end session
+    7. Server sends: {"type": "ended", "full_transcript": "..."}
     """
     await websocket.accept()
 
@@ -1640,6 +1642,18 @@ async def websocket_transcribe(websocket: WebSocket):
                         break
                     elif data.get("type") == "ping":
                         await websocket.send_json({"type": "pong"})
+                    elif data.get("type") == "speaker_context":
+                        # Set speaker names from client (patient chart, clinician session)
+                        clinician = data.get("clinician")
+                        patient = data.get("patient")
+                        others = data.get("others", [])
+                        session.set_speaker_context(clinician, patient, others)
+                        await websocket.send_json({
+                            "type": "speaker_context_set",
+                            "clinician": clinician,
+                            "patient": patient,
+                            "others": others
+                        })
 
             except WebSocketDisconnect:
                 break

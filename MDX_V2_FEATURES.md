@@ -17,6 +17,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Final transcript capture | Done | Accumulated in buffer |
 | [x] Voice command detection in stream | Done | "close", "stop transcription" |
 | [x] Speaker diarization | Done | AssemblyAI/Deepgram speaker_labels |
+| [x] Speaker context from chart | Done | Maps Speaker 0/1 to patient/clinician names |
 | [x] Medical vocabulary boost | Done | 500+ terms, specialty support |
 
 ### AI-Powered Note Generation
@@ -194,6 +195,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "H&P note" | Done | Set note type to H&P |
 | [x] "Consult note" | Done | Set note type to Consult |
 | [x] "Auto note" | Done | Set note type to Auto-detect |
+| [x] "My name is Dr. [Name]" | Done | Set clinician name for speaker context |
 
 ---
 

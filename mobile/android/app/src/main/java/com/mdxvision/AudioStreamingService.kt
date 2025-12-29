@@ -55,6 +55,15 @@ class AudioStreamingService(
         val speaker: String? = null
     )
 
+    /**
+     * Speaker context for name mapping
+     */
+    data class SpeakerContext(
+        val clinician: String? = null,
+        val patient: String? = null,
+        val others: List<String> = emptyList()
+    )
+
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
     private var isStreaming = false
@@ -65,19 +74,29 @@ class AudioStreamingService(
         .readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS)
         .build()
 
+    // Speaker context to send after connection
+    private var pendingSpeakerContext: SpeakerContext? = null
+
     // Callbacks
     var onConnected: ((sessionId: String, provider: String) -> Unit)? = null
     var onDisconnected: ((fullTranscript: String) -> Unit)? = null
     var onError: ((message: String) -> Unit)? = null
+    var onSpeakerContextSet: ((clinician: String?, patient: String?) -> Unit)? = null
 
     /**
      * Start streaming audio to the transcription service
+     *
+     * @param provider Optional provider override ("assemblyai" or "deepgram")
+     * @param speakerContext Optional speaker context for name mapping
      */
-    fun startStreaming(provider: String? = null): Boolean {
+    fun startStreaming(provider: String? = null, speakerContext: SpeakerContext? = null): Boolean {
         if (isStreaming) {
             Log.w(TAG, "Already streaming")
             return false
         }
+
+        // Store speaker context to send after connection
+        pendingSpeakerContext = speakerContext
 
         // Check permission
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
@@ -139,6 +158,12 @@ class AudioStreamingService(
                     isStreaming = true
                     onConnected?.invoke(sessionId, provider)
 
+                    // Send speaker context if available
+                    pendingSpeakerContext?.let { context ->
+                        sendSpeakerContext(context)
+                        Log.d(TAG, "Sent speaker context: clinician=${context.clinician}, patient=${context.patient}")
+                    }
+
                     // Start recording audio
                     startRecording()
                 }
@@ -174,9 +199,47 @@ class AudioStreamingService(
                 "pong" -> {
                     // Keepalive response
                 }
+
+                "speaker_context_set" -> {
+                    val clinician = if (json.has("clinician") && !json.isNull("clinician")) json.optString("clinician") else null
+                    val patient = if (json.has("patient") && !json.isNull("patient")) json.optString("patient") else null
+                    Log.d(TAG, "Speaker context confirmed: clinician=$clinician, patient=$patient")
+                    onSpeakerContextSet?.invoke(clinician, patient)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing message: ${e.message}")
+        }
+    }
+
+    /**
+     * Send speaker context to map speaker IDs to actual names
+     */
+    private fun sendSpeakerContext(context: SpeakerContext) {
+        try {
+            val json = JSONObject().apply {
+                put("type", "speaker_context")
+                context.clinician?.let { put("clinician", it) }
+                context.patient?.let { put("patient", it) }
+                if (context.others.isNotEmpty()) {
+                    put("others", org.json.JSONArray(context.others))
+                }
+            }
+            webSocket?.send(json.toString())
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending speaker context: ${e.message}")
+        }
+    }
+
+    /**
+     * Update speaker context during an active session
+     */
+    fun updateSpeakerContext(clinician: String? = null, patient: String? = null, others: List<String> = emptyList()) {
+        val context = SpeakerContext(clinician, patient, others)
+        if (isStreaming) {
+            sendSpeakerContext(context)
+        } else {
+            pendingSpeakerContext = context
         }
     }
 

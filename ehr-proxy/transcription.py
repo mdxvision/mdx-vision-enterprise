@@ -428,12 +428,87 @@ def get_transcription_provider(provider: str = None, specialties: List[str] = No
 class TranscriptionSession:
     """Manages a single transcription session"""
 
-    def __init__(self, session_id: str, provider: str = None, specialties: List[str] = None):
+    def __init__(self, session_id: str, provider: str = None, specialties: List[str] = None,
+                 speaker_context: dict = None):
         self.session_id = session_id
         self.provider = get_transcription_provider(provider, specialties)
         self.is_active = False
         self.full_transcript = []  # Store all final transcripts
         self.speakers = {}  # Track speaker information
+
+        # Speaker context mapping: maps generic speaker IDs to actual names
+        # Format: {"clinician": "Dr. Smith", "patient": "John Doe", "other": ["Jane Doe"]}
+        self.speaker_context = speaker_context or {}
+        self._speaker_order = []  # Track order of speakers for mapping
+        self._speaker_map = {}  # Cache: "Speaker 0" -> "Dr. Smith"
+
+    def set_speaker_context(self, clinician: str = None, patient: str = None,
+                            others: List[str] = None):
+        """
+        Set the speaker context for name mapping.
+
+        Args:
+            clinician: Clinician/doctor name (typically first speaker)
+            patient: Patient name (typically second speaker)
+            others: Additional attendees (family members, interpreters, etc.)
+        """
+        self.speaker_context = {
+            "clinician": clinician,
+            "patient": patient,
+            "others": others or []
+        }
+        self._speaker_map = {}  # Reset cache
+        print(f"📋 Speaker context set: clinician={clinician}, patient={patient}, others={others}")
+
+    def _map_speaker(self, raw_speaker: str) -> str:
+        """
+        Map a raw speaker ID (e.g., "Speaker 0") to an actual name based on context.
+
+        Assumes typical encounter flow:
+        - First speaker is usually the clinician
+        - Second speaker is usually the patient
+        - Additional speakers are mapped to "others" list
+        """
+        if not raw_speaker:
+            return None
+
+        # Check cache first
+        if raw_speaker in self._speaker_map:
+            return self._speaker_map[raw_speaker]
+
+        # Extract speaker number from "Speaker X" format
+        try:
+            if raw_speaker.startswith("Speaker "):
+                speaker_num = int(raw_speaker.split(" ")[1])
+            else:
+                # Fallback for other formats
+                return raw_speaker
+        except (ValueError, IndexError):
+            return raw_speaker
+
+        # Map based on typical encounter flow
+        mapped_name = raw_speaker  # Default to original
+
+        if speaker_num == 0:
+            # First speaker - clinician
+            if self.speaker_context.get("clinician"):
+                mapped_name = self.speaker_context["clinician"]
+        elif speaker_num == 1:
+            # Second speaker - patient
+            if self.speaker_context.get("patient"):
+                mapped_name = self.speaker_context["patient"]
+        else:
+            # Additional speakers - others list
+            others = self.speaker_context.get("others", [])
+            other_index = speaker_num - 2
+            if others and other_index < len(others):
+                mapped_name = others[other_index]
+            else:
+                mapped_name = f"Attendee {speaker_num - 1}"
+
+        # Cache the mapping
+        self._speaker_map[raw_speaker] = mapped_name
+        return mapped_name
 
     async def start(self) -> bool:
         """Start the transcription session"""
@@ -447,8 +522,12 @@ class TranscriptionSession:
             await self.provider.send_audio(audio_data)
 
     async def get_transcriptions(self) -> AsyncGenerator[TranscriptionResult, None]:
-        """Get transcription results"""
+        """Get transcription results with speaker names mapped from context"""
         async for result in self.provider.receive_transcription():
+            # Map speaker ID to actual name if context is set
+            if result.speaker and self.speaker_context:
+                result.speaker = self._map_speaker(result.speaker)
+
             if result.is_final:
                 self.full_transcript.append(result.text)
             yield result
@@ -467,7 +546,8 @@ class TranscriptionSession:
 _active_sessions: dict[str, TranscriptionSession] = {}
 
 
-async def create_session(session_id: str, provider: str = None, specialties: List[str] = None) -> TranscriptionSession:
+async def create_session(session_id: str, provider: str = None, specialties: List[str] = None,
+                         speaker_context: dict = None) -> TranscriptionSession:
     """
     Create and start a new transcription session.
 
@@ -475,14 +555,36 @@ async def create_session(session_id: str, provider: str = None, specialties: Lis
         session_id: Unique identifier for this session
         provider: "assemblyai" or "deepgram"
         specialties: Medical specialties for vocabulary boost (e.g., ["cardiology"])
+        speaker_context: Speaker name mapping {"clinician": "Dr. X", "patient": "John", "others": [...]}
 
     Returns:
         Started transcription session
     """
-    session = TranscriptionSession(session_id, provider, specialties)
+    session = TranscriptionSession(session_id, provider, specialties, speaker_context)
     await session.start()
     _active_sessions[session_id] = session
     return session
+
+
+async def set_session_speaker_context(session_id: str, clinician: str = None,
+                                       patient: str = None, others: List[str] = None) -> bool:
+    """
+    Set speaker context for an existing session.
+
+    Args:
+        session_id: Session to update
+        clinician: Clinician name
+        patient: Patient name
+        others: Additional attendee names
+
+    Returns:
+        True if session found and updated
+    """
+    session = _active_sessions.get(session_id)
+    if session:
+        session.set_speaker_context(clinician, patient, others)
+        return True
+    return False
 
 
 async def get_session(session_id: str) -> Optional[TranscriptionSession]:

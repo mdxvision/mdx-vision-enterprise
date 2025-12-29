@@ -165,6 +165,7 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Auto note" | Done |
 | [x] "Increase/decrease font" | Done |
 | [x] "Auto scroll on/off" | Done |
+| [x] "My name is Dr. [Name]" | Done |
 
 ---
 
@@ -192,14 +193,15 @@ Based on US Patent 15/237,980 and product requirements.
 5. ~~**Speaker Diarization**~~ - Done (AssemblyAI/Deepgram)
 6. ~~**Medical Vocabulary Boost**~~ - Done (500+ terms)
 7. ~~**Note Type Auto-Detection**~~ - Done (keyword analysis)
+8. ~~**Speaker Context from Chart**~~ - Done (maps Speaker 0/1 to patient/clinician names)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
 2. **Vuzix HUD Overlay** - True AR display mode
 3. **HIPAA Audit Logging** - Security compliance
 4. **User Authentication** - OAuth2/SMART on FHIR
-5. **Speaker Context from Chart** - Use patient/doctor names from appointment
-6. **Push Notes to EHR** - FHIR DocumentReference
+5. **Push Notes to EHR** - FHIR DocumentReference
+6. **Specialty Vocabulary Auto-Load** - Auto-detect department
 
 ---
 

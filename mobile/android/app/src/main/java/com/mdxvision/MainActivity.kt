@@ -53,6 +53,9 @@ class MainActivity : AppCompatActivity() {
         private const val FONT_SIZE_MEDIUM = 1
         private const val FONT_SIZE_LARGE = 2
         private const val FONT_SIZE_EXTRA_LARGE = 3
+        // Clinician name setting
+        private const val PREF_CLINICIAN_NAME = "clinician_name"
+        private const val DEFAULT_CLINICIAN_NAME = "Clinician"
     }
 
     // Offline cache
@@ -97,6 +100,9 @@ class MainActivity : AppCompatActivity() {
     // Note type for clinical documentation (SOAP, PROGRESS, HP, CONSULT, AUTO)
     private var currentNoteType: String = "AUTO"  // Default to auto-detect
 
+    // Clinician name for speaker context (can be configured in settings)
+    private var clinicianName: String = "Clinician"  // Default name, update from settings/login
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -122,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         // Initialize offline cache and settings
         cachePrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         loadFontSizeSetting()
+        loadClinicianName()
 
         // Simple layout for AR glasses
         setupUI()
@@ -462,9 +469,19 @@ class MainActivity : AppCompatActivity() {
         // Show live transcription overlay
         showLiveTranscriptionOverlay()
 
-        // Start streaming
-        if (audioStreamingService?.startStreaming() == true) {
+        // Build speaker context from loaded patient and clinician
+        val patientName = currentPatientData?.optString("name")?.takeIf { it.isNotEmpty() }
+        val speakerContext = AudioStreamingService.SpeakerContext(
+            clinician = clinicianName,
+            patient = patientName
+        )
+
+        // Start streaming with speaker context
+        if (audioStreamingService?.startStreaming(speakerContext = speakerContext) == true) {
             isLiveTranscribing = true
+            if (patientName != null) {
+                Log.d(TAG, "Speaker context: clinician=$clinicianName, patient=$patientName")
+            }
         } else {
             hideLiveTranscriptionOverlay()
             Toast.makeText(this, "Failed to start transcription", Toast.LENGTH_SHORT).show()
@@ -1136,6 +1153,18 @@ class MainActivity : AppCompatActivity() {
         cachePrefs.edit().putInt(PREF_FONT_SIZE, currentFontSizeLevel).apply()
     }
 
+    private fun loadClinicianName() {
+        clinicianName = cachePrefs.getString(PREF_CLINICIAN_NAME, DEFAULT_CLINICIAN_NAME) ?: DEFAULT_CLINICIAN_NAME
+    }
+
+    private fun setClinicianName(name: String) {
+        clinicianName = name
+        cachePrefs.edit().putString(PREF_CLINICIAN_NAME, name).apply()
+        Toast.makeText(this, "Clinician: $name", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Clinician set to: $name"
+        Log.d(TAG, "Clinician name set to: $name")
+    }
+
     private fun increaseFontSize() {
         if (currentFontSizeLevel < FONT_SIZE_EXTRA_LARGE) {
             currentFontSizeLevel++
@@ -1512,6 +1541,21 @@ class MainActivity : AppCompatActivity() {
             }
             lower.contains("auto note") || lower.contains("auto detect") || lower.contains("automatic note") || lower.contains("note type auto") -> {
                 setNoteType("AUTO")
+            }
+            // Set clinician name: "my name is Dr. Smith" or "I am Dr. Jones" or "clinician name Dr. Brown"
+            lower.contains("my name is") || lower.contains("i am dr") || lower.contains("clinician name") -> {
+                // Extract name from transcript
+                val name = when {
+                    lower.contains("my name is") -> transcript.substringAfter("my name is", "").trim()
+                    lower.contains("i am dr") -> "Dr." + transcript.substringAfter("i am dr", "").substringAfter("I am Dr", "").trim()
+                    lower.contains("clinician name") -> transcript.substringAfter("clinician name", "").trim()
+                    else -> ""
+                }.replace(Regex("^\\s*\\.\\s*"), "").trim()
+                if (name.isNotEmpty()) {
+                    setClinicianName(name)
+                } else {
+                    transcriptText.text = "Say: My name is Dr. [Name]"
+                }
             }
             lower.contains("clear") || lower.contains("reset") -> {
                 // Clear current patient data (not cache)
