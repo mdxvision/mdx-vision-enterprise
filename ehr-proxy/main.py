@@ -291,6 +291,11 @@ class LabResult(BaseModel):
     interpretation: str = ""   # e.g., "H", "L", "HH", "LL", "N"
     is_critical: bool = False  # True if dangerously out of range
     is_abnormal: bool = False  # True if outside normal range
+    # Trend tracking fields
+    previous_value: Optional[str] = None
+    previous_date: Optional[str] = None
+    trend: Optional[str] = None  # "rising", "falling", "stable", "new"
+    delta: Optional[str] = None  # e.g., "+0.5", "-1.2"
 
 
 class Procedure(BaseModel):
@@ -511,7 +516,7 @@ def extract_medications(bundle: dict) -> List[str]:
 def extract_labs(bundle: dict) -> List[LabResult]:
     """Extract lab results from FHIR Observation bundle (laboratory category)"""
     labs = []
-    for entry in bundle.get("entry", [])[:10]:
+    for entry in bundle.get("entry", []):  # Process all entries for trend analysis
         obs = entry.get("resource", {})
 
         # Get lab name
@@ -591,7 +596,83 @@ def extract_labs(bundle: dict) -> List[LabResult]:
                 is_abnormal=is_abnormal
             ))
 
-    return labs
+    # Calculate trends after extracting all labs
+    return calculate_lab_trends(labs)
+
+
+def calculate_trend_direction(current: str, previous: str) -> tuple:
+    """
+    Calculate trend direction and delta between two lab values.
+
+    Returns:
+        (trend, delta) where trend is "rising"/"falling"/"stable"
+    """
+    try:
+        # Handle commas in numbers (e.g., "1,234")
+        curr_val = float(current.replace(",", ""))
+        prev_val = float(previous.replace(",", ""))
+    except (ValueError, AttributeError, TypeError):
+        return ("stable", None)
+
+    if prev_val == 0:
+        return ("stable", None)
+
+    delta = curr_val - prev_val
+    percent_change = abs(delta / prev_val) * 100
+
+    # Threshold: 5% change = significant
+    if percent_change < 5:
+        return ("stable", f"{delta:+.1f}")
+    elif delta > 0:
+        return ("rising", f"+{delta:.1f}")
+    else:
+        return ("falling", f"{delta:.1f}")
+
+
+def calculate_lab_trends(labs: List[LabResult]) -> List[LabResult]:
+    """
+    Group labs by name and calculate trends.
+    Returns most recent result for each test type with trend indicators.
+    """
+    if not labs:
+        return labs
+
+    # Group by test name
+    grouped = {}
+    for lab in labs:
+        if lab.name not in grouped:
+            grouped[lab.name] = []
+        grouped[lab.name].append(lab)
+
+    # For each test, compare most recent to previous
+    results = []
+    for name, lab_list in grouped.items():
+        # Sort by date descending (newest first)
+        lab_list.sort(key=lambda x: x.date or "", reverse=True)
+
+        current = lab_list[0]
+        previous = lab_list[1] if len(lab_list) > 1 else None
+
+        # Calculate trend
+        if previous:
+            trend, delta = calculate_trend_direction(current.value, previous.value)
+            current.previous_value = previous.value
+            current.previous_date = previous.date
+            current.trend = trend
+            current.delta = delta
+        else:
+            current.trend = "new"
+
+        results.append(current)
+
+    # Sort by: critical first, then abnormal, then by name
+    results.sort(key=lambda x: (
+        0 if x.is_critical else 1,
+        0 if x.is_abnormal else 1,
+        x.name
+    ))
+
+    return results
 
 
 def extract_procedures(bundle: dict) -> List[Procedure]:
@@ -973,8 +1054,8 @@ async def get_patient(patient_id: str, request: Request):
     med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=10")
     medications = extract_medications(med_bundle)
 
-    # Fetch lab results
-    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=10")
+    # Fetch lab results (50 for trend analysis)
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date")
     labs = extract_labs(lab_bundle)
 
     # Fetch procedures

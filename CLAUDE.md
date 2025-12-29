@@ -259,6 +259,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 31. **Medication Interaction Alerts** - Drug-drug interaction checking with 18+ medications, brand name recognition, severity levels, spoken TTS alerts for high-severity interactions
 32. **Push Notes to EHR** - Push generated notes to EHR via FHIR DocumentReference POST ("push note", "send to EHR"), with LOINC codes and status tracking
 33. **HIPAA Audit Logging** - JSON-structured audit logs for all PHI access, note operations, safety alerts with rotating file storage (ehr-proxy/logs/audit.log)
+34. **Lab Trends** - Historical lab value comparison with trend icons (↗️↘️→🆕), delta display, TTS alerts for rising/falling values
 
 ## Next Up (Recommended)
 

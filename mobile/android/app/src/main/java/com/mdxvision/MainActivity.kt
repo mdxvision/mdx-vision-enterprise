@@ -1815,6 +1815,7 @@ class MainActivity : AppCompatActivity() {
                 speakAllergyWarnings(cached)
                 speakCriticalLabAlerts(cached)
                 speakMedicationInteractions(cached)
+                speakLabTrends(cached)  // Lab trends last
                 return
             } else {
                 statusText.text = "Offline - No cache"
@@ -1853,6 +1854,7 @@ class MainActivity : AppCompatActivity() {
                                 speakAllergyWarnings(cached)
                                 speakCriticalLabAlerts(cached)
                                 speakMedicationInteractions(cached)
+                                speakLabTrends(cached)  // Lab trends last
                             } else {
                                 statusText.text = "Connection failed"
                                 transcriptText.text = "Error: ${e.message}"
@@ -1885,6 +1887,7 @@ class MainActivity : AppCompatActivity() {
                                 speakAllergyWarnings(patient)
                                 speakCriticalLabAlerts(patient)
                                 speakMedicationInteractions(patient)
+                                speakLabTrends(patient)  // Lab trends last
                             } catch (e: Exception) {
                                 showDataOverlay("Error", body ?: "No response")
                                 speakFeedback("Error loading patient")
@@ -2517,6 +2520,53 @@ class MainActivity : AppCompatActivity() {
             // Use QUEUE_ADD so it plays after allergies if both exist
             textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "critical_lab_alert_${System.currentTimeMillis()}")
             Log.d(TAG, "Spoke critical lab alert: $count critical labs")
+        }
+    }
+
+    /**
+     * Speak significant lab trends when patient is loaded
+     * Alerts clinician to rising or falling lab values
+     */
+    private fun speakLabTrends(patient: JSONObject) {
+        if (!isTtsReady || textToSpeech == null || !isSpeechFeedbackEnabled) return
+
+        val labs = patient.optJSONArray("labs") ?: return
+        if (labs.length() == 0) return
+
+        val trendingLabs = mutableListOf<String>()
+
+        for (i in 0 until labs.length()) {
+            val lab = labs.getJSONObject(i)
+            val trend = lab.optString("trend", "")
+            val name = lab.optString("name", "")
+            val value = lab.optString("value", "")
+            val previousValue = lab.optString("previous_value", "")
+
+            // Only speak rising or falling trends (skip stable/new)
+            if (trend == "rising" || trend == "falling") {
+                val direction = if (trend == "rising") "rising" else "falling"
+                trendingLabs.add("$name $direction from $previousValue to $value")
+            }
+        }
+
+        if (trendingLabs.isNotEmpty()) {
+            val count = trendingLabs.size
+            val labWord = if (count == 1) "lab" else "labs"
+
+            val speechBuilder = StringBuilder()
+            speechBuilder.append("Note: $count trending $labWord. ")
+
+            // Speak up to 3 trending labs
+            for (i in 0 until minOf(count, 3)) {
+                speechBuilder.append("${trendingLabs[i]}. ")
+            }
+            if (count > 3) {
+                speechBuilder.append("Plus ${count - 3} more trending.")
+            }
+
+            // Queue after critical alerts
+            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "lab_trend_alert_${System.currentTimeMillis()}")
+            Log.d(TAG, "Spoke lab trend alert: $count trending labs")
         }
     }
 
@@ -3328,11 +3378,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         sb.append("🔬 LAB RESULTS\n${"─".repeat(30)}\n")
-        for (i in 0 until minOf(labs.length(), 8)) {
+        for (i in 0 until minOf(labs.length(), 10)) {
             val l = labs.getJSONObject(i)
             val interp = l.optString("interpretation", "")
             val isCritical = l.optBoolean("is_critical", false)
             val isAbnormal = l.optBoolean("is_abnormal", false)
+            val trend = l.optString("trend", "")
+            val delta = l.optString("delta", "")
 
             // Add interpretation flag
             val flag = when {
@@ -3344,7 +3396,19 @@ class MainActivity : AppCompatActivity() {
                 else -> "•"
             }
 
-            sb.append("$flag ${l.getString("name")}: ${l.getString("value")}${l.optString("unit", "")}")
+            // Trend indicator
+            val trendIcon = when (trend) {
+                "rising" -> " ↗️"
+                "falling" -> " ↘️"
+                "stable" -> " →"
+                "new" -> " 🆕"
+                else -> ""
+            }
+
+            // Delta display
+            val deltaStr = if (delta.isNotEmpty()) " ($delta)" else ""
+
+            sb.append("$flag ${l.getString("name")}: ${l.getString("value")}${l.optString("unit", "")}$trendIcon$deltaStr")
             if (interp.isNotEmpty() && interp != "N") sb.append(" [$interp]")
             sb.append("\n")
         }

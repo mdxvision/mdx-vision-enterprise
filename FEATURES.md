@@ -224,6 +224,7 @@ Based on US Patent 15/237,980 and product requirements.
 24. ~~**Medication Interaction Alerts**~~ - Done (Drug-drug interaction checking, brand name recognition, severity-based TTS alerts)
 25. ~~**Push Notes to EHR**~~ - Done (FHIR DocumentReference POST, voice commands, LOINC codes, status tracking)
 26. ~~**HIPAA Audit Logging**~~ - Done (JSON audit logs, PHI access tracking, note operations, safety events, rotating file storage)
+27. ~~**Lab Trends**~~ - Done (Historical comparison, trend icons ↗️↘️→🆕, TTS alerts for rising/falling values)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

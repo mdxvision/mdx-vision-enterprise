@@ -104,6 +104,13 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Compliance Ready**: Structured format for audit review and analysis
 - **Log Location**: `ehr-proxy/logs/audit.log`
 
+### Lab Trends (NEW)
+- **Historical Comparison**: Compares current lab values with previous results
+- **Trend Indicators**: ↗️ rising, ↘️ falling, → stable, 🆕 new
+- **Delta Display**: Shows change from previous value (e.g., "+0.4", "-23")
+- **Spoken Alerts**: TTS announces significant trends on patient load
+- **Clinical Value**: Spot deteriorating patients quickly (rising potassium, falling hemoglobin)
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection
