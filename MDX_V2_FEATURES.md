@@ -44,10 +44,12 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Keyword-based extraction | Done | Template mode |
 | [x] AI-powered extraction | Done | Claude API mode |
 | [x] Code descriptions | Done | Shown with codes |
+| [x] Modifier support | Done | 20+ modifiers (-25, -59, LT/RT, etc.) |
+| [x] Modifier keyword detection | Done | 35+ keywords mapped to modifiers |
+| [x] Auto-suggest modifier -25 | Done | When E/M + procedure detected |
 | [ ] ICD-10-CM full database | Pending | Complete code lookup |
 | [ ] CPT full database | Pending | Complete code lookup |
 | [ ] Code validation | Pending | Verify code accuracy |
-| [ ] Modifier support | Pending | CPT modifiers |
 
 ### Wake Word & Voice Control
 | Feature | Status | Implementation |
@@ -332,6 +334,7 @@ Based on MDx v2.0 Brief Technical Description document.
 10. Speech feedback for action confirmations (toggleable)
 11. Automatic allergy warnings spoken when patient loads (safety-first)
 12. Offline note drafts with auto-sync on reconnect (notes never lost)
+13. CPT modifier support with 20+ modifiers and auto-detection
 
 ### Next Priorities
 1. Epic/Veradigm live integration

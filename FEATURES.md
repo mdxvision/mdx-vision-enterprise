@@ -218,6 +218,7 @@ Based on US Patent 15/237,980 and product requirements.
 18. ~~**Speech Feedback for Actions**~~ - Done (TTS confirms patient load, recording, note save)
 19. ~~**Allergy Warnings Spoken**~~ - Done (Critical allergies spoken aloud when patient loads, safety-first)
 20. ~~**Offline Note Drafts**~~ - Done (Queue notes locally when offline, auto-sync on reconnect)
+21. ~~**CPT Modifier Support**~~ - Done (20+ modifiers with keyword detection, auto -25 for E/M + procedure)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

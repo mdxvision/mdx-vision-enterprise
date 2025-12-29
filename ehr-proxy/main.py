@@ -1105,6 +1105,34 @@ def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict
     if not cpt_codes:
         cpt_codes.append({"code": "99213", "description": "Office visit, established patient, low complexity"})
 
+    # Extract CPT modifiers from transcript
+    cpt_modifiers = []
+    modifier_keywords = CPT_DB.get("modifier_keywords", {})
+    modifiers_db = CPT_DB.get("modifiers", {})
+
+    for keyword, modifier in modifier_keywords.items():
+        if keyword in transcript_lower and len(cpt_modifiers) < 3:
+            modifier_info = modifiers_db.get(modifier, {})
+            mod_entry = {
+                "modifier": modifier,
+                "description": modifier_info.get("description", ""),
+                "use_case": modifier_info.get("use_case", "")
+            }
+            if mod_entry not in cpt_modifiers:
+                cpt_modifiers.append(mod_entry)
+
+    # Auto-detect modifier -25 if E/M code AND procedure code detected
+    has_em_code = any(c.get("code", "").startswith("99") for c in cpt_codes)
+    has_procedure = any(not c.get("code", "").startswith("99") for c in cpt_codes)
+    if has_em_code and has_procedure:
+        mod_25 = {
+            "modifier": "25",
+            "description": "Significant, separately identifiable E/M service",
+            "use_case": "E/M same day as procedure"
+        }
+        if mod_25 not in cpt_modifiers:
+            cpt_modifiers.insert(0, mod_25)  # Priority modifier
+
     return {
         "subjective": subjective,
         "objective": objective,
@@ -1112,7 +1140,8 @@ def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict
         "plan": plan,
         "summary": summary,
         "icd10_codes": icd10_codes,
-        "cpt_codes": cpt_codes
+        "cpt_codes": cpt_codes,
+        "cpt_modifiers": cpt_modifiers
     }
 
 
@@ -1347,6 +1376,16 @@ def format_soap_display(note: dict) -> str:
             desc = code_info.get("description", "")
             lines.append(f"  • {code}: {desc[:40]}")
 
+    # Add CPT modifiers if present
+    cpt_modifiers = note.get("cpt_modifiers", [])
+    if cpt_modifiers:
+        lines.append("")
+        lines.append("▸ MODIFIERS:")
+        for mod_info in cpt_modifiers[:3]:
+            modifier = mod_info.get("modifier", "")
+            desc = mod_info.get("description", "")
+            lines.append(f"  • -{modifier}: {desc[:35]}")
+
     lines.append("─" * 25)
     lines.append(f"Summary: {note['summary'][:100]}")
 
@@ -1383,6 +1422,16 @@ def format_progress_display(note: dict) -> str:
             lines.append(f"▸ {label} CODES:")
             for code_info in codes[:5]:
                 lines.append(f"  • {code_info.get('code', '')}: {code_info.get('description', '')[:40]}")
+
+    # Add CPT modifiers if present
+    cpt_modifiers = note.get("cpt_modifiers", [])
+    if cpt_modifiers:
+        lines.append("")
+        lines.append("▸ MODIFIERS:")
+        for mod_info in cpt_modifiers[:3]:
+            modifier = mod_info.get("modifier", "")
+            desc = mod_info.get("description", "")
+            lines.append(f"  • -{modifier}: {desc[:35]}")
 
     lines.append("─" * 25)
     lines.append(f"Summary: {note.get('summary', '')[:100]}")
@@ -1436,6 +1485,16 @@ def format_hp_display(note: dict) -> str:
             for code_info in codes[:5]:
                 lines.append(f"  • {code_info.get('code', '')}: {code_info.get('description', '')[:40]}")
 
+    # Add CPT modifiers if present
+    cpt_modifiers = note.get("cpt_modifiers", [])
+    if cpt_modifiers:
+        lines.append("")
+        lines.append("▸ MODIFIERS:")
+        for mod_info in cpt_modifiers[:3]:
+            modifier = mod_info.get("modifier", "")
+            desc = mod_info.get("description", "")
+            lines.append(f"  • -{modifier}: {desc[:35]}")
+
     lines.append("─" * 25)
     lines.append(f"Summary: {note.get('summary', '')[:100]}")
 
@@ -1478,6 +1537,16 @@ def format_consult_display(note: dict) -> str:
             lines.append(f"▸ {label} CODES:")
             for code_info in codes[:5]:
                 lines.append(f"  • {code_info.get('code', '')}: {code_info.get('description', '')[:40]}")
+
+    # Add CPT modifiers if present
+    cpt_modifiers = note.get("cpt_modifiers", [])
+    if cpt_modifiers:
+        lines.append("")
+        lines.append("▸ MODIFIERS:")
+        for mod_info in cpt_modifiers[:3]:
+            modifier = mod_info.get("modifier", "")
+            desc = mod_info.get("description", "")
+            lines.append(f"  • -{modifier}: {desc[:35]}")
 
     lines.append("─" * 25)
     lines.append(f"Summary: {note.get('summary', '')[:100]}")
@@ -1614,6 +1683,7 @@ async def generate_clinical_note(request: NoteRequest):
             soap_data = generate_soap_template(request.transcript, request.chief_complaint)
             note_data["icd10_codes"] = soap_data.get("icd10_codes", [])
             note_data["cpt_codes"] = soap_data.get("cpt_codes", [])
+            note_data["cpt_modifiers"] = soap_data.get("cpt_modifiers", [])
 
         # Build response
         display_text = format_func(note_data)
@@ -1626,6 +1696,7 @@ async def generate_clinical_note(request: NoteRequest):
             "timestamp": timestamp,
             "icd10_codes": note_data.get("icd10_codes", []),
             "cpt_codes": note_data.get("cpt_codes", []),
+            "cpt_modifiers": note_data.get("cpt_modifiers", []),
             **note_data  # Include all note-specific fields
         }
 

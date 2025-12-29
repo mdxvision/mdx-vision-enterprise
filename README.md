@@ -14,7 +14,7 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 | Veradigm Integration | Ready | Service implemented |
 | Real-time Transcription | **Working** | AssemblyAI/Deepgram with speaker diarization |
 | AI Clinical Notes | **Working** | SOAP, Progress, H&P, Consult notes with preview |
-| Medical Coding | **Working** | ICD-10 (90+) & CPT (100+) auto-detection |
+| Medical Coding | **Working** | ICD-10 (90+) & CPT (100+) with modifiers |
 | Text-to-Speech | **Working** | Patient briefings, action confirmations |
 | Web Dashboard | **Working** | localhost:5173 |
 | Camera/Barcode | **Working** | Patient wristband scan via ML Kit |
@@ -47,7 +47,8 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 ### AI Clinical Documentation
 - **Note Types**: SOAP, Progress Note, H&P, Consult Note
 - **Auto-Detection**: Analyzes transcript to suggest appropriate note format
-- **Medical Coding**: ICD-10 (90+ codes) and CPT (100+ codes) auto-extraction
+- **Medical Coding**: ICD-10 (90+ codes) and CPT (100+ codes) with modifier support
+- **CPT Modifiers**: 20+ modifiers (-25, -59, LT/RT, etc.) with auto-detection
 - **Preview Before Generate**: See captured topics, word count, re-record option
 - **Edit Before Save**: Modify AI-generated notes before saving
 - **Sign-Off Workflow**: Confirmation dialog with clinician attestation

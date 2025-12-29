@@ -253,18 +253,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 25. **Speech Feedback for Actions** - TTS confirms key actions ("Patient loaded", "Recording started", "Note saved") with toggle
 26. **Allergy Warnings Spoken** - Critical allergies automatically spoken aloud when patient loads (bypasses speech feedback toggle for safety)
 27. **Offline Note Drafts** - Notes saved locally when offline or save fails, auto-sync when connectivity restores ("sync notes", "show drafts", "delete draft [N]")
+28. **CPT Modifier Support** - 20+ modifiers (-25, -59, LT/RT, etc.) with keyword detection and auto-suggest -25 for E/M + procedure combinations
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All quick wins completed! | See Medium Effort below |
-
-### Medium Effort
-| Feature | Notes |
-|---------|-------|
-| CPT modifier support | -25, -59, etc. |
+| All medium effort items completed! | See Larger Features below |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

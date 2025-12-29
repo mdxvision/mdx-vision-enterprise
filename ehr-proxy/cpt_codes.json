@@ -266,6 +266,138 @@
       "99407": "Smoking cessation counseling, >10 min"
     }
   },
+  "modifiers": {
+    "25": {
+      "description": "Significant, separately identifiable E/M service",
+      "use_case": "E/M same day as procedure",
+      "common_codes": ["99212", "99213", "99214", "99215"]
+    },
+    "59": {
+      "description": "Distinct procedural service",
+      "use_case": "Different session, anatomical site, or separate encounter",
+      "common_codes": ["any"]
+    },
+    "76": {
+      "description": "Repeat procedure by same physician",
+      "use_case": "Same procedure repeated same day",
+      "common_codes": ["any"]
+    },
+    "77": {
+      "description": "Repeat procedure by different physician",
+      "use_case": "Same procedure repeated by another provider",
+      "common_codes": ["any"]
+    },
+    "XE": {
+      "description": "Separate encounter",
+      "use_case": "Distinct encounter on same date",
+      "common_codes": ["any"]
+    },
+    "XS": {
+      "description": "Separate structure",
+      "use_case": "Different organ or structure",
+      "common_codes": ["any"]
+    },
+    "XP": {
+      "description": "Separate practitioner",
+      "use_case": "Different provider",
+      "common_codes": ["any"]
+    },
+    "XU": {
+      "description": "Unusual non-overlapping service",
+      "use_case": "Service not ordinarily bundled",
+      "common_codes": ["any"]
+    },
+    "LT": {
+      "description": "Left side",
+      "use_case": "Procedure on left side of body",
+      "common_codes": ["20610", "29125", "29515", "73562", "73610"]
+    },
+    "RT": {
+      "description": "Right side",
+      "use_case": "Procedure on right side of body",
+      "common_codes": ["20610", "29125", "29515", "73562", "73610"]
+    },
+    "50": {
+      "description": "Bilateral procedure",
+      "use_case": "Procedure on both sides",
+      "common_codes": ["20610", "69210", "73562"]
+    },
+    "51": {
+      "description": "Multiple procedures",
+      "use_case": "Multiple procedures same session",
+      "common_codes": ["any"]
+    },
+    "52": {
+      "description": "Reduced services",
+      "use_case": "Service partially reduced or eliminated",
+      "common_codes": ["any"]
+    },
+    "57": {
+      "description": "Decision for surgery",
+      "use_case": "E/M resulted in decision for major surgery",
+      "common_codes": ["99213", "99214", "99215"]
+    },
+    "58": {
+      "description": "Staged or related procedure",
+      "use_case": "Planned procedure during postoperative period",
+      "common_codes": ["any"]
+    },
+    "TC": {
+      "description": "Technical component only",
+      "use_case": "Only technical portion of service",
+      "common_codes": ["93000", "93306", "71046", "70450"]
+    },
+    "26": {
+      "description": "Professional component only",
+      "use_case": "Only interpretation/report",
+      "common_codes": ["93000", "93306", "71046", "70450"]
+    },
+    "GT": {
+      "description": "Via interactive audio/video",
+      "use_case": "Telehealth service",
+      "common_codes": ["99212", "99213", "99214", "99215"]
+    },
+    "95": {
+      "description": "Synchronous telemedicine",
+      "use_case": "Real-time telehealth visit",
+      "common_codes": ["99212", "99213", "99214", "99215"]
+    }
+  },
+  "modifier_keywords": {
+    "same day procedure": "25",
+    "separate service": "59",
+    "distinct service": "59",
+    "different site": "59",
+    "different location": "XS",
+    "separate encounter": "XE",
+    "another provider": "XP",
+    "different doctor": "XP",
+    "left": "LT",
+    "left side": "LT",
+    "right": "RT",
+    "right side": "RT",
+    "bilateral": "50",
+    "both sides": "50",
+    "multiple procedures": "51",
+    "repeat procedure": "76",
+    "same physician repeat": "76",
+    "different physician repeat": "77",
+    "reduced": "52",
+    "partial": "52",
+    "decision for surgery": "57",
+    "surgical decision": "57",
+    "staged procedure": "58",
+    "planned procedure": "58",
+    "technical only": "TC",
+    "tech component": "TC",
+    "professional only": "26",
+    "interpretation only": "26",
+    "read only": "26",
+    "telehealth": "95",
+    "telemedicine": "95",
+    "video visit": "GT",
+    "virtual visit": "GT"
+  },
   "keywords": {
     "new patient": "99203",
     "new pt": "99203",
