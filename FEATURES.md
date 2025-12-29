@@ -103,7 +103,7 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Conditions | Yes | Ready | Ready |
 | [x] Lab Results | Yes | Ready | Ready |
 | [x] Procedures | Yes | Ready | Ready |
-| [ ] Immunizations | Pending | Pending | Pending |
+| [x] Immunizations | Yes | Ready | Ready |
 
 ---
 

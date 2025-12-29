@@ -55,6 +55,12 @@ class Procedure(BaseModel):
     status: str = ""
 
 
+class Immunization(BaseModel):
+    name: str
+    date: str = ""
+    status: str = ""
+
+
 class PatientSummary(BaseModel):
     patient_id: str
     name: str
@@ -66,6 +72,7 @@ class PatientSummary(BaseModel):
     medications: List[str] = []
     labs: List[LabResult] = []
     procedures: List[Procedure] = []
+    immunizations: List[Immunization] = []
     display_text: str = ""
 
 
@@ -225,6 +232,38 @@ def extract_procedures(bundle: dict) -> List[Procedure]:
     return procedures
 
 
+def extract_immunizations(bundle: dict) -> List[Immunization]:
+    """Extract immunizations from FHIR Immunization bundle"""
+    immunizations = []
+    for entry in bundle.get("entry", [])[:10]:
+        imm = entry.get("resource", {})
+
+        # Get vaccine name
+        name = imm.get("vaccineCode", {}).get("text", "")
+        if not name:
+            coding = imm.get("vaccineCode", {}).get("coding", [])
+            if coding:
+                name = coding[0].get("display", "Unknown")
+
+        # Get date
+        date = ""
+        if "occurrenceDateTime" in imm:
+            date = imm["occurrenceDateTime"][:10]
+        elif "date" in imm:
+            date = imm["date"][:10]
+
+        status = imm.get("status", "")
+
+        if name and name != "Unknown":
+            immunizations.append(Immunization(
+                name=name,
+                date=date,
+                status=status
+            ))
+
+    return immunizations
+
+
 def format_ar_display(summary: PatientSummary) -> str:
     """Format patient data for AR glasses display"""
     lines = [
@@ -249,6 +288,10 @@ def format_ar_display(summary: PatientSummary) -> str:
     if summary.procedures:
         proc_str = ", ".join([p.name for p in summary.procedures[:3]])
         lines.append(f"🏥 PROCEDURES: {proc_str}")
+
+    if summary.immunizations:
+        imm_str = ", ".join([i.name for i in summary.immunizations[:4]])
+        lines.append(f"💉 IMMUNIZATIONS: {imm_str}")
 
     return "\n".join(lines)
 
@@ -292,6 +335,14 @@ async def get_patient(patient_id: str):
     proc_bundle = await fetch_fhir(f"Procedure?patient={patient_id}&_count=10")
     procedures = extract_procedures(proc_bundle)
 
+    # Fetch immunizations (may not be available in all sandboxes)
+    try:
+        imm_bundle = await fetch_fhir(f"Immunization?patient={patient_id}&_count=10")
+        immunizations = extract_immunizations(imm_bundle)
+    except Exception as e:
+        print(f"⚠️ Could not fetch immunizations: {e}")
+        immunizations = []
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -301,7 +352,8 @@ async def get_patient(patient_id: str):
         allergies=allergies,
         medications=medications,
         labs=labs,
-        procedures=procedures
+        procedures=procedures,
+        immunizations=immunizations
     )
     summary.display_text = format_ar_display(summary)
 

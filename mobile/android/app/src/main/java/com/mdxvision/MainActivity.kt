@@ -708,6 +708,10 @@ class MainActivity : AppCompatActivity() {
                 // Show procedures
                 fetchPatientSection("procedures")
             }
+            lower.contains("immunization") || lower.contains("vaccine") || lower.contains("vaccination") || lower.contains("shot") -> {
+                // Show immunizations
+                fetchPatientSection("immunizations")
+            }
             lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
                 // Close any open overlay
                 hideDataOverlay()
@@ -736,6 +740,7 @@ class MainActivity : AppCompatActivity() {
                 "medications" -> formatMedications(patient)
                 "labs" -> formatLabs(patient)
                 "procedures" -> formatProcedures(patient)
+                "immunizations" -> formatImmunizations(patient)
                 else -> patient.optString("display_text", "No data")
             }
             showDataOverlay(title, content)
@@ -777,6 +782,7 @@ class MainActivity : AppCompatActivity() {
                                     "medications" -> formatMedications(patient)
                                     "labs" -> formatLabs(patient)
                                     "procedures" -> formatProcedures(patient)
+                                    "immunizations" -> formatImmunizations(patient)
                                     else -> patient.optString("display_text", "No data")
                                 }
                                 showDataOverlay(title, content)
@@ -839,6 +845,20 @@ class MainActivity : AppCompatActivity() {
             val p = procs.getJSONObject(i)
             sb.append("• ${p.getString("name")}")
             val date = p.optString("date", "")
+            if (date.isNotEmpty()) sb.append(" ($date)")
+            sb.append("\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatImmunizations(patient: JSONObject): String {
+        val imms = patient.optJSONArray("immunizations") ?: return "No immunizations recorded"
+        if (imms.length() == 0) return "No immunizations recorded"
+        val sb = StringBuilder("💉 IMMUNIZATIONS\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(imms.length(), 10)) {
+            val imm = imms.getJSONObject(i)
+            sb.append("• ${imm.getString("name")}")
+            val date = imm.optString("date", "")
             if (date.isNotEmpty()) sb.append(" ($date)")
             sb.append("\n")
         }
