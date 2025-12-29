@@ -19,6 +19,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Speaker diarization | Done | AssemblyAI/Deepgram speaker_labels |
 | [x] Speaker context from chart | Done | Maps Speaker 0/1 to patient/clinician names |
 | [x] Medical vocabulary boost | Done | 500+ terms, specialty support |
+| [x] Specialty vocab auto-load | Done | Detects cardiology/pulmonology/etc from patient ICD-10 |
 
 ### AI-Powered Note Generation
 | Feature | Status | Implementation |
@@ -237,7 +238,9 @@ Based on MDx v2.0 Brief Technical Description document.
 | Endpoint | Method | Status |
 |----------|--------|--------|
 | `/api/v1/transcription/status` | GET | Done |
+| `/api/v1/transcription/detect-specialty` | POST | Done |
 | `/ws/transcribe` | WebSocket | Done |
+| `/ws/transcribe?specialties=` | WebSocket | Done |
 | `/ws/transcribe/{provider}` | WebSocket | Done |
 
 ---

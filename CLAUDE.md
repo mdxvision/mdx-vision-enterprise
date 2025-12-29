@@ -241,19 +241,19 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 13. **Speaker Diarization** - Multi-speaker detection with speaker labels in transcript
 14. **Medical Vocabulary Boost** - 500+ medical terms for improved transcription accuracy
 15. **Speaker Context from Chart** - Maps "Speaker 0/1" to patient/clinician names from loaded chart
+16. **Specialty Vocabulary Auto-Load** - Detects cardiology/pulmonology/etc from patient conditions
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| **Specialty vocabulary auto-load** | Auto-load cardiology/ortho/neuro terms based on department |
 | **Edit note before save** | Allow modifications before saving |
+| **Care plans display** | FHIR CarePlan resource |
 
 ### Medium Effort
 | Feature | Notes |
 |---------|-------|
-| Care plans display | FHIR CarePlan resource |
 | CPT modifier support | -25, -59, etc. |
 | Offline note drafts | Queue notes for sync when reconnected |
 

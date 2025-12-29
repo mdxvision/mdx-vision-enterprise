@@ -29,8 +29,9 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 ### Real-Time Transcription
 - **Dual Provider**: AssemblyAI or Deepgram
 - **Speaker Diarization**: Multi-speaker detection with labels
+- **Speaker Context**: Maps Speaker 0/1 to patient/clinician names from chart
 - **Medical Vocabulary**: 500+ terms for improved accuracy
-- **Specialty Support**: Cardiology, pulmonology, orthopedics, neurology, pediatrics
+- **Specialty Auto-Detection**: Detects cardiology/pulmonology/orthopedics/neurology/pediatrics from ICD-10
 
 ### AI Clinical Documentation
 - **Note Types**: SOAP, Progress Note, H&P, Consult Note
@@ -156,7 +157,9 @@ GET  /api/v1/notes/{id}            # Retrieve saved note
 
 # Transcription
 GET  /api/v1/transcription/status  # Check transcription config
+POST /api/v1/transcription/detect-specialty  # Detect specialties from conditions
 WS   /ws/transcribe                # Real-time transcription (default provider)
+WS   /ws/transcribe?specialties=   # With specialty vocabulary (cardiology,pulmonology,etc)
 WS   /ws/transcribe/{provider}     # Transcription with specific provider
 ```
 

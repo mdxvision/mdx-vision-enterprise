@@ -194,6 +194,7 @@ Based on US Patent 15/237,980 and product requirements.
 6. ~~**Medical Vocabulary Boost**~~ - Done (500+ terms)
 7. ~~**Note Type Auto-Detection**~~ - Done (keyword analysis)
 8. ~~**Speaker Context from Chart**~~ - Done (maps Speaker 0/1 to patient/clinician names)
+9. ~~**Specialty Vocabulary Auto-Load**~~ - Done (detects specialty from patient conditions/ICD-10)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
@@ -201,7 +202,7 @@ Based on US Patent 15/237,980 and product requirements.
 3. **HIPAA Audit Logging** - Security compliance
 4. **User Authentication** - OAuth2/SMART on FHIR
 5. **Push Notes to EHR** - FHIR DocumentReference
-6. **Specialty Vocabulary Auto-Load** - Auto-detect department
+6. **Edit Note Before Save** - Allow modifications
 
 ---
 

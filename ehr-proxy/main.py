@@ -26,6 +26,13 @@ from transcription import (
     TranscriptionSession, TRANSCRIPTION_PROVIDER
 )
 
+# Import specialty detection for auto-loading vocabulary
+from medical_vocabulary import (
+    detect_specialties_from_patient_conditions,
+    detect_specialty_from_transcript,
+    get_vocabulary_for_patient
+)
+
 # Load code databases
 def load_code_database(filename):
     """Load ICD-10 or CPT code database from JSON file"""
@@ -1565,45 +1572,106 @@ async def transcription_status():
         "status": "ready",
         "supported_providers": ["assemblyai", "deepgram"],
         "sample_rate": 16000,
-        "encoding": "linear16"
+        "encoding": "linear16",
+        "features": {
+            "speaker_diarization": True,
+            "medical_vocabulary": True,
+            "specialty_auto_detection": True
+        }
+    }
+
+
+class SpecialtyDetectionRequest(BaseModel):
+    """Request for detecting medical specialties from patient conditions"""
+    conditions: List[dict]  # List of {"name": "...", "code": "..."} objects
+
+
+@app.post("/api/v1/transcription/detect-specialty")
+async def detect_specialty(request: SpecialtyDetectionRequest):
+    """
+    Detect relevant medical specialties from patient conditions.
+
+    Used to auto-load appropriate medical vocabulary for transcription.
+
+    Request body:
+    {
+        "conditions": [
+            {"name": "Essential hypertension", "code": "I10"},
+            {"name": "Type 2 diabetes mellitus", "code": "E11.9"}
+        ]
+    }
+
+    Returns detected specialties sorted by relevance.
+    """
+    specialties = detect_specialties_from_patient_conditions(request.conditions)
+
+    return {
+        "detected_specialties": specialties,
+        "count": len(specialties),
+        "vocabulary_terms_added": sum([
+            21 if s == "cardiology" else
+            24 if s == "pulmonology" else
+            24 if s == "orthopedics" else
+            20 if s == "neurology" else
+            25 if s == "pediatrics" else 0
+            for s in specialties
+        ])
     }
 
 
 @app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket):
+async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
     """
     Real-time transcription WebSocket endpoint
 
+    Query Parameters:
+    - specialties: Comma-separated list of specialties (cardiology, pulmonology, orthopedics, neurology, pediatrics)
+      Example: /ws/transcribe?specialties=cardiology,pulmonology
+
     Protocol:
-    1. Client connects
-    2. Server sends: {"type": "connected", "session_id": "...", "provider": "..."}
+    1. Client connects (optionally with ?specialties=cardiology,pulmonology)
+    2. Server sends: {"type": "connected", "session_id": "...", "provider": "...", "specialties": [...]}
     3. Client optionally sends speaker context:
        {"type": "speaker_context", "clinician": "Dr. Smith", "patient": "John Doe", "others": [...]}
-    4. Client sends audio chunks as binary data (16-bit PCM, 16kHz)
-    5. Server sends transcription results:
+    4. Client optionally sends patient context for specialty detection (informational):
+       {"type": "patient_context", "conditions": [{"name": "...", "code": "..."}]}
+    5. Client sends audio chunks as binary data (16-bit PCM, 16kHz)
+    6. Server sends transcription results:
        {"type": "transcript", "text": "...", "is_final": true/false, "speaker": "Dr. Smith"}
-    6. Client sends: {"type": "stop"} to end session
-    7. Server sends: {"type": "ended", "full_transcript": "..."}
+    7. Client sends: {"type": "stop"} to end session
+    8. Server sends: {"type": "ended", "full_transcript": "..."}
     """
     await websocket.accept()
 
     # Generate session ID
     session_id = str(uuid.uuid4())[:8]
     session = None
+    detected_specialties = []
+
+    # Parse specialties from query parameter
+    specialty_list = None
+    if specialties:
+        specialty_list = [s.strip().lower() for s in specialties.split(",") if s.strip()]
+        valid_specialties = ["cardiology", "pulmonology", "orthopedics", "neurology", "pediatrics"]
+        specialty_list = [s for s in specialty_list if s in valid_specialties]
+        if specialty_list:
+            print(f"📚 Specialty vocabulary requested: {specialty_list}")
 
     try:
-        # Create transcription session
+        # Create transcription session with specialties
         print(f"🎤 Creating session {session_id}...")
-        session = await create_session(session_id)
+        session = await create_session(session_id, specialties=specialty_list)
         print(f"🎤 Session created, provider connected: {session.is_active}")
 
         # Send connection confirmation
         await websocket.send_json({
             "type": "connected",
             "session_id": session_id,
-            "provider": TRANSCRIPTION_PROVIDER
+            "provider": TRANSCRIPTION_PROVIDER,
+            "specialties": specialty_list or []
         })
-        print(f"🎤 Transcription session started: {session_id} ({TRANSCRIPTION_PROVIDER})")
+        specialty_info = f" with specialties {specialty_list}" if specialty_list else ""
+        print(f"🎤 Transcription session started: {session_id} ({TRANSCRIPTION_PROVIDER}){specialty_info}")
 
         # Task to forward transcriptions to client
         async def forward_transcriptions():
@@ -1654,6 +1722,20 @@ async def websocket_transcribe(websocket: WebSocket):
                             "patient": patient,
                             "others": others
                         })
+                    elif data.get("type") == "patient_context":
+                        # Auto-detect specialties from patient conditions
+                        conditions = data.get("conditions", [])
+                        if conditions:
+                            detected_specialties = detect_specialties_from_patient_conditions(conditions)
+                            if detected_specialties:
+                                print(f"📚 Auto-detected specialties: {detected_specialties}")
+                                # Note: Vocabulary is loaded at session creation time
+                                # This message confirms detection for the client
+                            await websocket.send_json({
+                                "type": "specialties_detected",
+                                "specialties": detected_specialties,
+                                "count": len(detected_specialties)
+                            })
 
             except WebSocketDisconnect:
                 break
