@@ -538,13 +538,18 @@ class MainActivity : AppCompatActivity() {
             }
             Log.e(TAG, "Speech error: $errorMessage")
 
-            // Don't overwrite status with errors - just show in transcript area briefly
-            transcriptText.text = errorMessage
             statusText.text = "MDx Vision"
 
             // Continue listening in documentation mode
             if (isDocumentationMode) {
+                transcriptText.text = "Listening..."
                 transcriptText.postDelayed({ startVoiceRecognition() }, 1000)
+            } else {
+                // Reset to default message after 2 seconds
+                transcriptText.text = errorMessage
+                transcriptText.postDelayed({
+                    transcriptText.text = "Tap or speak a command"
+                }, 2000)
             }
         }
 
