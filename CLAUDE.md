@@ -262,6 +262,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 34. **Lab Trends** - Historical lab value comparison with trend icons (↗️↘️→🆕), delta display, TTS alerts for rising/falling values
 35. **Vital Trends** - Historical vital value comparison (BP, HR, SpO2, etc.) with trend icons, delta display, TTS alerts
 36. **Patient Photo Display** - FHIR photo extraction with base64/URL support, initials placeholder, circular avatar in header
+37. **Patient Search History** - Recently viewed patients list, quick load by number ("load 1"), voice commands, relative timestamps
 
 ## Next Up (Recommended)
 

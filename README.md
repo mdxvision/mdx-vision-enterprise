@@ -125,6 +125,13 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Circular Avatar**: Clean, professional display in patient header
 - **Quick Identification**: Visual confirmation of correct patient
 
+### Patient Search History (NEW)
+- **Recently Viewed**: Stores last 10 patients viewed for quick access
+- **Quick Load**: Say "load 1" to quickly load most recent patient
+- **Relative Time**: Shows "2 hr ago", "yesterday" for context
+- **Voice Commands**: "show history", "recent patients", "clear history"
+- **Persistent**: History survives app restarts
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

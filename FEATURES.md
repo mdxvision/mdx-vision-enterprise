@@ -178,6 +178,9 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Generate note" / "Looks good" | Done |
 | [x] "Re-record" / "Try again" | Done |
 | [x] "Speech feedback" / "Toggle feedback" | Done |
+| [x] "Show history" / "Recent patients" | Done |
+| [x] "Load [N]" - Load from history | Done |
+| [x] "Clear history" | Done |
 
 ---
 
@@ -227,6 +230,7 @@ Based on US Patent 15/237,980 and product requirements.
 27. ~~**Lab Trends**~~ - Done (Historical comparison, trend icons ↗️↘️→🆕, TTS alerts for rising/falling values)
 28. ~~**Vital Trends**~~ - Done (Historical comparison for BP/HR/SpO2/etc, trend icons, TTS alerts)
 29. ~~**Patient Photo Display**~~ - Done (FHIR photo or initials placeholder, circular avatar in header)
+30. ~~**Patient Search History**~~ - Done (Recently viewed patients list, quick load by number, voice commands, relative timestamps)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

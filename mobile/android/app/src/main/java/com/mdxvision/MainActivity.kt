@@ -64,6 +64,9 @@ class MainActivity : AppCompatActivity() {
         private const val DRAFT_PREFIX = "note_draft_"
         private const val DRAFT_IDS_KEY = "pending_draft_ids"
         private const val MAX_SYNC_ATTEMPTS = 5
+        // Patient history
+        private const val HISTORY_KEY = "patient_history"
+        private const val MAX_HISTORY_SIZE = 10
     }
 
     // Offline cache
@@ -1386,6 +1389,11 @@ class MainActivity : AppCompatActivity() {
             |• "Auto scroll on/off" - Toggle scroll
             |• "Speech feedback" - Toggle voice confirmations
             |
+            |📋 HISTORY
+            |• "Show history" - Recent patients
+            |• "Load [N]" - Load patient from history
+            |• "Clear history" - Clear patient history
+            |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
             |• "Close" - Dismiss overlay
@@ -1946,8 +1954,11 @@ class MainActivity : AppCompatActivity() {
 
                                     // Cache by patient ID for offline access
                                     val patientId = patient.optString("patient_id", "")
+                                    val patientName = patient.optString("name", "Unknown")
                                     if (patientId.isNotEmpty()) {
                                         cachePatientData(patientId, body ?: "{}")
+                                        // Add to patient history for quick access
+                                        addToPatientHistory(patientId, patientName)
                                     }
 
                                     showPatientDataOverlay(patient)
@@ -2055,6 +2066,10 @@ class MainActivity : AppCompatActivity() {
                                 cachePatientData(patientId, body ?: "{}")
 
                                 val name = patient.optString("name", "Unknown")
+
+                                // Add to patient history for quick access
+                                addToPatientHistory(patientId, name)
+
                                 showPatientDataOverlay(patient)
 
                                 // Speech feedback
@@ -2136,6 +2151,128 @@ class MainActivity : AppCompatActivity() {
         cachePrefs.edit().clear().apply()
         Toast.makeText(this, "Patient cache cleared", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Cache cleared")
+    }
+
+    // ============ Patient History Methods ============
+
+    /**
+     * Add a patient to the recently viewed history.
+     * Stores patient ID, name, and timestamp for quick access.
+     * Maintains a maximum of MAX_HISTORY_SIZE entries.
+     */
+    private fun addToPatientHistory(patientId: String, patientName: String) {
+        val history = getPatientHistory().toMutableList()
+
+        // Remove existing entry for this patient (to move to top)
+        history.removeAll { it.optString("patient_id") == patientId }
+
+        // Create new entry
+        val entry = JSONObject().apply {
+            put("patient_id", patientId)
+            put("name", patientName)
+            put("timestamp", System.currentTimeMillis())
+        }
+
+        // Add to beginning (most recent first)
+        history.add(0, entry)
+
+        // Trim to max size
+        val trimmed = history.take(MAX_HISTORY_SIZE)
+
+        // Save as JSON array
+        val historyArray = org.json.JSONArray()
+        trimmed.forEach { historyArray.put(it) }
+
+        cachePrefs.edit()
+            .putString(HISTORY_KEY, historyArray.toString())
+            .apply()
+
+        Log.d(TAG, "Added to history: $patientName ($patientId)")
+    }
+
+    /**
+     * Get list of recently viewed patients.
+     * Returns list of JSONObjects with patient_id, name, timestamp.
+     */
+    private fun getPatientHistory(): List<JSONObject> {
+        val historyJson = cachePrefs.getString(HISTORY_KEY, null) ?: return emptyList()
+
+        return try {
+            val array = org.json.JSONArray(historyJson)
+            (0 until array.length()).map { array.getJSONObject(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse patient history: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Clear patient history.
+     */
+    private fun clearPatientHistory() {
+        cachePrefs.edit().remove(HISTORY_KEY).apply()
+        Toast.makeText(this, "Patient history cleared", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Patient history cleared")
+    }
+
+    /**
+     * Show overlay with recently viewed patients.
+     * Allows quick load by saying "load [number]".
+     */
+    private fun showHistoryOverlay() {
+        val history = getPatientHistory()
+
+        if (history.isEmpty()) {
+            showDataOverlay("📋 Recent Patients", "No patients in history.\n\nLoad a patient to add them to history.")
+            speakFeedback("No patients in history")
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("Say \"load [number]\" to quickly load a patient")
+        sb.appendLine()
+
+        history.forEachIndexed { index, entry ->
+            val name = entry.optString("name", "Unknown")
+            val patientId = entry.optString("patient_id", "")
+            val timestamp = entry.optLong("timestamp", 0)
+            val timeAgo = formatTimeAgo(timestamp)
+
+            sb.appendLine("${index + 1}. $name")
+            sb.appendLine("   ID: $patientId • $timeAgo")
+            sb.appendLine()
+        }
+
+        sb.appendLine("─────────────────────")
+        sb.appendLine("Commands: \"clear history\"")
+
+        showDataOverlay("📋 Recent Patients (${history.size})", sb.toString())
+        speakFeedback("${history.size} recent patients")
+    }
+
+    /**
+     * Load patient from history by index (1-based).
+     */
+    private fun loadPatientFromHistory(index: Int) {
+        val history = getPatientHistory()
+
+        if (index < 1 || index > history.size) {
+            Toast.makeText(this, "Invalid selection: $index", Toast.LENGTH_SHORT).show()
+            speakFeedback("Invalid selection")
+            return
+        }
+
+        val entry = history[index - 1]
+        val patientId = entry.optString("patient_id", "")
+        val patientName = entry.optString("name", "Unknown")
+
+        if (patientId.isEmpty()) {
+            Toast.makeText(this, "Invalid patient entry", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        Log.d(TAG, "Loading patient from history: $patientName ($patientId)")
+        fetchPatientData(patientId)
     }
 
     // ============ Offline Note Drafts Methods ============
@@ -3288,6 +3425,22 @@ class MainActivity : AppCompatActivity() {
                 clearCache()
                 currentPatientData = null
                 hideDataOverlay()
+            }
+            // Patient history voice commands
+            lower.contains("show history") || lower.contains("recent patients") || lower.contains("patient history") -> {
+                showHistoryOverlay()
+            }
+            lower.contains("clear history") -> {
+                clearPatientHistory()
+                hideDataOverlay()
+            }
+            lower.contains("load ") && Regex("load\\s+(\\d+)").containsMatchIn(lower) -> {
+                // Load patient from history by number (e.g., "load 1", "load 2")
+                val match = Regex("load\\s+(\\d+)").find(lower)
+                if (match != null) {
+                    val index = match.groupValues[1].toIntOrNull() ?: 0
+                    loadPatientFromHistory(index)
+                }
             }
             // Offline note drafts voice commands
             lower.contains("sync notes") || lower.contains("sync drafts") || lower.contains("upload drafts") -> {
