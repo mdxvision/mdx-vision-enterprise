@@ -54,6 +54,11 @@ class MainActivity : AppCompatActivity() {
     private var isDocumentationMode = false
     private val documentationTranscripts = mutableListOf<String>()
 
+    // Wake word and continuous listening (Patent Claims 1-4)
+    private var isContinuousListening = false
+    private val WAKE_WORD = "hey mdx"
+    private var awaitingCommand = false
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -142,7 +147,7 @@ class MainActivity : AppCompatActivity() {
 
         // Define all voice commands
         val commands = listOf(
-            CommandButton("START LISTENING", 0xFF3B82F6.toInt()) { startVoiceRecognition() },
+            CommandButton("HEY MDX MODE", 0xFF3B82F6.toInt()) { toggleContinuousListening() },
             CommandButton("LOAD PATIENT", 0xFF6366F1.toInt()) { fetchPatientData(TEST_PATIENT_ID) },
             CommandButton("FIND PATIENT", 0xFF8B5CF6.toInt()) { promptFindPatient() },
             CommandButton("SCAN WRISTBAND", 0xFFEC4899.toInt()) { startBarcodeScanner() },
@@ -193,6 +198,26 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "Say patient name..."
         transcriptText.text = "Listening for name"
         startVoiceRecognition()
+    }
+
+    private fun toggleContinuousListening() {
+        isContinuousListening = !isContinuousListening
+
+        if (isContinuousListening) {
+            statusText.text = "Hey MDx - Listening"
+            transcriptText.text = "Say 'Hey MDx' then your command"
+            awaitingCommand = false
+            startVoiceRecognition()
+        } else {
+            statusText.text = "MDx Vision"
+            transcriptText.text = "Tap or speak a command"
+            awaitingCommand = false
+            try {
+                speechRecognizer.stopListening()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping speech: ${e.message}")
+            }
+        }
     }
 
     private fun showDataOverlay(title: String, content: String) {
@@ -538,13 +563,17 @@ class MainActivity : AppCompatActivity() {
             }
             Log.e(TAG, "Speech error: $errorMessage")
 
-            statusText.text = "MDx Vision"
-
-            // Continue listening in documentation mode
+            // Continue listening in documentation or continuous mode
             if (isDocumentationMode) {
+                statusText.text = "DOCUMENTING"
                 transcriptText.text = "Listening..."
                 transcriptText.postDelayed({ startVoiceRecognition() }, 1000)
+            } else if (isContinuousListening) {
+                statusText.text = "Hey MDx - Listening"
+                transcriptText.text = "Say 'Hey MDx'..."
+                transcriptText.postDelayed({ startVoiceRecognition() }, 1000)
             } else {
+                statusText.text = "MDx Vision"
                 // Reset to default message after 2 seconds
                 transcriptText.text = errorMessage
                 transcriptText.postDelayed({
@@ -558,11 +587,53 @@ class MainActivity : AppCompatActivity() {
             val transcript = matches?.firstOrNull() ?: ""
 
             Log.d(TAG, "Transcript: $transcript")
-            transcriptText.text = "\"$transcript\""
-            statusText.text = "MDx Vision"
+            val lower = transcript.lowercase()
 
-            // Process the transcript
-            processTranscript(transcript)
+            if (isContinuousListening) {
+                // Check for wake word "Hey MDx"
+                if (lower.contains(WAKE_WORD) || lower.contains("hey m d x") || lower.contains("a]mdx")) {
+                    // Extract command after wake word
+                    val wakeIndex = maxOf(
+                        lower.indexOf(WAKE_WORD).let { if (it >= 0) it + WAKE_WORD.length else -1 },
+                        lower.indexOf("hey m d x").let { if (it >= 0) it + 9 else -1 },
+                        lower.indexOf("a]mdx").let { if (it >= 0) it + 5 else -1 }
+                    )
+
+                    if (wakeIndex > 0 && wakeIndex < transcript.length) {
+                        // Command follows wake word
+                        val command = transcript.substring(wakeIndex).trim()
+                        statusText.text = "Command: $command"
+                        transcriptText.text = "Processing..."
+                        processTranscript(command)
+                    } else {
+                        // Just wake word, waiting for command
+                        statusText.text = "Yes? Say command..."
+                        awaitingCommand = true
+                    }
+                } else if (awaitingCommand) {
+                    // Process as command (wake word was in previous phrase)
+                    statusText.text = "MDx Vision"
+                    transcriptText.text = "\"$transcript\""
+                    processTranscript(transcript)
+                    awaitingCommand = false
+                } else {
+                    // No wake word detected, keep listening
+                    transcriptText.text = "Say 'Hey MDx'..."
+                }
+
+                // Continue listening in continuous mode
+                transcriptText.postDelayed({
+                    if (isContinuousListening) {
+                        statusText.text = "Hey MDx - Listening"
+                        startVoiceRecognition()
+                    }
+                }, 500)
+            } else {
+                // Normal mode - process transcript directly
+                transcriptText.text = "\"$transcript\""
+                statusText.text = "MDx Vision"
+                processTranscript(transcript)
+            }
         }
 
         override fun onPartialResults(partialResults: Bundle?) {

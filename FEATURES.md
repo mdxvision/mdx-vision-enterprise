@@ -11,8 +11,8 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Microphone input capture | Done | `MainActivity.kt:152-166` |
 | [x] Speech-to-text recognition | Done | Android SpeechRecognizer |
 | [x] Voice command parsing | Done | `MainActivity.kt:288-312` |
-| [ ] Wake word detection ("Hey MDx") | Pending | - |
-| [ ] Continuous listening mode | Pending | - |
+| [x] Wake word detection ("Hey MDx") | Done | `MainActivity.kt` |
+| [x] Continuous listening mode | Done | Toggle via HEY MDX MODE |
 | [x] Command: "Load patient {id}" | Done | `MainActivity.kt` |
 | [x] Command: "Find {name}" | Done | `MainActivity.kt` |
 | [x] Command: "Start note" | Done | `MainActivity.kt` |
@@ -20,7 +20,6 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Command: "Show allergies" | Done | `MainActivity.kt` |
 | [x] Command: "Show meds" | Done | `MainActivity.kt` |
 | [x] Command: "Scan wristband" | Done | `MainActivity.kt` |
-| [ ] Wake word ("Hey MDx") | Pending | - |
 
 ### Patient Identification (Claims 5-7)
 
