@@ -94,6 +94,9 @@ class MainActivity : AppCompatActivity() {
     private var isAutoScrollEnabled: Boolean = true
     private var liveTranscriptScrollView: android.widget.ScrollView? = null
 
+    // Note type for clinical documentation (SOAP, PROGRESS, HP, CONSULT)
+    private var currentNoteType: String = "SOAP"
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -637,7 +640,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun generateClinicalNote(transcript: String) {
-        statusText.text = "Generating SOAP Note..."
+        val noteTypeDisplay = getNoteTypeDisplayName()
+        statusText.text = "Generating $noteTypeDisplay..."
         transcriptText.text = "Processing transcript"
 
         Thread {
@@ -645,6 +649,7 @@ class MainActivity : AppCompatActivity() {
                 val json = JSONObject().apply {
                     put("transcript", transcript)
                     put("chief_complaint", "See transcript")
+                    put("note_type", currentNoteType)
                 }
 
                 val request = Request.Builder()
@@ -671,9 +676,9 @@ class MainActivity : AppCompatActivity() {
                                 lastGeneratedNote = result
                                 lastNoteTranscript = transcript
                                 val displayText = result.optString("display_text", "No note generated")
-                                showNoteWithSaveOption("SOAP Note", displayText)
+                                showNoteWithSaveOption(noteTypeDisplay, displayText)
                             } catch (e: Exception) {
-                                showDataOverlay("SOAP Note", body ?: "No response")
+                                showDataOverlay(noteTypeDisplay, body ?: "No response")
                             }
                         }
                     }
@@ -685,6 +690,24 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun getNoteTypeDisplayName(): String {
+        return when (currentNoteType.uppercase()) {
+            "SOAP" -> "SOAP Note"
+            "PROGRESS" -> "Progress Note"
+            "HP" -> "H&P Note"
+            "CONSULT" -> "Consult Note"
+            else -> "Clinical Note"
+        }
+    }
+
+    private fun setNoteType(noteType: String) {
+        currentNoteType = noteType.uppercase()
+        val displayName = getNoteTypeDisplayName()
+        Toast.makeText(this, "Note type: $displayName", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Note type: $displayName"
+        Log.d(TAG, "Note type set to $currentNoteType")
     }
 
     private fun showNoteWithSaveOption(title: String, content: String) {
@@ -1439,6 +1462,19 @@ class MainActivity : AppCompatActivity() {
             }
             lower.contains("toggle scroll") || lower.contains("toggle auto scroll") -> {
                 toggleAutoScroll()
+            }
+            // Note type selection voice commands
+            lower.contains("soap note") || lower.contains("note type soap") -> {
+                setNoteType("SOAP")
+            }
+            lower.contains("progress note") || lower.contains("note type progress") -> {
+                setNoteType("PROGRESS")
+            }
+            lower.contains("h&p note") || lower.contains("hp note") || lower.contains("history and physical") || lower.contains("note type hp") -> {
+                setNoteType("HP")
+            }
+            lower.contains("consult note") || lower.contains("consultation note") || lower.contains("note type consult") -> {
+                setNoteType("CONSULT")
             }
             lower.contains("clear") || lower.contains("reset") -> {
                 // Clear current patient data (not cache)

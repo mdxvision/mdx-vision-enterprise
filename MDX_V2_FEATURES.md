@@ -30,7 +30,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Objective section | Done | Clinical findings |
 | [x] Assessment section | Done | Diagnosis summary |
 | [x] Plan section | Done | Treatment plan |
-| [ ] Multiple note templates | Pending | Progress notes, H&P, etc. |
+| [x] Multiple note templates | Done | SOAP, Progress, H&P, Consult |
 | [ ] Specialty-specific templates | Pending | Cardiology, Ortho, etc. |
 
 ### Medical Coding
@@ -188,6 +188,10 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Font small/medium/large" | Done | Set specific size |
 | [x] "Auto scroll on/off" | Done | Toggle auto-scroll |
 | [x] "Toggle scroll" | Done | Toggle auto-scroll |
+| [x] "SOAP note" | Done | Set note type to SOAP |
+| [x] "Progress note" | Done | Set note type to Progress |
+| [x] "H&P note" | Done | Set note type to H&P |
+| [x] "Consult note" | Done | Set note type to Consult |
 
 ---
 

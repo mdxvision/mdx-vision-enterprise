@@ -132,6 +132,54 @@ class SOAPNote(BaseModel):
     display_text: str = ""
 
 
+# Supported note types
+NOTE_TYPES = ["SOAP", "PROGRESS", "HP", "CONSULT"]
+
+
+class ProgressNote(BaseModel):
+    """Progress note for follow-up visits"""
+    interval_history: str
+    current_status: str
+    physical_exam: str
+    assessment: str
+    plan: str
+    summary: str
+    timestamp: str
+    display_text: str = ""
+
+
+class HPNote(BaseModel):
+    """History and Physical note for new patients/admissions"""
+    chief_complaint: str
+    history_present_illness: str
+    past_medical_history: str
+    medications: str
+    allergies: str
+    family_history: str
+    social_history: str
+    review_of_systems: str
+    physical_exam: str
+    assessment: str
+    plan: str
+    summary: str
+    timestamp: str
+    display_text: str = ""
+
+
+class ConsultNote(BaseModel):
+    """Consultation note for specialist referrals"""
+    reason_for_consult: str
+    history_present_illness: str
+    relevant_history: str
+    physical_exam: str
+    diagnostic_findings: str
+    impression: str
+    recommendations: str
+    summary: str
+    timestamp: str
+    display_text: str = ""
+
+
 # Claude API for AI-powered notes (optional)
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
@@ -874,6 +922,198 @@ def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict
     }
 
 
+def generate_progress_template(transcript: str, chief_complaint: str = None) -> dict:
+    """Generate Progress Note using template-based extraction"""
+    transcript_lower = transcript.lower()
+
+    # Interval history - what's happened since last visit
+    interval_history = f"Patient returns for follow-up. "
+    if "better" in transcript_lower or "improved" in transcript_lower:
+        interval_history += "Reports improvement in symptoms. "
+    elif "worse" in transcript_lower or "no better" in transcript_lower:
+        interval_history += "Reports worsening or no change in symptoms. "
+    else:
+        interval_history += "Interval history as discussed. "
+    interval_history += f"Chief concern: {chief_complaint or 'Follow-up visit'}."
+
+    # Current status
+    symptom_keywords = ["pain", "ache", "fever", "cough", "tired", "nausea", "dizzy"]
+    symptoms = [kw for kw in symptom_keywords if kw in transcript_lower]
+    current_status = f"Current symptoms: {', '.join(symptoms) if symptoms else 'as described'}. "
+    if "medication" in transcript_lower or "taking" in transcript_lower:
+        current_status += "Medication compliance discussed. "
+
+    # Physical exam
+    vital_patterns = re.findall(r'(\d+/\d+|\d+\.\d+|\d+ degrees?|\d+ bpm)', transcript)
+    physical_exam = "Vital signs: " + (", ".join(vital_patterns) if vital_patterns else "stable") + ". "
+    physical_exam += "Exam findings as documented."
+
+    # Assessment
+    assessment = f"Patient progressing as expected. " if "better" in transcript_lower else "Condition stable, monitoring. "
+    assessment += "Continue current treatment plan with modifications as noted."
+
+    # Plan
+    plan = "1. Continue current medications\n"
+    plan += "2. Lifestyle modifications as discussed\n"
+    plan += "3. Follow up in [timeframe]\n"
+    plan += "4. Return sooner if symptoms worsen"
+
+    summary = f"Progress note for {chief_complaint or 'follow-up'}. Patient is {('improving' if 'better' in transcript_lower else 'stable')}."
+
+    return {
+        "interval_history": interval_history,
+        "current_status": current_status,
+        "physical_exam": physical_exam,
+        "assessment": assessment,
+        "plan": plan,
+        "summary": summary,
+        "icd10_codes": [],  # Will be populated by caller
+        "cpt_codes": []
+    }
+
+
+def generate_hp_template(transcript: str, chief_complaint: str = None) -> dict:
+    """Generate History & Physical Note using template-based extraction"""
+    transcript_lower = transcript.lower()
+
+    # Chief complaint
+    cc = chief_complaint or "See HPI"
+
+    # History of Present Illness
+    hpi = f"Patient presents with {cc}. "
+    symptom_keywords = ["pain", "ache", "fever", "cough", "tired", "nausea", "dizzy", "swelling"]
+    symptoms = [kw for kw in symptom_keywords if kw in transcript_lower]
+    if symptoms:
+        hpi += f"Associated symptoms include: {', '.join(symptoms)}. "
+    hpi += "Details as discussed in encounter."
+
+    # Past Medical History
+    pmh = "See medical record for complete history. "
+    conditions = ["diabetes", "hypertension", "asthma", "copd", "heart", "cancer"]
+    found_conditions = [c for c in conditions if c in transcript_lower]
+    if found_conditions:
+        pmh += f"Notable: {', '.join(found_conditions)}."
+
+    # Medications
+    medications = "Current medications reviewed. " if "medication" in transcript_lower else "Medications as documented in chart."
+
+    # Allergies
+    allergies = "NKDA" if "no known" in transcript_lower or "no allergies" in transcript_lower else "See allergy list in chart."
+
+    # Family History
+    family_hx = "Family history reviewed. "
+    if "family history" in transcript_lower:
+        family_hx += "Notable findings discussed."
+
+    # Social History
+    social_hx = "Social history reviewed. "
+    if "smok" in transcript_lower:
+        social_hx += "Tobacco use discussed. "
+    if "alcohol" in transcript_lower or "drink" in transcript_lower:
+        social_hx += "Alcohol use discussed. "
+
+    # Review of Systems
+    ros = "Complete ROS performed. "
+    ros += "Positive findings: " + (", ".join(symptoms) if symptoms else "as documented") + ". "
+    ros += "All other systems reviewed and negative."
+
+    # Physical Exam
+    vital_patterns = re.findall(r'(\d+/\d+|\d+\.\d+|\d+ degrees?|\d+ bpm)', transcript)
+    physical_exam = "VITAL SIGNS: " + (", ".join(vital_patterns) if vital_patterns else "See vitals") + "\n"
+    physical_exam += "GENERAL: Alert, oriented, no acute distress\n"
+    physical_exam += "Complete physical examination performed as documented."
+
+    # Assessment
+    assessment = f"New patient evaluation for {cc}. "
+    assessment += "Clinical findings consistent with reported symptoms."
+
+    # Plan
+    plan = "1. Diagnostic workup as indicated\n"
+    plan += "2. Initiate treatment as discussed\n"
+    plan += "3. Patient education provided\n"
+    plan += "4. Follow up for results/reassessment"
+
+    summary = f"H&P completed for {cc}. New patient encounter documented."
+
+    return {
+        "chief_complaint": cc,
+        "history_present_illness": hpi,
+        "past_medical_history": pmh,
+        "medications": medications,
+        "allergies": allergies,
+        "family_history": family_hx,
+        "social_history": social_hx,
+        "review_of_systems": ros,
+        "physical_exam": physical_exam,
+        "assessment": assessment,
+        "plan": plan,
+        "summary": summary,
+        "icd10_codes": [],
+        "cpt_codes": []
+    }
+
+
+def generate_consult_template(transcript: str, chief_complaint: str = None) -> dict:
+    """Generate Consultation Note using template-based extraction"""
+    transcript_lower = transcript.lower()
+
+    # Reason for consult
+    reason = chief_complaint or "Specialty evaluation requested"
+
+    # HPI
+    hpi = f"Thank you for this consultation regarding {reason}. "
+    hpi += "Patient is a [age] [gender] referred for evaluation. "
+    symptom_keywords = ["pain", "ache", "fever", "cough", "mass", "lesion", "abnormal"]
+    symptoms = [kw for kw in symptom_keywords if kw in transcript_lower]
+    if symptoms:
+        hpi += f"Presenting symptoms: {', '.join(symptoms)}."
+
+    # Relevant history
+    relevant_hx = "Pertinent medical history reviewed. "
+    conditions = ["diabetes", "hypertension", "surgery", "cancer", "heart"]
+    found = [c for c in conditions if c in transcript_lower]
+    if found:
+        relevant_hx += f"Significant for: {', '.join(found)}."
+
+    # Physical exam
+    vital_patterns = re.findall(r'(\d+/\d+|\d+\.\d+|\d+ degrees?|\d+ bpm)', transcript)
+    physical_exam = "Focused examination performed.\n"
+    physical_exam += "Vital signs: " + (", ".join(vital_patterns) if vital_patterns else "stable") + "\n"
+    physical_exam += "Pertinent findings as documented."
+
+    # Diagnostic findings
+    diagnostics = "Reviewed available studies and laboratory data. "
+    if "lab" in transcript_lower or "test" in transcript_lower:
+        diagnostics += "Results discussed with patient. "
+    diagnostics += "Additional workup may be indicated."
+
+    # Impression
+    impression = f"Consultation for {reason}. "
+    impression += "Clinical assessment and recommendations provided."
+
+    # Recommendations
+    recommendations = "RECOMMENDATIONS:\n"
+    recommendations += "1. [Specific diagnostic/therapeutic recommendations]\n"
+    recommendations += "2. [Follow-up plan]\n"
+    recommendations += "3. [Referral considerations if any]\n"
+    recommendations += "4. Will coordinate care with referring provider"
+
+    summary = f"Consultation completed for {reason}. Recommendations provided to referring physician."
+
+    return {
+        "reason_for_consult": reason,
+        "history_present_illness": hpi,
+        "relevant_history": relevant_hx,
+        "physical_exam": physical_exam,
+        "diagnostic_findings": diagnostics,
+        "impression": impression,
+        "recommendations": recommendations,
+        "summary": summary,
+        "icd10_codes": [],
+        "cpt_codes": []
+    }
+
+
 def format_soap_display(note: dict) -> str:
     """Format SOAP note for AR display"""
     lines = [
@@ -919,35 +1159,198 @@ def format_soap_display(note: dict) -> str:
     return "\n".join(lines)
 
 
-@app.post("/api/v1/notes/generate", response_model=SOAPNote)
+def format_progress_display(note: dict) -> str:
+    """Format Progress Note for AR display"""
+    lines = [
+        "═══ PROGRESS NOTE ═══",
+        f"📝 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "─" * 25,
+        "▸ INTERVAL HISTORY:",
+        note.get("interval_history", "")[:150],
+        "",
+        "▸ CURRENT STATUS:",
+        note.get("current_status", "")[:100],
+        "",
+        "▸ PHYSICAL EXAM:",
+        note.get("physical_exam", "")[:100],
+        "",
+        "▸ ASSESSMENT:",
+        note.get("assessment", "")[:100],
+        "",
+        "▸ PLAN:",
+        note.get("plan", "")[:150],
+    ]
+
+    # Add ICD-10/CPT codes
+    for code_type, label in [("icd10_codes", "ICD-10"), ("cpt_codes", "CPT")]:
+        codes = note.get(code_type, [])
+        if codes:
+            lines.append("")
+            lines.append(f"▸ {label} CODES:")
+            for code_info in codes[:5]:
+                lines.append(f"  • {code_info.get('code', '')}: {code_info.get('description', '')[:40]}")
+
+    lines.append("─" * 25)
+    lines.append(f"Summary: {note.get('summary', '')[:100]}")
+
+    return "\n".join(lines)
+
+
+def format_hp_display(note: dict) -> str:
+    """Format H&P Note for AR display"""
+    lines = [
+        "═══ HISTORY & PHYSICAL ═══",
+        f"📝 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "─" * 25,
+        "▸ CHIEF COMPLAINT:",
+        note.get("chief_complaint", "")[:100],
+        "",
+        "▸ HPI:",
+        note.get("history_present_illness", "")[:150],
+        "",
+        "▸ PMH:",
+        note.get("past_medical_history", "")[:80],
+        "",
+        "▸ MEDICATIONS:",
+        note.get("medications", "")[:80],
+        "",
+        "▸ ALLERGIES:",
+        note.get("allergies", "")[:50],
+        "",
+        "▸ SOCIAL HX:",
+        note.get("social_history", "")[:60],
+        "",
+        "▸ ROS:",
+        note.get("review_of_systems", "")[:80],
+        "",
+        "▸ PHYSICAL EXAM:",
+        note.get("physical_exam", "")[:120],
+        "",
+        "▸ ASSESSMENT:",
+        note.get("assessment", "")[:100],
+        "",
+        "▸ PLAN:",
+        note.get("plan", "")[:150],
+    ]
+
+    # Add ICD-10/CPT codes
+    for code_type, label in [("icd10_codes", "ICD-10"), ("cpt_codes", "CPT")]:
+        codes = note.get(code_type, [])
+        if codes:
+            lines.append("")
+            lines.append(f"▸ {label} CODES:")
+            for code_info in codes[:5]:
+                lines.append(f"  • {code_info.get('code', '')}: {code_info.get('description', '')[:40]}")
+
+    lines.append("─" * 25)
+    lines.append(f"Summary: {note.get('summary', '')[:100]}")
+
+    return "\n".join(lines)
+
+
+def format_consult_display(note: dict) -> str:
+    """Format Consultation Note for AR display"""
+    lines = [
+        "═══ CONSULTATION NOTE ═══",
+        f"📝 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "─" * 25,
+        "▸ REASON FOR CONSULT:",
+        note.get("reason_for_consult", "")[:100],
+        "",
+        "▸ HPI:",
+        note.get("history_present_illness", "")[:150],
+        "",
+        "▸ RELEVANT HISTORY:",
+        note.get("relevant_history", "")[:100],
+        "",
+        "▸ PHYSICAL EXAM:",
+        note.get("physical_exam", "")[:100],
+        "",
+        "▸ DIAGNOSTIC FINDINGS:",
+        note.get("diagnostic_findings", "")[:100],
+        "",
+        "▸ IMPRESSION:",
+        note.get("impression", "")[:100],
+        "",
+        "▸ RECOMMENDATIONS:",
+        note.get("recommendations", "")[:200],
+    ]
+
+    # Add ICD-10/CPT codes
+    for code_type, label in [("icd10_codes", "ICD-10"), ("cpt_codes", "CPT")]:
+        codes = note.get(code_type, [])
+        if codes:
+            lines.append("")
+            lines.append(f"▸ {label} CODES:")
+            for code_info in codes[:5]:
+                lines.append(f"  • {code_info.get('code', '')}: {code_info.get('description', '')[:40]}")
+
+    lines.append("─" * 25)
+    lines.append(f"Summary: {note.get('summary', '')[:100]}")
+
+    return "\n".join(lines)
+
+
+def generate_note_by_type(transcript: str, note_type: str, chief_complaint: str = None) -> tuple:
+    """Generate note based on type, returns (note_data, format_function)"""
+    note_type_upper = note_type.upper()
+
+    if note_type_upper == "PROGRESS":
+        note_data = generate_progress_template(transcript, chief_complaint)
+        return note_data, format_progress_display
+    elif note_type_upper == "HP":
+        note_data = generate_hp_template(transcript, chief_complaint)
+        return note_data, format_hp_display
+    elif note_type_upper == "CONSULT":
+        note_data = generate_consult_template(transcript, chief_complaint)
+        return note_data, format_consult_display
+    else:  # Default to SOAP
+        note_data = generate_soap_template(transcript, chief_complaint)
+        return note_data, format_soap_display
+
+
+@app.post("/api/v1/notes/generate")
 async def generate_clinical_note(request: NoteRequest):
-    """Generate SOAP note from voice transcript - for AR documentation"""
+    """Generate clinical note from voice transcript - supports SOAP, PROGRESS, HP, CONSULT"""
 
     try:
-        # Try Claude API if available
-        if CLAUDE_API_KEY:
+        note_type = request.note_type.upper()
+
+        # Try Claude API if available (currently only supports SOAP)
+        if CLAUDE_API_KEY and note_type == "SOAP":
             note_data = await generate_soap_with_claude(
                 request.transcript,
                 request.chief_complaint
             )
+            format_func = format_soap_display
         else:
-            # Fallback to template-based generation
-            note_data = generate_soap_template(
+            # Use template-based generation for all note types
+            note_data, format_func = generate_note_by_type(
                 request.transcript,
+                note_type,
                 request.chief_complaint
             )
 
-        note = SOAPNote(
-            subjective=note_data.get("subjective", ""),
-            objective=note_data.get("objective", ""),
-            assessment=note_data.get("assessment", ""),
-            plan=note_data.get("plan", ""),
-            summary=note_data.get("summary", ""),
-            timestamp=datetime.now().isoformat()
-        )
-        note.display_text = format_soap_display(note_data)
+        # Add ICD-10 and CPT codes if not already present
+        if not note_data.get("icd10_codes"):
+            # Extract codes from SOAP template generator (reuse its logic)
+            soap_data = generate_soap_template(request.transcript, request.chief_complaint)
+            note_data["icd10_codes"] = soap_data.get("icd10_codes", [])
+            note_data["cpt_codes"] = soap_data.get("cpt_codes", [])
 
-        return note
+        # Build response
+        display_text = format_func(note_data)
+        timestamp = datetime.now().isoformat()
+
+        return {
+            "note_type": note_type,
+            "display_text": display_text,
+            "summary": note_data.get("summary", ""),
+            "timestamp": timestamp,
+            "icd10_codes": note_data.get("icd10_codes", []),
+            "cpt_codes": note_data.get("cpt_codes", []),
+            **note_data  # Include all note-specific fields
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Note generation failed: {str(e)}")
@@ -958,9 +1361,10 @@ async def quick_note(request: NoteRequest):
     """Quick note for AR display - returns just the formatted text"""
     note = await generate_clinical_note(request)
     return {
-        "display_text": note.display_text,
-        "summary": note.summary,
-        "timestamp": note.timestamp
+        "note_type": note.get("note_type", "SOAP"),
+        "display_text": note.get("display_text", ""),
+        "summary": note.get("summary", ""),
+        "timestamp": note.get("timestamp", "")
     }
 
 
