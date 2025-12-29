@@ -512,6 +512,10 @@ class MainActivity : AppCompatActivity() {
                 // Show lab results
                 fetchPatientSection("labs")
             }
+            lower.contains("procedure") || lower.contains("surgery") || lower.contains("operation") -> {
+                // Show procedures
+                fetchPatientSection("procedures")
+            }
             else -> {
                 // Display transcribed text
                 transcriptText.text = "\"$transcript\""
@@ -552,6 +556,7 @@ class MainActivity : AppCompatActivity() {
                                     "allergies" -> formatAllergies(patient)
                                     "medications" -> formatMedications(patient)
                                     "labs" -> formatLabs(patient)
+                                    "procedures" -> formatProcedures(patient)
                                     else -> patient.optString("display_text", "No data")
                                 }
                                 statusText.text = section.uppercase()
@@ -603,6 +608,20 @@ class MainActivity : AppCompatActivity() {
         for (i in 0 until minOf(labs.length(), 8)) {
             val l = labs.getJSONObject(i)
             sb.append("• ${l.getString("name")}: ${l.getString("value")}${l.optString("unit", "")}\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatProcedures(patient: JSONObject): String {
+        val procs = patient.optJSONArray("procedures") ?: return "No procedures recorded"
+        if (procs.length() == 0) return "No procedures recorded"
+        val sb = StringBuilder("🏥 PROCEDURES\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(procs.length(), 8)) {
+            val p = procs.getJSONObject(i)
+            sb.append("• ${p.getString("name")}")
+            val date = p.optString("date", "")
+            if (date.isNotEmpty()) sb.append(" ($date)")
+            sb.append("\n")
         }
         return sb.toString()
     }

@@ -49,6 +49,12 @@ class LabResult(BaseModel):
     date: str = ""
 
 
+class Procedure(BaseModel):
+    name: str
+    date: str = ""
+    status: str = ""
+
+
 class PatientSummary(BaseModel):
     patient_id: str
     name: str
@@ -59,6 +65,7 @@ class PatientSummary(BaseModel):
     allergies: List[str] = []
     medications: List[str] = []
     labs: List[LabResult] = []
+    procedures: List[Procedure] = []
     display_text: str = ""
 
 
@@ -186,6 +193,38 @@ def extract_labs(bundle: dict) -> List[LabResult]:
     return labs
 
 
+def extract_procedures(bundle: dict) -> List[Procedure]:
+    """Extract procedures from FHIR Procedure bundle"""
+    procedures = []
+    for entry in bundle.get("entry", [])[:10]:
+        proc = entry.get("resource", {})
+
+        # Get procedure name
+        name = proc.get("code", {}).get("text", "")
+        if not name:
+            coding = proc.get("code", {}).get("coding", [])
+            if coding:
+                name = coding[0].get("display", "Unknown")
+
+        # Get date and status
+        date = ""
+        if "performedDateTime" in proc:
+            date = proc["performedDateTime"][:10]
+        elif "performedPeriod" in proc:
+            date = proc["performedPeriod"].get("start", "")[:10]
+
+        status = proc.get("status", "")
+
+        if name and name != "Unknown":
+            procedures.append(Procedure(
+                name=name,
+                date=date,
+                status=status
+            ))
+
+    return procedures
+
+
 def format_ar_display(summary: PatientSummary) -> str:
     """Format patient data for AR glasses display"""
     lines = [
@@ -206,6 +245,10 @@ def format_ar_display(summary: PatientSummary) -> str:
     if summary.labs:
         lab_str = " | ".join([f"{l.name}: {l.value}{l.unit}" for l in summary.labs[:4]])
         lines.append(f"🔬 LABS: {lab_str}")
+
+    if summary.procedures:
+        proc_str = ", ".join([p.name for p in summary.procedures[:3]])
+        lines.append(f"🏥 PROCEDURES: {proc_str}")
 
     return "\n".join(lines)
 
@@ -245,6 +288,10 @@ async def get_patient(patient_id: str):
     lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=10")
     labs = extract_labs(lab_bundle)
 
+    # Fetch procedures
+    proc_bundle = await fetch_fhir(f"Procedure?patient={patient_id}&_count=10")
+    procedures = extract_procedures(proc_bundle)
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -253,7 +300,8 @@ async def get_patient(patient_id: str):
         vitals=vitals,
         allergies=allergies,
         medications=medications,
-        labs=labs
+        labs=labs,
+        procedures=procedures
     )
     summary.display_text = format_ar_display(summary)
 

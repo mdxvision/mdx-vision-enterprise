@@ -102,8 +102,8 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Allergies | Yes | Ready | Ready |
 | [x] Medications | Yes | Ready | Ready |
 | [x] Conditions | Yes | Ready | Ready |
-| [ ] Lab Results | Pending | Pending | Pending |
-| [ ] Procedures | Pending | Pending | Pending |
+| [x] Lab Results | Yes | Ready | Ready |
+| [x] Procedures | Yes | Ready | Ready |
 | [ ] Immunizations | Pending | Pending | Pending |
 
 ---
@@ -140,9 +140,12 @@ Based on US Patent 15/237,980 and product requirements.
 |---------|--------|
 | [x] "Load patient {id}" | Done |
 | [x] "Find {name}" | Done |
-| [ ] "Show vitals" | Pending |
-| [ ] "Show allergies" | Pending |
-| [ ] "Start note" | Pending |
+| [x] "Show vitals" | Done |
+| [x] "Show allergies" | Done |
+| [x] "Show meds" | Done |
+| [x] "Show labs" | Done |
+| [x] "Show procedures" | Done |
+| [x] "Start note" | Done |
 | [ ] "Save note" | Pending |
 
 ---
