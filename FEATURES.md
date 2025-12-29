@@ -67,7 +67,7 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Live transcription streaming | Done | `AudioStreamingService.kt` |
 | [ ] Template selection | Pending | - |
 | [ ] Voice dictation to EHR | Future | - |
-| [ ] Auto-coding (ICD-10/CPT) | Future | - |
+| [x] Auto-coding (ICD-10) | Done | `ehr-proxy/main.py` |
 
 ---
 

@@ -424,7 +424,7 @@ async def generate_soap_with_claude(transcript: str, chief_complaint: str = None
                 "max_tokens": 1024,
                 "messages": [{
                     "role": "user",
-                    "content": f"""Generate a SOAP note from this clinical encounter transcript.
+                    "content": f"""Generate a SOAP note with ICD-10 codes from this clinical encounter transcript.
 
 Chief Complaint: {chief_complaint or 'See transcript'}
 
@@ -437,6 +437,10 @@ Return a JSON object with these exact fields:
 - assessment: Clinical assessment and diagnosis
 - plan: Treatment plan and follow-up
 - summary: 1-2 sentence summary
+- icd10_codes: Array of objects with "code" and "description" for each suggested ICD-10 diagnosis code (max 5 most relevant)
+
+Example icd10_codes format:
+[{{"code": "J06.9", "description": "Acute upper respiratory infection, unspecified"}}]
 
 Return ONLY valid JSON, no markdown or explanation."""
                 }]
@@ -491,12 +495,49 @@ def generate_soap_template(transcript: str, chief_complaint: str = None) -> dict
     # Summary
     summary = f"Patient encounter documented. Primary concern: {chief_complaint or 'as described'}."
 
+    # ICD-10 code suggestions based on keywords
+    icd10_codes = []
+    icd10_map = {
+        "headache": {"code": "R51.9", "description": "Headache, unspecified"},
+        "fever": {"code": "R50.9", "description": "Fever, unspecified"},
+        "cough": {"code": "R05.9", "description": "Cough, unspecified"},
+        "pain": {"code": "R52", "description": "Pain, unspecified"},
+        "chest pain": {"code": "R07.9", "description": "Chest pain, unspecified"},
+        "abdominal pain": {"code": "R10.9", "description": "Abdominal pain, unspecified"},
+        "back pain": {"code": "M54.9", "description": "Dorsalgia, unspecified"},
+        "nausea": {"code": "R11.0", "description": "Nausea"},
+        "vomiting": {"code": "R11.10", "description": "Vomiting, unspecified"},
+        "diarrhea": {"code": "R19.7", "description": "Diarrhea, unspecified"},
+        "fatigue": {"code": "R53.83", "description": "Other fatigue"},
+        "tired": {"code": "R53.83", "description": "Other fatigue"},
+        "dizzy": {"code": "R42", "description": "Dizziness and giddiness"},
+        "shortness of breath": {"code": "R06.02", "description": "Shortness of breath"},
+        "sore throat": {"code": "J02.9", "description": "Acute pharyngitis, unspecified"},
+        "cold": {"code": "J00", "description": "Acute nasopharyngitis (common cold)"},
+        "flu": {"code": "J11.1", "description": "Influenza with other respiratory manifestations"},
+        "diabetes": {"code": "E11.9", "description": "Type 2 diabetes mellitus without complications"},
+        "hypertension": {"code": "I10", "description": "Essential (primary) hypertension"},
+        "anxiety": {"code": "F41.9", "description": "Anxiety disorder, unspecified"},
+        "depression": {"code": "F32.9", "description": "Major depressive disorder, unspecified"},
+    }
+
+    for keyword, code_info in icd10_map.items():
+        if keyword in transcript_lower and code_info not in icd10_codes:
+            icd10_codes.append(code_info)
+        if len(icd10_codes) >= 5:
+            break
+
+    # Default code if none detected
+    if not icd10_codes:
+        icd10_codes.append({"code": "Z00.00", "description": "General adult medical examination"})
+
     return {
         "subjective": subjective,
         "objective": objective,
         "assessment": assessment,
         "plan": plan,
-        "summary": summary
+        "summary": summary,
+        "icd10_codes": icd10_codes
     }
 
 
@@ -517,9 +558,21 @@ def format_soap_display(note: dict) -> str:
         "",
         "▸ PLAN:",
         note["plan"][:150] + "..." if len(note["plan"]) > 150 else note["plan"],
-        "─" * 25,
-        f"Summary: {note['summary'][:100]}"
     ]
+
+    # Add ICD-10 codes if present
+    icd10_codes = note.get("icd10_codes", [])
+    if icd10_codes:
+        lines.append("")
+        lines.append("▸ ICD-10 CODES:")
+        for code_info in icd10_codes[:5]:
+            code = code_info.get("code", "")
+            desc = code_info.get("description", "")
+            lines.append(f"  • {code}: {desc[:40]}")
+
+    lines.append("─" * 25)
+    lines.append(f"Summary: {note['summary'][:100]}")
+
     return "\n".join(lines)
 
 
