@@ -1353,6 +1353,10 @@ class MainActivity : AppCompatActivity() {
                 // Show immunizations
                 fetchPatientSection("immunizations")
             }
+            lower.contains("condition") || lower.contains("problem") || lower.contains("diagnosis") || lower.contains("diagnoses") -> {
+                // Show conditions/problems
+                fetchPatientSection("conditions")
+            }
             lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
                 // Close any open overlay
                 if (isLiveTranscribing) {
@@ -1412,6 +1416,7 @@ class MainActivity : AppCompatActivity() {
                 "labs" -> formatLabs(patient)
                 "procedures" -> formatProcedures(patient)
                 "immunizations" -> formatImmunizations(patient)
+                "conditions" -> formatConditions(patient)
                 else -> patient.optString("display_text", "No data")
             }
             showDataOverlay(title, content)
@@ -1454,6 +1459,7 @@ class MainActivity : AppCompatActivity() {
                                     "labs" -> formatLabs(patient)
                                     "procedures" -> formatProcedures(patient)
                                     "immunizations" -> formatImmunizations(patient)
+                                    "conditions" -> formatConditions(patient)
                                     else -> patient.optString("display_text", "No data")
                                 }
                                 showDataOverlay(title, content)
@@ -1531,6 +1537,22 @@ class MainActivity : AppCompatActivity() {
             sb.append("• ${imm.getString("name")}")
             val date = imm.optString("date", "")
             if (date.isNotEmpty()) sb.append(" ($date)")
+            sb.append("\n")
+        }
+        return sb.toString()
+    }
+
+    private fun formatConditions(patient: JSONObject): String {
+        val conds = patient.optJSONArray("conditions") ?: return "No conditions recorded"
+        if (conds.length() == 0) return "No conditions/problems recorded"
+        val sb = StringBuilder("📋 CONDITIONS/PROBLEMS\n${"─".repeat(30)}\n")
+        for (i in 0 until minOf(conds.length(), 10)) {
+            val cond = conds.getJSONObject(i)
+            sb.append("• ${cond.getString("name")}")
+            val status = cond.optString("status", "")
+            if (status.isNotEmpty()) sb.append(" [$status]")
+            val onset = cond.optString("onset", "")
+            if (onset.isNotEmpty()) sb.append(" (since $onset)")
             sb.append("\n")
         }
         return sb.toString()

@@ -84,6 +84,13 @@ class Immunization(BaseModel):
     status: str = ""
 
 
+class Condition(BaseModel):
+    name: str
+    status: str = ""
+    onset: str = ""
+    category: str = ""
+
+
 class PatientSummary(BaseModel):
     patient_id: str
     name: str
@@ -96,6 +103,7 @@ class PatientSummary(BaseModel):
     labs: List[LabResult] = []
     procedures: List[Procedure] = []
     immunizations: List[Immunization] = []
+    conditions: List[Condition] = []
     display_text: str = ""
 
 
@@ -130,13 +138,14 @@ CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
 async def fetch_fhir(endpoint: str) -> dict:
     """Fetch from Cerner FHIR API"""
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.get(
             f"{CERNER_BASE_URL}/{endpoint}",
             headers=FHIR_HEADERS
         )
         if response.status_code == 200:
             return response.json()
+        print(f"⚠️ FHIR fetch failed for {endpoint}: status={response.status_code}")
         return {}
 
 
@@ -287,6 +296,53 @@ def extract_immunizations(bundle: dict) -> List[Immunization]:
     return immunizations
 
 
+def extract_conditions(bundle: dict) -> List[Condition]:
+    """Extract conditions/problems from FHIR Condition bundle"""
+    conditions = []
+    for entry in bundle.get("entry", [])[:10]:
+        cond = entry.get("resource", {})
+
+        # Get condition name
+        name = cond.get("code", {}).get("text", "")
+        if not name:
+            coding = cond.get("code", {}).get("coding", [])
+            if coding:
+                name = coding[0].get("display", "Unknown")
+
+        # Get clinical status
+        status = ""
+        clinical_status = cond.get("clinicalStatus", {})
+        if clinical_status:
+            status_coding = clinical_status.get("coding", [])
+            if status_coding:
+                status = status_coding[0].get("code", "")
+
+        # Get onset date
+        onset = ""
+        if "onsetDateTime" in cond:
+            onset = cond["onsetDateTime"][:10]
+        elif "onsetPeriod" in cond:
+            onset = cond["onsetPeriod"].get("start", "")[:10] if cond["onsetPeriod"].get("start") else ""
+
+        # Get category
+        category = ""
+        categories = cond.get("category", [])
+        if categories:
+            cat_coding = categories[0].get("coding", [])
+            if cat_coding:
+                category = cat_coding[0].get("display", cat_coding[0].get("code", ""))
+
+        if name and name != "Unknown":
+            conditions.append(Condition(
+                name=name,
+                status=status,
+                onset=onset,
+                category=category
+            ))
+
+    return conditions
+
+
 def format_ar_display(summary: PatientSummary) -> str:
     """Format patient data for AR glasses display"""
     lines = [
@@ -315,6 +371,10 @@ def format_ar_display(summary: PatientSummary) -> str:
     if summary.immunizations:
         imm_str = ", ".join([i.name for i in summary.immunizations[:4]])
         lines.append(f"💉 IMMUNIZATIONS: {imm_str}")
+
+    if summary.conditions:
+        cond_str = ", ".join([c.name for c in summary.conditions[:4]])
+        lines.append(f"📋 CONDITIONS: {cond_str}")
 
     return "\n".join(lines)
 
@@ -366,6 +426,18 @@ async def get_patient(patient_id: str):
         print(f"⚠️ Could not fetch immunizations: {e}")
         immunizations = []
 
+    # Fetch conditions/problems
+    try:
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10")
+        print(f"🔍 Condition bundle type: {cond_bundle.get('resourceType', 'N/A')}, entries: {len(cond_bundle.get('entry', []))}")
+        conditions = extract_conditions(cond_bundle)
+        print(f"✓ Fetched {len(conditions)} conditions")
+    except Exception as e:
+        print(f"⚠️ Could not fetch conditions: {e}")
+        import traceback
+        traceback.print_exc()
+        conditions = []
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -376,7 +448,8 @@ async def get_patient(patient_id: str):
         medications=medications,
         labs=labs,
         procedures=procedures,
-        immunizations=immunizations
+        immunizations=immunizations,
+        conditions=conditions
     )
     summary.display_text = format_ar_display(summary)
 

@@ -74,7 +74,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Lab results | Done | Observation (laboratory) |
 | [x] Procedures | Done | Procedure resource |
 | [x] Immunizations | Done | Immunization resource |
-| [ ] Conditions/Problems | Pending | Condition resource |
+| [x] Conditions/Problems | Done | Condition resource via FHIR |
 | [ ] Care plans | Pending | CarePlan resource |
 | [ ] Clinical notes read | Pending | DocumentReference |
 
