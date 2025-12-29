@@ -58,6 +58,8 @@ class MainActivity : AppCompatActivity() {
         // Clinician name setting
         private const val PREF_CLINICIAN_NAME = "clinician_name"
         private const val DEFAULT_CLINICIAN_NAME = "Clinician"
+        // Speech feedback setting
+        private const val PREF_SPEECH_FEEDBACK = "speech_feedback_enabled"
     }
 
     // Offline cache
@@ -116,6 +118,7 @@ class MainActivity : AppCompatActivity() {
     // Text-to-Speech for spoken patient summaries (hands-free while walking)
     private var textToSpeech: TextToSpeech? = null
     private var isTtsReady: Boolean = false
+    private var isSpeechFeedbackEnabled: Boolean = true  // Audible confirmations for actions
 
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
@@ -143,6 +146,7 @@ class MainActivity : AppCompatActivity() {
         cachePrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         loadFontSizeSetting()
         loadClinicianName()
+        loadSpeechFeedbackSetting()
 
         // Initialize Text-to-Speech for hands-free patient summaries
         initTextToSpeech()
@@ -463,12 +467,14 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 statusText.text = "TRANSCRIBING ($provider)"
                 Log.d(TAG, "Live transcription started: $sessionId via $provider")
+                speakFeedback("Recording started")
             }
         }
 
         audioStreamingService?.onDisconnected = { fullTranscript ->
             runOnUiThread {
                 Log.d(TAG, "Transcription ended, ${fullTranscript.length} chars")
+                speakFeedback("Recording stopped")
                 // Offer to generate note from transcript
                 if (fullTranscript.isNotEmpty()) {
                     showTranscriptionCompleteOverlay(fullTranscript)
@@ -480,6 +486,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 Toast.makeText(this, "Transcription error: $message", Toast.LENGTH_SHORT).show()
                 statusText.text = "MDx Vision"
+                speakFeedback("Transcription error")
             }
         }
 
@@ -870,11 +877,14 @@ class MainActivity : AppCompatActivity() {
                                             displayText
 
                                     showNoteWithSaveOption("$detectedName (Auto)", displayText)
+                                    speakFeedback("$detectedName generated")
                                 } else {
                                     showNoteWithSaveOption(noteTypeDisplay, displayText)
+                                    speakFeedback("$noteTypeDisplay generated")
                                 }
                             } catch (e: Exception) {
                                 showDataOverlay(noteTypeDisplay, body ?: "No response")
+                                speakFeedback("Error generating note")
                             }
                         }
                     }
@@ -1172,6 +1182,7 @@ class MainActivity : AppCompatActivity() {
             |• "Increase font" - Larger text
             |• "Decrease font" - Smaller text
             |• "Auto scroll on/off" - Toggle scroll
+            |• "Speech feedback" - Toggle voice confirmations
             |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
@@ -1620,10 +1631,12 @@ class MainActivity : AppCompatActivity() {
                                     noteEditText = null
                                     isNoteEditing = false
                                     hideDataOverlay()
+                                    speakFeedback("Note saved successfully")
                                 } else {
                                     val message = result.optString("message", "Save failed")
                                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
                                     statusText.text = "MDx Vision"
+                                    speakFeedback("Failed to save note")
                                 }
                             } catch (e: Exception) {
                                 Toast.makeText(this@MainActivity, "Save response error", Toast.LENGTH_SHORT).show()
@@ -1765,8 +1778,12 @@ class MainActivity : AppCompatActivity() {
                                 val name = patient.optString("name", "Unknown")
                                 val displayText = patient.optString("display_text", "No data")
                                 showDataOverlay("Patient: $name", displayText)
+
+                                // Speech feedback
+                                speakFeedback("Patient $name loaded")
                             } catch (e: Exception) {
                                 showDataOverlay("Error", body ?: "No response")
+                                speakFeedback("Error loading patient")
                             }
                         }
                     }
@@ -1885,6 +1902,33 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Clinician: $name", Toast.LENGTH_SHORT).show()
         transcriptText.text = "Clinician set to: $name"
         Log.d(TAG, "Clinician name set to: $name")
+    }
+
+    private fun loadSpeechFeedbackSetting() {
+        isSpeechFeedbackEnabled = cachePrefs.getBoolean(PREF_SPEECH_FEEDBACK, true)
+    }
+
+    private fun toggleSpeechFeedback() {
+        isSpeechFeedbackEnabled = !isSpeechFeedbackEnabled
+        cachePrefs.edit().putBoolean(PREF_SPEECH_FEEDBACK, isSpeechFeedbackEnabled).apply()
+        val status = if (isSpeechFeedbackEnabled) "enabled" else "disabled"
+        Toast.makeText(this, "Speech feedback $status", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Speech feedback: $status"
+        // Announce the change
+        if (isSpeechFeedbackEnabled) {
+            speakFeedback("Speech feedback enabled")
+        }
+        Log.d(TAG, "Speech feedback $status")
+    }
+
+    /**
+     * Speak feedback for actions (respects toggle setting)
+     * Use this for confirmations like "Patient loaded", "Note saved", etc.
+     */
+    private fun speakFeedback(message: String) {
+        if (isSpeechFeedbackEnabled && isTtsReady && textToSpeech != null) {
+            textToSpeech?.speak(message, TextToSpeech.QUEUE_ADD, null, "feedback_${System.currentTimeMillis()}")
+        }
     }
 
     private fun increaseFontSize() {
@@ -2300,6 +2344,11 @@ class MainActivity : AppCompatActivity() {
             }
             lower.contains("toggle scroll") || lower.contains("toggle auto scroll") -> {
                 toggleAutoScroll()
+            }
+            // Speech feedback toggle
+            lower.contains("speech feedback") || lower.contains("voice feedback") || lower.contains("audio feedback") ||
+            lower.contains("toggle feedback") || lower.contains("mute feedback") || lower.contains("unmute feedback") -> {
+                toggleSpeechFeedback()
             }
             // Note type selection voice commands
             lower.contains("soap note") || lower.contains("note type soap") -> {

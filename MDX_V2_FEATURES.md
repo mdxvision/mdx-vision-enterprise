@@ -207,6 +207,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Stop talking" / "Be quiet" | Done | Stop TTS speech |
 | [x] "Generate note" / "Looks good" | Done | Generate from preview |
 | [x] "Re-record" / "Try again" | Done | Restart transcription |
+| [x] "Speech feedback" / "Toggle feedback" | Done | Toggle voice confirmations |
 
 ---
 
@@ -233,6 +234,20 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Vital names for speech | Done | "B M I", "Blood pressure" |
 | [x] Stop speaking command | Done | Voice command |
 | [x] Speech rate optimization | Done | 0.9x for medical clarity |
+
+---
+
+## Speech Feedback Features
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| [x] Patient loaded confirmation | Done | "Patient [name] loaded" |
+| [x] Recording started/stopped | Done | "Recording started/stopped" |
+| [x] Note generated confirmation | Done | "[Note type] generated" |
+| [x] Note saved confirmation | Done | "Note saved successfully" |
+| [x] Error announcements | Done | Spoken error messages |
+| [x] Toggle setting | Done | Persisted in SharedPreferences |
+| [x] Voice command to toggle | Done | "Speech feedback" / "Toggle feedback" |
 
 ---
 
@@ -295,7 +310,7 @@ Based on MDx v2.0 Brief Technical Description document.
 
 ## Implementation Summary
 
-**Completed:** 75+ features
+**Completed:** 80+ features
 **Pending:** 25+ features
 **Future:** 5+ features
 
@@ -309,6 +324,7 @@ Based on MDx v2.0 Brief Technical Description document.
 7. Wake word activation
 8. Text-to-Speech patient briefing (hands-free while walking)
 9. Transcript preview with topic detection before note generation
+10. Speech feedback for action confirmations (toggleable)
 
 ### Next Priorities
 1. Epic/Veradigm live integration

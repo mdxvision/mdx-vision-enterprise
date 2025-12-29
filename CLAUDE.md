@@ -250,13 +250,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 22. **Quick Patient Summary** - Visual summary with "patient summary" voice command (demographics, allergies, conditions, meds, vitals)
 23. **Hands-Free Patient Briefing** - Text-to-Speech reads patient summary aloud ("brief me", "tell me about patient") while walking to next room
 24. **Transcript Preview Before Generate** - Shows word count, detected topics, transcript preview before AI note generation ("generate note", "re-record")
+25. **Speech Feedback for Actions** - TTS confirms key actions ("Patient loaded", "Recording started", "Note saved") with toggle
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| **Speech feedback during actions** | Confirm actions with spoken feedback |
+| **Allergy warnings spoken** | Alert clinician to critical allergies via TTS |
 
 ### Medium Effort
 | Feature | Notes |

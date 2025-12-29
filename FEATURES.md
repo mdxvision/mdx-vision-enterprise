@@ -177,6 +177,7 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Stop talking" / "Be quiet" | Done |
 | [x] "Generate note" / "Looks good" | Done |
 | [x] "Re-record" / "Try again" | Done |
+| [x] "Speech feedback" / "Toggle feedback" | Done |
 
 ---
 
@@ -214,6 +215,7 @@ Based on US Patent 15/237,980 and product requirements.
 15. ~~**Quick Patient Summary**~~ - Done (Visual summary with allergies, conditions, meds, vitals)
 16. ~~**Hands-Free Patient Briefing**~~ - Done (TTS reads patient summary aloud while walking)
 17. ~~**Transcript Preview Before Generate**~~ - Done (Word count, detected topics, re-record option)
+18. ~~**Speech Feedback for Actions**~~ - Done (TTS confirms patient load, recording, note save)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
