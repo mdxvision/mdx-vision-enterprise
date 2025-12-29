@@ -1805,9 +1805,10 @@ class MainActivity : AppCompatActivity() {
                 showDataOverlay("📴 OFFLINE: $name", displayText + "\n\n⚠️ Showing cached data")
                 statusText.text = "Offline Mode"
                 transcriptText.text = "Using cached data"
-                // Speech feedback and allergy warnings even when offline
+                // Speech feedback and safety warnings even when offline
                 speakFeedback("Patient $name loaded from cache")
                 speakAllergyWarnings(cached)
+                speakCriticalLabAlerts(cached)
                 return
             } else {
                 statusText.text = "Offline - No cache"
@@ -1840,9 +1841,10 @@ class MainActivity : AppCompatActivity() {
                                 showDataOverlay("📴 CACHED: $name", displayText + "\n\n⚠️ Network error - showing cached data")
                                 statusText.text = "Using cache"
                                 transcriptText.text = "Network unavailable"
-                                // Speech feedback and allergy warnings from cache
+                                // Speech feedback and safety warnings from cache
                                 speakFeedback("Patient $name loaded from cache")
                                 speakAllergyWarnings(cached)
+                                speakCriticalLabAlerts(cached)
                             } else {
                                 statusText.text = "Connection failed"
                                 transcriptText.text = "Error: ${e.message}"
@@ -1870,8 +1872,9 @@ class MainActivity : AppCompatActivity() {
                                 // Speech feedback
                                 speakFeedback("Patient $name loaded")
 
-                                // Allergy warnings (safety-critical - always spoken)
+                                // Safety-critical alerts (always spoken)
                                 speakAllergyWarnings(patient)
+                                speakCriticalLabAlerts(patient)
                             } catch (e: Exception) {
                                 showDataOverlay("Error", body ?: "No response")
                                 speakFeedback("Error loading patient")
@@ -2368,6 +2371,50 @@ class MainActivity : AppCompatActivity() {
             // Use QUEUE_ADD so it plays after "Patient loaded" message
             textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "allergy_warning_${System.currentTimeMillis()}")
             Log.d(TAG, "Spoke allergy warning: $count allergies")
+        }
+    }
+
+    /**
+     * Speak critical lab alerts when patient is loaded (safety-critical)
+     * Always speaks critical labs regardless of speech feedback toggle for patient safety
+     */
+    private fun speakCriticalLabAlerts(patient: JSONObject) {
+        if (!isTtsReady || textToSpeech == null) return
+
+        val criticalLabs = patient.optJSONArray("critical_labs")
+        if (criticalLabs != null && criticalLabs.length() > 0) {
+            val count = criticalLabs.length()
+            val labWord = if (count == 1) "lab value" else "lab values"
+
+            val speechBuilder = StringBuilder()
+            speechBuilder.append("Critical alert: Patient has $count critical $labWord. ")
+
+            // Speak up to 3 critical labs with values
+            for (i in 0 until minOf(count, 3)) {
+                val lab = criticalLabs.getJSONObject(i)
+                val name = lab.optString("name", "Unknown")
+                val value = lab.optString("value", "")
+                val unit = lab.optString("unit", "")
+                val interp = lab.optString("interpretation", "")
+
+                // Format interpretation for speech
+                val interpText = when (interp) {
+                    "HH" -> "critically high"
+                    "LL" -> "critically low"
+                    "H" -> "high"
+                    "L" -> "low"
+                    else -> "abnormal"
+                }
+
+                speechBuilder.append("$name is $interpText at $value $unit. ")
+            }
+            if (count > 3) {
+                speechBuilder.append("Plus ${count - 3} more critical values.")
+            }
+
+            // Use QUEUE_ADD so it plays after allergies if both exist
+            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "critical_lab_alert_${System.currentTimeMillis()}")
+            Log.d(TAG, "Spoke critical lab alert: $count critical labs")
         }
     }
 
@@ -2989,10 +3036,46 @@ class MainActivity : AppCompatActivity() {
     private fun formatLabs(patient: JSONObject): String {
         val labs = patient.optJSONArray("labs") ?: return "No lab results"
         if (labs.length() == 0) return "No lab results available"
-        val sb = StringBuilder("🔬 LAB RESULTS\n${"─".repeat(30)}\n")
+
+        val sb = StringBuilder()
+
+        // Show critical labs warning first if any
+        val criticalLabs = patient.optJSONArray("critical_labs")
+        if (criticalLabs != null && criticalLabs.length() > 0) {
+            sb.append("🚨 CRITICAL LABS\n${"─".repeat(30)}\n")
+            for (i in 0 until criticalLabs.length()) {
+                val l = criticalLabs.getJSONObject(i)
+                val interp = l.optString("interpretation", "")
+                val flag = if (interp == "HH" || interp == "LL") "‼️" else "⚠️"
+                val refRange = l.optString("reference_range", "")
+                sb.append("$flag ${l.getString("name")}: ${l.getString("value")} ${l.optString("unit", "")}")
+                if (interp.isNotEmpty()) sb.append(" [$interp]")
+                if (refRange.isNotEmpty()) sb.append(" (ref: $refRange)")
+                sb.append("\n")
+            }
+            sb.append("${"─".repeat(30)}\n\n")
+        }
+
+        sb.append("🔬 LAB RESULTS\n${"─".repeat(30)}\n")
         for (i in 0 until minOf(labs.length(), 8)) {
             val l = labs.getJSONObject(i)
-            sb.append("• ${l.getString("name")}: ${l.getString("value")}${l.optString("unit", "")}\n")
+            val interp = l.optString("interpretation", "")
+            val isCritical = l.optBoolean("is_critical", false)
+            val isAbnormal = l.optBoolean("is_abnormal", false)
+
+            // Add interpretation flag
+            val flag = when {
+                interp == "HH" || interp == "LL" -> "‼️"
+                interp == "H" -> "↑"
+                interp == "L" -> "↓"
+                isCritical -> "‼️"
+                isAbnormal -> "⚠"
+                else -> "•"
+            }
+
+            sb.append("$flag ${l.getString("name")}: ${l.getString("value")}${l.optString("unit", "")}")
+            if (interp.isNotEmpty() && interp != "N") sb.append(" [$interp]")
+            sb.append("\n")
         }
         return sb.toString()
     }

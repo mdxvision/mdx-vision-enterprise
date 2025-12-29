@@ -254,6 +254,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 26. **Allergy Warnings Spoken** - Critical allergies automatically spoken aloud when patient loads (bypasses speech feedback toggle for safety)
 27. **Offline Note Drafts** - Notes saved locally when offline or save fails, auto-sync when connectivity restores ("sync notes", "show drafts", "delete draft [N]")
 28. **CPT Modifier Support** - 20+ modifiers (-25, -59, LT/RT, etc.) with keyword detection and auto-suggest -25 for E/M + procedure combinations
+29. **Critical Lab Alerts** - Auto-detect critical lab values (potassium, glucose, troponin, etc.) with spoken TTS alerts on patient load (safety-first, bypasses toggle)
 
 ## Next Up (Recommended)
 

@@ -219,6 +219,7 @@ Based on US Patent 15/237,980 and product requirements.
 19. ~~**Allergy Warnings Spoken**~~ - Done (Critical allergies spoken aloud when patient loads, safety-first)
 20. ~~**Offline Note Drafts**~~ - Done (Queue notes locally when offline, auto-sync on reconnect)
 21. ~~**CPT Modifier Support**~~ - Done (20+ modifiers with keyword detection, auto -25 for E/M + procedure)
+22. ~~**Critical Lab Alerts**~~ - Done (Auto-detect critical values with TTS alerts, safety-first)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

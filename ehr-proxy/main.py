@@ -47,6 +47,73 @@ def load_code_database(filename):
 ICD10_DB = load_code_database("icd10_codes.json")
 CPT_DB = load_code_database("cpt_codes.json")
 
+# Critical lab value thresholds for safety alerts
+# Format: {lab_name_pattern: {"critical_low": val, "critical_high": val, "low": val, "high": val, "unit": str}}
+CRITICAL_LAB_THRESHOLDS = {
+    "potassium": {"critical_low": 2.5, "critical_high": 6.5, "low": 3.5, "high": 5.0, "unit": "mEq/L"},
+    "sodium": {"critical_low": 120, "critical_high": 160, "low": 136, "high": 145, "unit": "mEq/L"},
+    "glucose": {"critical_low": 50, "critical_high": 450, "low": 70, "high": 100, "unit": "mg/dL"},
+    "creatinine": {"critical_high": 10.0, "high": 1.2, "unit": "mg/dL"},
+    "hemoglobin": {"critical_low": 7.0, "low": 12.0, "high": 17.5, "unit": "g/dL"},
+    "hematocrit": {"critical_low": 20, "low": 36, "high": 54, "unit": "%"},
+    "platelets": {"critical_low": 50, "critical_high": 1000, "low": 150, "high": 400, "unit": "10*3/uL"},
+    "wbc": {"critical_low": 2.0, "critical_high": 30.0, "low": 4.5, "high": 11.0, "unit": "10*3/uL"},
+    "inr": {"critical_high": 5.0, "high": 1.1, "unit": ""},
+    "troponin": {"critical_high": 0.04, "high": 0.01, "unit": "ng/mL"},
+    "bun": {"critical_high": 100, "high": 20, "unit": "mg/dL"},
+    "calcium": {"critical_low": 6.0, "critical_high": 13.0, "low": 8.5, "high": 10.5, "unit": "mg/dL"},
+    "magnesium": {"critical_low": 1.0, "critical_high": 4.0, "low": 1.7, "high": 2.3, "unit": "mg/dL"},
+    "phosphorus": {"critical_low": 1.0, "low": 2.5, "high": 4.5, "unit": "mg/dL"},
+    "bilirubin": {"critical_high": 15.0, "high": 1.2, "unit": "mg/dL"},
+    "lactate": {"critical_high": 4.0, "high": 2.0, "unit": "mmol/L"},
+    "ph": {"critical_low": 7.2, "critical_high": 7.6, "low": 7.35, "high": 7.45, "unit": ""},
+    "pco2": {"critical_low": 20, "critical_high": 70, "low": 35, "high": 45, "unit": "mmHg"},
+    "po2": {"critical_low": 40, "low": 80, "high": 100, "unit": "mmHg"},
+    "bicarbonate": {"critical_low": 10, "critical_high": 40, "low": 22, "high": 28, "unit": "mEq/L"},
+}
+
+def check_critical_value(lab_name: str, value_str: str) -> tuple:
+    """
+    Check if a lab value is critical or abnormal.
+    Returns (is_critical, is_abnormal, interpretation)
+    """
+    # Try to extract numeric value
+    try:
+        # Handle values like "5.2", ">10", "<0.01", "5.2 H"
+        clean_value = value_str.strip().replace(">", "").replace("<", "").split()[0]
+        numeric_value = float(clean_value)
+    except (ValueError, IndexError):
+        return False, False, ""
+
+    # Find matching threshold by checking if lab name contains the pattern
+    lab_lower = lab_name.lower()
+    for pattern, thresholds in CRITICAL_LAB_THRESHOLDS.items():
+        if pattern in lab_lower:
+            is_critical = False
+            is_abnormal = False
+            interpretation = "N"  # Normal
+
+            # Check critical values first
+            if "critical_low" in thresholds and numeric_value <= thresholds["critical_low"]:
+                is_critical = True
+                is_abnormal = True
+                interpretation = "LL"  # Critically low
+            elif "critical_high" in thresholds and numeric_value >= thresholds["critical_high"]:
+                is_critical = True
+                is_abnormal = True
+                interpretation = "HH"  # Critically high
+            # Check abnormal values
+            elif "low" in thresholds and numeric_value < thresholds["low"]:
+                is_abnormal = True
+                interpretation = "L"  # Low
+            elif "high" in thresholds and numeric_value > thresholds["high"]:
+                is_abnormal = True
+                interpretation = "H"  # High
+
+            return is_critical, is_abnormal, interpretation
+
+    return False, False, ""
+
 app = FastAPI(
     title="MDx Vision EHR Proxy",
     description="Unified EHR access for AR glasses",
@@ -77,6 +144,10 @@ class LabResult(BaseModel):
     unit: str
     status: str = ""
     date: str = ""
+    reference_range: str = ""  # e.g., "70-100 mg/dL"
+    interpretation: str = ""   # e.g., "H", "L", "HH", "LL", "N"
+    is_critical: bool = False  # True if dangerously out of range
+    is_abnormal: bool = False  # True if outside normal range
 
 
 class Procedure(BaseModel):
@@ -127,6 +198,9 @@ class PatientSummary(BaseModel):
     allergies: List[str] = []
     medications: List[str] = []
     labs: List[LabResult] = []
+    critical_labs: List[LabResult] = []  # Labs with is_critical=True
+    abnormal_labs: List[LabResult] = []  # Labs with is_abnormal=True (includes critical)
+    has_critical_labs: bool = False      # Quick check for safety alerts
     procedures: List[Procedure] = []
     immunizations: List[Immunization] = []
     conditions: List[Condition] = []
@@ -296,13 +370,59 @@ def extract_labs(bundle: dict) -> List[LabResult]:
         status = obs.get("status", "")
         date = obs.get("effectiveDateTime", "")[:10] if obs.get("effectiveDateTime") else ""
 
+        # Extract reference range from FHIR
+        reference_range = ""
+        ref_ranges = obs.get("referenceRange", [])
+        if ref_ranges:
+            ref = ref_ranges[0]
+            # Try text first
+            if ref.get("text"):
+                reference_range = ref["text"]
+            else:
+                # Build from low/high values
+                low = ref.get("low", {}).get("value")
+                high = ref.get("high", {}).get("value")
+                ref_unit = ref.get("low", {}).get("unit") or ref.get("high", {}).get("unit") or unit
+                if low is not None and high is not None:
+                    reference_range = f"{low}-{high} {ref_unit}".strip()
+                elif low is not None:
+                    reference_range = f">={low} {ref_unit}".strip()
+                elif high is not None:
+                    reference_range = f"<={high} {ref_unit}".strip()
+
+        # Extract interpretation from FHIR (H, L, HH, LL, N, etc.)
+        interpretation = ""
+        fhir_interp = obs.get("interpretation", [])
+        if fhir_interp:
+            interp_coding = fhir_interp[0].get("coding", [])
+            if interp_coding:
+                interpretation = interp_coding[0].get("code", "")
+
+        # Check for critical values using our thresholds
+        is_critical, is_abnormal, calc_interpretation = check_critical_value(name, value)
+
+        # Use FHIR interpretation if available, otherwise use calculated
+        if not interpretation and calc_interpretation:
+            interpretation = calc_interpretation
+
+        # If FHIR says it's critical (HH/LL), trust it
+        if interpretation in ("HH", "LL"):
+            is_critical = True
+            is_abnormal = True
+        elif interpretation in ("H", "L"):
+            is_abnormal = True
+
         if name and name != "Unknown":
             labs.append(LabResult(
                 name=name,
                 value=value,
                 unit=unit,
                 status=status,
-                date=date
+                date=date,
+                reference_range=reference_range,
+                interpretation=interpretation,
+                is_critical=is_critical,
+                is_abnormal=is_abnormal
             ))
 
     return labs
@@ -562,6 +682,17 @@ def format_ar_display(summary: PatientSummary) -> str:
         "─" * 40,
     ]
 
+    # Show critical labs warning FIRST (safety priority)
+    if summary.critical_labs:
+        crit_lines = []
+        for lab in summary.critical_labs[:3]:
+            flag = "‼️" if lab.interpretation in ("HH", "LL") else "⚠️"
+            interp = f" [{lab.interpretation}]" if lab.interpretation else ""
+            crit_lines.append(f"{flag} {lab.name}: {lab.value} {lab.unit}{interp}")
+        lines.append("🚨 CRITICAL LABS:")
+        lines.extend(crit_lines)
+        lines.append("─" * 40)
+
     if summary.vitals:
         vital_str = " | ".join([f"{v.name}: {v.value}{v.unit}" for v in summary.vitals[:4]])
         lines.append(f"VITALS: {vital_str}")
@@ -573,7 +704,16 @@ def format_ar_display(summary: PatientSummary) -> str:
         lines.append(f"💊 MEDS: {', '.join(summary.medications[:5])}")
 
     if summary.labs:
-        lab_str = " | ".join([f"{l.name}: {l.value}{l.unit}" for l in summary.labs[:4]])
+        # Format labs with interpretation flags
+        lab_parts = []
+        for lab in summary.labs[:4]:
+            flag = ""
+            if lab.interpretation in ("HH", "LL"):
+                flag = "‼️"
+            elif lab.interpretation in ("H", "L"):
+                flag = "↑" if lab.interpretation == "H" else "↓"
+            lab_parts.append(f"{lab.name}: {lab.value}{lab.unit}{flag}")
+        lab_str = " | ".join(lab_parts)
         lines.append(f"🔬 LABS: {lab_str}")
 
     if summary.procedures:
@@ -678,6 +818,15 @@ async def get_patient(patient_id: str):
         print(f"⚠️ Could not fetch clinical notes: {e}")
         clinical_notes = []
 
+    # Filter critical and abnormal labs for safety alerts
+    critical_labs = [lab for lab in labs if lab.is_critical]
+    abnormal_labs = [lab for lab in labs if lab.is_abnormal]
+
+    if critical_labs:
+        print(f"🚨 CRITICAL LABS DETECTED: {len(critical_labs)}")
+        for lab in critical_labs:
+            print(f"   ‼️ {lab.name}: {lab.value} {lab.unit} ({lab.interpretation})")
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -687,6 +836,9 @@ async def get_patient(patient_id: str):
         allergies=allergies,
         medications=medications,
         labs=labs,
+        critical_labs=critical_labs,
+        abnormal_labs=abnormal_labs,
+        has_critical_labs=len(critical_labs) > 0,
         procedures=procedures,
         immunizations=immunizations,
         conditions=conditions,

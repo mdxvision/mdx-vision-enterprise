@@ -16,6 +16,7 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 | AI Clinical Notes | **Working** | SOAP, Progress, H&P, Consult notes with preview |
 | Medical Coding | **Working** | ICD-10 (90+) & CPT (100+) with modifiers |
 | Text-to-Speech | **Working** | Patient briefings, action confirmations |
+| Critical Lab Alerts | **Working** | Auto-detect dangerous values, TTS safety alerts |
 | Web Dashboard | **Working** | localhost:5173 |
 | Camera/Barcode | **Working** | Patient wristband scan via ML Kit |
 
@@ -61,6 +62,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Error Announcements**: Spoken alerts for connection issues
 - **Toggleable**: Say "speech feedback" to enable/disable
 - **Conversational EHR**: True hands-free, eyes-free operation
+
+### Critical Lab Alerts (NEW)
+- **Auto-Detection**: 20+ lab types monitored for critical values (potassium, sodium, glucose, troponin, etc.)
+- **Reference Ranges**: Parses FHIR reference ranges and applies clinical thresholds
+- **Visual Indicators**: Labs display with interpretation flags (‼️ critical, ↑ high, ↓ low)
+- **Spoken Alerts**: Critical values announced via TTS on patient load
+- **Safety-First**: Lab alerts always spoken, bypasses speech feedback toggle
+- **Critical Labs Section**: Prominent display of dangerous values at top of labs view
 
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints

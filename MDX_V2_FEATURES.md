@@ -240,7 +240,36 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Stop speaking command | Done | Voice command |
 | [x] Speech rate optimization | Done | 0.9x for medical clarity |
 | [x] Allergy warnings auto-speak | Done | `speakAllergyWarnings()` |
-| [x] Safety-first alerts | Done | Bypasses toggle for allergies |
+| [x] Critical lab alerts auto-speak | Done | `speakCriticalLabAlerts()` |
+| [x] Safety-first alerts | Done | Bypasses toggle for allergies & critical labs |
+
+---
+
+## Critical Lab Value Detection
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| [x] Reference range parsing | Done | FHIR referenceRange extraction |
+| [x] Critical value thresholds | Done | 20+ lab types with critical limits |
+| [x] Lab interpretation flags | Done | H, L, HH, LL, N indicators |
+| [x] Critical labs list in response | Done | `critical_labs`, `abnormal_labs` arrays |
+| [x] has_critical_labs flag | Done | Quick boolean check |
+| [x] Critical labs display | Done | Visual indicators (‼️, ↑, ↓) |
+| [x] TTS critical lab alerts | Done | Spoken on patient load |
+| [x] Safety-first (bypasses toggle) | Done | Always alerts for critical values |
+
+### Critical Lab Thresholds
+| Lab | Critical Low | Critical High | Unit |
+|-----|-------------|---------------|------|
+| Potassium | ≤2.5 | ≥6.5 | mEq/L |
+| Sodium | ≤120 | ≥160 | mEq/L |
+| Glucose | ≤50 | ≥450 | mg/dL |
+| Hemoglobin | ≤7.0 | - | g/dL |
+| Platelets | ≤50 | ≥1000 | 10*3/uL |
+| Troponin | - | ≥0.04 | ng/mL |
+| INR | - | ≥5.0 | - |
+| Lactate | - | ≥4.0 | mmol/L |
+| pH | ≤7.2 | ≥7.6 | - |
 
 ---
 
@@ -335,6 +364,7 @@ Based on MDx v2.0 Brief Technical Description document.
 11. Automatic allergy warnings spoken when patient loads (safety-first)
 12. Offline note drafts with auto-sync on reconnect (notes never lost)
 13. CPT modifier support with 20+ modifiers and auto-detection
+14. Critical lab alerts with TTS spoken warnings (potassium, glucose, troponin, etc.)
 
 ### Next Priorities
 1. Epic/Veradigm live integration
