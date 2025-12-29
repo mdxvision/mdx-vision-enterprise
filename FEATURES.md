@@ -225,6 +225,7 @@ Based on US Patent 15/237,980 and product requirements.
 25. ~~**Push Notes to EHR**~~ - Done (FHIR DocumentReference POST, voice commands, LOINC codes, status tracking)
 26. ~~**HIPAA Audit Logging**~~ - Done (JSON audit logs, PHI access tracking, note operations, safety events, rotating file storage)
 27. ~~**Lab Trends**~~ - Done (Historical comparison, trend icons ↗️↘️→🆕, TTS alerts for rising/falling values)
+28. ~~**Vital Trends**~~ - Done (Historical comparison for BP/HR/SpO2/etc, trend icons, TTS alerts)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

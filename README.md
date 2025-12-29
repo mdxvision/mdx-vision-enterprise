@@ -111,6 +111,13 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Spoken Alerts**: TTS announces significant trends on patient load
 - **Clinical Value**: Spot deteriorating patients quickly (rising potassium, falling hemoglobin)
 
+### Vital Trends (NEW)
+- **Historical Comparison**: Compares current vitals with previous readings
+- **Trend Indicators**: ↗️ rising, ↘️ falling, → stable, 🆕 new
+- **Delta Display**: Shows change from previous (e.g., BP "+15", HR "-20")
+- **Spoken Alerts**: TTS announces significant vital trends on patient load
+- **Clinical Value**: Track BP, HR, SpO2, temperature trends over time
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

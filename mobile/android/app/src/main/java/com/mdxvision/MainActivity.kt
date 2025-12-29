@@ -1815,7 +1815,8 @@ class MainActivity : AppCompatActivity() {
                 speakAllergyWarnings(cached)
                 speakCriticalLabAlerts(cached)
                 speakMedicationInteractions(cached)
-                speakLabTrends(cached)  // Lab trends last
+                speakLabTrends(cached)
+                speakVitalTrends(cached)  // Trends last
                 return
             } else {
                 statusText.text = "Offline - No cache"
@@ -1854,7 +1855,8 @@ class MainActivity : AppCompatActivity() {
                                 speakAllergyWarnings(cached)
                                 speakCriticalLabAlerts(cached)
                                 speakMedicationInteractions(cached)
-                                speakLabTrends(cached)  // Lab trends last
+                                speakLabTrends(cached)
+                                speakVitalTrends(cached)  // Trends last
                             } else {
                                 statusText.text = "Connection failed"
                                 transcriptText.text = "Error: ${e.message}"
@@ -1887,7 +1889,8 @@ class MainActivity : AppCompatActivity() {
                                 speakAllergyWarnings(patient)
                                 speakCriticalLabAlerts(patient)
                                 speakMedicationInteractions(patient)
-                                speakLabTrends(patient)  // Lab trends last
+                                speakLabTrends(patient)
+                                speakVitalTrends(patient)  // Trends last
                             } catch (e: Exception) {
                                 showDataOverlay("Error", body ?: "No response")
                                 speakFeedback("Error loading patient")
@@ -2567,6 +2570,53 @@ class MainActivity : AppCompatActivity() {
             // Queue after critical alerts
             textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "lab_trend_alert_${System.currentTimeMillis()}")
             Log.d(TAG, "Spoke lab trend alert: $count trending labs")
+        }
+    }
+
+    /**
+     * Speak significant vital trends when patient is loaded
+     * Alerts clinician to rising or falling vital values
+     */
+    private fun speakVitalTrends(patient: JSONObject) {
+        if (!isTtsReady || textToSpeech == null || !isSpeechFeedbackEnabled) return
+
+        val vitals = patient.optJSONArray("vitals") ?: return
+        if (vitals.length() == 0) return
+
+        val trendingVitals = mutableListOf<String>()
+
+        for (i in 0 until vitals.length()) {
+            val vital = vitals.getJSONObject(i)
+            val trend = vital.optString("trend", "")
+            val name = vital.optString("name", "")
+            val value = vital.optString("value", "")
+            val previousValue = vital.optString("previous_value", "")
+
+            // Only speak rising or falling trends (skip stable/new)
+            if (trend == "rising" || trend == "falling") {
+                val direction = if (trend == "rising") "rising" else "falling"
+                trendingVitals.add("$name $direction from $previousValue to $value")
+            }
+        }
+
+        if (trendingVitals.isNotEmpty()) {
+            val count = trendingVitals.size
+            val vitalWord = if (count == 1) "vital" else "vitals"
+
+            val speechBuilder = StringBuilder()
+            speechBuilder.append("Note: $count trending $vitalWord. ")
+
+            // Speak up to 3 trending vitals
+            for (i in 0 until minOf(count, 3)) {
+                speechBuilder.append("${trendingVitals[i]}. ")
+            }
+            if (count > 3) {
+                speechBuilder.append("Plus ${count - 3} more trending.")
+            }
+
+            // Queue after other alerts
+            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "vital_trend_alert_${System.currentTimeMillis()}")
+            Log.d(TAG, "Spoke vital trend alert: $count trending vitals")
         }
     }
 
@@ -3287,11 +3337,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         sb.append("VITALS\n${"─".repeat(30)}\n")
-        for (i in 0 until minOf(vitals.length(), 6)) {
+        for (i in 0 until minOf(vitals.length(), 8)) {
             val v = vitals.getJSONObject(i)
             val interp = v.optString("interpretation", "")
             val isCritical = v.optBoolean("is_critical", false)
             val isAbnormal = v.optBoolean("is_abnormal", false)
+            val trend = v.optString("trend", "")
+            val delta = v.optString("delta", "")
 
             // Add interpretation flag
             val flag = when {
@@ -3303,7 +3355,19 @@ class MainActivity : AppCompatActivity() {
                 else -> "•"
             }
 
-            sb.append("$flag ${v.getString("name")}: ${v.getString("value")}${v.optString("unit", "")}")
+            // Trend indicator
+            val trendIcon = when (trend) {
+                "rising" -> " ↗️"
+                "falling" -> " ↘️"
+                "stable" -> " →"
+                "new" -> " 🆕"
+                else -> ""
+            }
+
+            // Delta display
+            val deltaStr = if (delta.isNotEmpty()) " ($delta)" else ""
+
+            sb.append("$flag ${v.getString("name")}: ${v.getString("value")}${v.optString("unit", "")}$trendIcon$deltaStr")
             if (interp.isNotEmpty() && interp != "N") sb.append(" [$interp]")
             sb.append("\n")
         }

@@ -276,9 +276,15 @@ class VitalSign(BaseModel):
     name: str
     value: str
     unit: str
+    date: str = ""
     interpretation: str = ""   # e.g., "H", "L", "HH", "LL", "N"
     is_critical: bool = False  # True if dangerously out of range
     is_abnormal: bool = False  # True if outside normal range
+    # Trend tracking fields
+    previous_value: Optional[str] = None
+    previous_date: Optional[str] = None
+    trend: Optional[str] = None  # "rising", "falling", "stable", "new"
+    delta: Optional[str] = None  # e.g., "+5", "-10"
 
 
 class LabResult(BaseModel):
@@ -470,12 +476,13 @@ def extract_patient_name(patient: dict) -> str:
 def extract_vitals(bundle: dict) -> List[VitalSign]:
     """Extract vitals from FHIR Observation bundle"""
     vitals = []
-    for entry in bundle.get("entry", [])[:10]:
+    for entry in bundle.get("entry", []):  # Process all entries for trend analysis
         obs = entry.get("resource", {})
         name = obs.get("code", {}).get("text", "Unknown")
         value_qty = obs.get("valueQuantity", {})
         value = str(value_qty.get("value", "?"))
         unit = value_qty.get("unit", "")
+        date = obs.get("effectiveDateTime", "")[:10] if obs.get("effectiveDateTime") else ""
 
         # Check for critical values
         is_critical, is_abnormal, interpretation = check_critical_vital(name, value)
@@ -484,11 +491,60 @@ def extract_vitals(bundle: dict) -> List[VitalSign]:
             name=name,
             value=value,
             unit=unit,
+            date=date,
             interpretation=interpretation,
             is_critical=is_critical,
             is_abnormal=is_abnormal
         ))
-    return vitals
+
+    # Calculate trends after extracting all vitals
+    return calculate_vital_trends(vitals)
+
+
+def calculate_vital_trends(vitals: List[VitalSign]) -> List[VitalSign]:
+    """
+    Group vitals by name and calculate trends.
+    Returns most recent result for each vital type with trend indicators.
+    """
+    if not vitals:
+        return vitals
+
+    # Group by vital name
+    grouped = {}
+    for vital in vitals:
+        if vital.name not in grouped:
+            grouped[vital.name] = []
+        grouped[vital.name].append(vital)
+
+    # For each vital type, compare most recent to previous
+    results = []
+    for name, vital_list in grouped.items():
+        # Sort by date descending (newest first)
+        vital_list.sort(key=lambda x: x.date or "", reverse=True)
+
+        current = vital_list[0]
+        previous = vital_list[1] if len(vital_list) > 1 else None
+
+        # Calculate trend using the same function as labs
+        if previous:
+            trend, delta = calculate_trend_direction(current.value, previous.value)
+            current.previous_value = previous.value
+            current.previous_date = previous.date
+            current.trend = trend
+            current.delta = delta
+        else:
+            current.trend = "new"
+
+        results.append(current)
+
+    # Sort by: critical first, then abnormal, then by name
+    results.sort(key=lambda x: (
+        0 if x.is_critical else 1,
+        0 if x.is_abnormal else 1,
+        x.name
+    ))
+
+    return results
 
 
 def extract_allergies(bundle: dict) -> List[str]:
@@ -1042,8 +1098,8 @@ async def get_patient(patient_id: str, request: Request):
     dob = patient_data.get("birthDate", "Unknown")
     gender = patient_data.get("gender", "unknown")
 
-    # Fetch vitals
-    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=10")
+    # Fetch vitals (50 for trend analysis)
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=50&_sort=-date")
     vitals = extract_vitals(vitals_bundle)
 
     # Fetch allergies
