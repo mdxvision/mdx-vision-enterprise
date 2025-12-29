@@ -139,14 +139,23 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(noteButton)
 
-        // Patient data display
+        // Scrollable patient data display
+        val scrollView = android.widget.ScrollView(this).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f  // Take remaining space
+            )
+        }
+
         patientDataText = TextView(this).apply {
             text = ""
             textSize = 14f
             setTextColor(0xFF10B981.toInt()) // Green for patient data
-            setPadding(0, 24, 0, 0)
+            setPadding(0, 24, 0, 24)
         }
-        layout.addView(patientDataText)
+        scrollView.addView(patientDataText)
+        layout.addView(scrollView)
 
         setContentView(layout)
     }
