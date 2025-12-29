@@ -1,0 +1,9 @@
+{
+  "name": "MDxVisionMobile",
+  "displayName": "MDx Vision",
+  "version": "1.0.0",
+  "description": "AR Smart Glasses Healthcare Documentation",
+  "android": {
+    "package": "com.mdxvision.glasses"
+  }
+}

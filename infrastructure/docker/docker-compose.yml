@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: mdx-postgres
+    environment:
+      POSTGRES_DB: mdxvision
+      POSTGRES_USER: mdx
+      POSTGRES_PASSWORD: mdx_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mdx -d mdxvision"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: mdx-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Java Backend
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: mdx-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: mdxvision
+      DB_USER: mdx
+      DB_PASSWORD: mdx_secret
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      AI_SERVICE_URL: http://ai-service:8000
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Python AI Service
+  ai-service:
+    build:
+      context: ../../ai-service
+      dockerfile: Dockerfile
+    container_name: mdx-ai-service
+    environment:
+      ENVIRONMENT: docker
+      DATABASE_URL: postgresql+asyncpg://mdx:mdx_secret@postgres:5432/mdxvision
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      BACKEND_URL: http://backend:8080
+      ASSEMBLYAI_API_KEY: ${ASSEMBLYAI_API_KEY}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Web Dashboard (React)
+  web:
+    build:
+      context: ../../web
+      dockerfile: Dockerfile
+    container_name: mdx-web
+    environment:
+      VITE_API_URL: http://localhost:8080/api
+      VITE_WS_URL: ws://localhost:8080/ws
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: mdx-network

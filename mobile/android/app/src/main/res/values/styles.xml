@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MDx Vision Theme - Optimized for AR Glasses -->
+    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+        <!-- Dark theme for AR glasses visibility -->
+        <item name="android:windowBackground">@color/background_dark</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:colorPrimary">@color/primary</item>
+        <item name="android:colorPrimaryDark">@color/primary_dark</item>
+        <item name="android:colorAccent">@color/accent</item>
+
+        <!-- Fullscreen for glasses display -->
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+
+        <!-- Hardware acceleration for smooth AR -->
+        <item name="android:hardwareAccelerated">true</item>
+    </style>
+
+    <!-- Splash screen style -->
+    <style name="SplashTheme" parent="AppTheme">
+        <item name="android:windowBackground">@color/background_dark</item>
+    </style>
+</resources>

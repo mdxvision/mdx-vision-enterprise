@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+out/
+target/
+*.jar
+*.war
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Mobile
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/build/
+*.apk
+*.aab
+*.ipa
+
+# Temporary
+tmp/
+temp/
+.cache/
+
+# Secrets
+*.pem
+*.key
+secrets/

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MDx Vision Brand Colors -->
+    <color name="primary">#0EA5E9</color>
+    <color name="primary_dark">#0284C7</color>
+    <color name="accent">#22D3EE</color>
+
+    <!-- AR Glasses Optimized Colors -->
+    <!-- Dark backgrounds for better visibility on transparent displays -->
+    <color name="background_dark">#0A1628</color>
+    <color name="background_card">#1E293B</color>
+
+    <!-- High contrast text for readability -->
+    <color name="text_primary">#F8FAFC</color>
+    <color name="text_secondary">#94A3B8</color>
+
+    <!-- Status colors -->
+    <color name="success">#22C55E</color>
+    <color name="warning">#F59E0B</color>
+    <color name="error">#EF4444</color>
+
+    <!-- AR Overlay colors (semi-transparent) -->
+    <color name="overlay_background">#CC0A1628</color>
+    <color name="overlay_highlight">#800EA5E9</color>
+</resources>

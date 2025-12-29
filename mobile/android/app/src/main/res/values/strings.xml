@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MDx Vision</string>
+
+    <!-- Voice Commands -->
+    <string name="voice_listening">Listening...</string>
+    <string name="voice_processing">Processing speech...</string>
+    <string name="voice_command_start">Start session</string>
+    <string name="voice_command_stop">Stop session</string>
+    <string name="voice_command_patient">Identify patient</string>
+
+    <!-- Patient ID -->
+    <string name="patient_scanning">Scanning for patient...</string>
+    <string name="patient_found">Patient identified</string>
+    <string name="patient_not_found">Patient not found</string>
+
+    <!-- Permissions -->
+    <string name="permission_camera">Camera access is required to identify patients</string>
+    <string name="permission_microphone">Microphone access is required for voice commands</string>
+</resources>

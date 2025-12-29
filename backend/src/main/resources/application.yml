@@ -1,0 +1,143 @@
+spring:
+  application:
+    name: mdx-backend
+  
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:mdxvision}
+    username: ${DB_USER:mdx}
+    password: ${DB_PASSWORD:mdx_secret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+  
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${JWT_ISSUER_URI:https://mdxvision.auth0.com/}
+          jwk-set-uri: ${JWT_JWK_SET_URI:https://mdxvision.auth0.com/.well-known/jwks.json}
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api
+
+# HAPI FHIR Configuration
+hapi:
+  fhir:
+    server:
+      path: /fhir
+    validation:
+      enabled: true
+    allow-external-references: true
+    default-page-size: 20
+    max-page-size: 100
+
+# MDx Custom Configuration
+mdx:
+  ai-service:
+    url: ${AI_SERVICE_URL:http://localhost:8000}
+    timeout: 30000
+  
+  # Default EHR system (EPIC, CERNER, VERADIGM)
+  ehr:
+    default-system: ${EHR_DEFAULT_SYSTEM:EPIC}
+
+  # Epic on FHIR
+  # Sandbox: https://fhir.epic.com
+  # Register: https://fhir.epic.com/Developer/Apps
+  epic:
+    client-id: ${EPIC_CLIENT_ID:}
+    private-key-path: ${EPIC_PRIVATE_KEY_PATH:}
+    base-url: ${EPIC_BASE_URL:https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4}
+    token-url: ${EPIC_TOKEN_URL:https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token}
+    authorize-url: ${EPIC_AUTHORIZE_URL:https://fhir.epic.com/interconnect-fhir-oauth/oauth2/authorize}
+    access-token: ${EPIC_ACCESS_TOKEN:}
+
+  # Cerner (Oracle Health)
+  # Sandbox: https://fhir-open.cerner.com
+  # Register: https://code.cerner.com
+  cerner:
+    client-id: ${CERNER_CLIENT_ID:}
+    client-secret: ${CERNER_CLIENT_SECRET:}
+    # Open sandbox (no auth required)
+    base-url: ${CERNER_BASE_URL:https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d}
+    token-url: ${CERNER_TOKEN_URL:https://authorization.cerner.com/tenants/ec2458f2-1e24-41c8-b71b-0e701af7583d/oauth2/token}
+    access-token: ${CERNER_ACCESS_TOKEN:}
+
+  # Veradigm (formerly Allscripts)
+  # Developer Portal: https://developer.veradigm.com
+  veradigm:
+    client-id: ${VERADIGM_CLIENT_ID:}
+    client-secret: ${VERADIGM_CLIENT_SECRET:}
+    base-url: ${VERADIGM_BASE_URL:https://fhir.fhirpoint.open.allscripts.com/fhirroute/open/sandbox/r4}
+    token-url: ${VERADIGM_TOKEN_URL:https://fhir.fhirpoint.open.allscripts.com/authorization/connect/token}
+    access-token: ${VERADIGM_ACCESS_TOKEN:}
+  
+  azure:
+    service-bus:
+      connection-string: ${AZURE_SERVICEBUS_CONNECTION_STRING:}
+      queue-transcription: mdx-transcription-queue
+      queue-clinical-notes: mdx-clinical-notes-queue
+    signalr:
+      connection-string: ${AZURE_SIGNALR_CONNECTION_STRING:}
+  
+  audit:
+    enabled: true
+    retention-days: 365
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Logging
+logging:
+  level:
+    com.mdxvision: DEBUG
+    ca.uhn.fhir: INFO
+    org.springframework.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# OpenAPI
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
