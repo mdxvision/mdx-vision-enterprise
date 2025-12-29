@@ -65,6 +65,10 @@ class MainActivity : AppCompatActivity() {
     private var liveTranscriptText: TextView? = null
     private val liveTranscriptBuffer = StringBuilder()
 
+    // Last generated note for saving
+    private var lastGeneratedNote: JSONObject? = null
+    private var lastNoteTranscript: String? = null
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -163,7 +167,8 @@ class MainActivity : AppCompatActivity() {
             CommandButton("SHOW LABS", 0xFF06B6D4.toInt()) { fetchPatientSection("labs") },
             CommandButton("SHOW PROCEDURES", 0xFF84CC16.toInt()) { fetchPatientSection("procedures") },
             CommandButton("START NOTE", 0xFFFFB800.toInt()) { toggleDocumentationMode() },
-            CommandButton("LIVE TRANSCRIBE", 0xFFE11D48.toInt()) { toggleLiveTranscription() }
+            CommandButton("LIVE TRANSCRIBE", 0xFFE11D48.toInt()) { toggleLiveTranscription() },
+            CommandButton("SAVE NOTE", 0xFF22C55E.toInt()) { saveCurrentNote() }
         )
 
         commands.forEachIndexed { index, cmd ->
@@ -625,8 +630,11 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             try {
                                 val result = JSONObject(body ?: "{}")
+                                // Store for later saving
+                                lastGeneratedNote = result
+                                lastNoteTranscript = transcript
                                 val displayText = result.optString("display_text", "No note generated")
-                                showDataOverlay("SOAP Note", displayText)
+                                showNoteWithSaveOption("SOAP Note", displayText)
                             } catch (e: Exception) {
                                 showDataOverlay("SOAP Note", body ?: "No response")
                             }
@@ -637,6 +645,163 @@ class MainActivity : AppCompatActivity() {
                 Log.e(TAG, "Failed to generate note: ${e.message}")
                 runOnUiThread {
                     showDataOverlay("Error", "Failed: ${e.message}")
+                }
+            }
+        }.start()
+    }
+
+    private fun showNoteWithSaveOption(title: String, content: String) {
+        // Remove existing overlay if any
+        dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dataOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            // Title
+            val titleText = TextView(context).apply {
+                text = title
+                textSize = 22f
+                setTextColor(0xFF10B981.toInt())
+                setPadding(0, 0, 0, 16)
+            }
+            innerLayout.addView(titleText)
+
+            // Scrollable content
+            val scrollView = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+            }
+
+            val contentText = TextView(context).apply {
+                text = content
+                textSize = 16f
+                setTextColor(0xFFF8FAFC.toInt())
+                setLineSpacing(4f, 1.2f)
+            }
+            scrollView.addView(contentText)
+            innerLayout.addView(scrollView)
+
+            // Button row with Save and Close
+            val buttonRow = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 16, 0, 0)
+            }
+
+            val saveButton = android.widget.Button(context).apply {
+                text = "💾 SAVE NOTE"
+                setBackgroundColor(0xFF22C55E.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = 8
+                }
+                setOnClickListener { saveCurrentNote() }
+            }
+            buttonRow.addView(saveButton)
+
+            val closeButton = android.widget.Button(context).apply {
+                text = "CLOSE"
+                setBackgroundColor(0xFF475569.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 8
+                }
+                setOnClickListener { hideDataOverlay() }
+            }
+            buttonRow.addView(closeButton)
+
+            innerLayout.addView(buttonRow)
+            addView(innerLayout)
+        }
+
+        rootView.addView(dataOverlay)
+        statusText.text = title
+        transcriptText.text = "Say 'save note' or 'close'"
+    }
+
+    private fun saveCurrentNote() {
+        val note = lastGeneratedNote
+        val transcript = lastNoteTranscript
+        val patientId = currentPatientData?.optString("patient_id")
+
+        if (note == null) {
+            Toast.makeText(this, "No note to save. Generate a note first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        statusText.text = "Saving note..."
+        transcriptText.text = "Uploading to EHR"
+
+        Thread {
+            try {
+                val json = JSONObject().apply {
+                    put("patient_id", patientId ?: TEST_PATIENT_ID)
+                    put("note_type", "SOAP")
+                    put("display_text", note.optString("display_text", ""))
+                    put("summary", note.optString("summary", ""))
+                    put("transcript", transcript ?: "")
+                    put("timestamp", note.optString("timestamp", ""))
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/notes/save")
+                    .post(json.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Save note error: ${e.message}")
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                            statusText.text = "Save failed"
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "Save response: $body")
+
+                        runOnUiThread {
+                            try {
+                                val result = JSONObject(body ?: "{}")
+                                val success = result.optBoolean("success", false)
+                                val noteId = result.optString("note_id", "")
+
+                                if (success) {
+                                    Toast.makeText(this@MainActivity, "Note saved! ID: $noteId", Toast.LENGTH_LONG).show()
+                                    statusText.text = "Note saved"
+                                    transcriptText.text = "ID: $noteId"
+                                    // Clear the saved note
+                                    lastGeneratedNote = null
+                                    lastNoteTranscript = null
+                                    hideDataOverlay()
+                                } else {
+                                    val message = result.optString("message", "Save failed")
+                                    Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+                                    statusText.text = "MDx Vision"
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(this@MainActivity, "Save response error", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save note: ${e.message}")
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }.start()
@@ -961,6 +1126,10 @@ class MainActivity : AppCompatActivity() {
             lower.contains("stop note") || lower.contains("end note") || lower.contains("finish note") -> {
                 // Voice command to stop documentation and generate note
                 if (isDocumentationMode) toggleDocumentationMode()
+            }
+            lower.contains("save note") || lower.contains("save the note") || lower.contains("submit note") -> {
+                // Voice command to save the current note
+                saveCurrentNote()
             }
             lower.contains("live transcri") || lower.contains("start transcri") || lower.contains("transcribe") -> {
                 // Voice command to start/stop live transcription

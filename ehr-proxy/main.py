@@ -849,6 +849,94 @@ async def quick_note(request: NoteRequest):
     }
 
 
+# ============ Note Storage (Simulated - Cerner sandbox is read-only) ============
+
+# In-memory storage for saved notes (in production, this would go to the EHR)
+saved_notes: dict = {}
+
+
+class SaveNoteRequest(BaseModel):
+    patient_id: str
+    note_type: str = "SOAP"
+    display_text: str
+    summary: str = ""
+    transcript: str = ""
+    timestamp: str = ""
+
+
+@app.post("/api/v1/notes/save")
+async def save_note(request: SaveNoteRequest):
+    """
+    Save a clinical note to the EHR (simulated)
+
+    In production, this would:
+    1. Create a FHIR DocumentReference resource
+    2. POST to the EHR's DocumentReference endpoint
+    3. Return the created resource ID
+
+    For now (Cerner sandbox is read-only), we simulate by storing locally.
+    """
+    try:
+        # Generate a unique note ID
+        note_id = f"NOTE-{uuid.uuid4().hex[:8].upper()}"
+
+        # Create note record
+        note_record = {
+            "id": note_id,
+            "patient_id": request.patient_id,
+            "note_type": request.note_type,
+            "display_text": request.display_text,
+            "summary": request.summary,
+            "transcript": request.transcript,
+            "timestamp": request.timestamp or datetime.now().isoformat(),
+            "created_at": datetime.now().isoformat(),
+            "status": "final"
+        }
+
+        # Store in memory (simulated EHR storage)
+        saved_notes[note_id] = note_record
+
+        print(f"📝 Note saved: {note_id} for patient {request.patient_id}")
+        print(f"   Summary: {request.summary[:50]}..." if request.summary else "   (No summary)")
+
+        return {
+            "success": True,
+            "note_id": note_id,
+            "message": "Note saved successfully",
+            "patient_id": request.patient_id,
+            "timestamp": note_record["created_at"]
+        }
+
+    except Exception as e:
+        print(f"❌ Save note error: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to save note: {str(e)}"
+        }
+
+
+@app.get("/api/v1/notes/{note_id}")
+async def get_saved_note(note_id: str):
+    """Retrieve a saved note by ID"""
+    if note_id in saved_notes:
+        return saved_notes[note_id]
+    raise HTTPException(status_code=404, detail="Note not found")
+
+
+@app.get("/api/v1/patient/{patient_id}/notes")
+async def get_patient_notes(patient_id: str):
+    """Get all saved notes for a patient"""
+    patient_notes = [
+        note for note in saved_notes.values()
+        if note["patient_id"] == patient_id
+    ]
+    return {
+        "patient_id": patient_id,
+        "count": len(patient_notes),
+        "notes": patient_notes
+    }
+
+
 # ============ Real-Time Transcription WebSocket ============
 
 @app.get("/api/v1/transcription/status")
