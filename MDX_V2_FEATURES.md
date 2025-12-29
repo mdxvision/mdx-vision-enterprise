@@ -100,8 +100,11 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Cache expiration | Done | 24-hour TTL |
 | [x] Cache indicator | Done | "OFFLINE" / "CACHED" label |
 | [x] Clear cache command | Done | Voice: "clear cache" |
-| [ ] Offline note drafts | Pending | Queue for sync |
-| [ ] Sync on reconnect | Pending | Auto-upload |
+| [x] Offline note drafts | Done | `saveDraftNote()` with SharedPreferences |
+| [x] Sync on reconnect | Done | `registerNetworkCallback()` auto-sync |
+| [x] Manual sync command | Done | Voice: "sync notes" |
+| [x] View pending drafts | Done | Voice: "show drafts" |
+| [x] Delete draft command | Done | Voice: "delete draft [N]" |
 
 ---
 
@@ -328,6 +331,7 @@ Based on MDx v2.0 Brief Technical Description document.
 9. Transcript preview with topic detection before note generation
 10. Speech feedback for action confirmations (toggleable)
 11. Automatic allergy warnings spoken when patient loads (safety-first)
+12. Offline note drafts with auto-sync on reconnect (notes never lost)
 
 ### Next Priorities
 1. Epic/Veradigm live integration

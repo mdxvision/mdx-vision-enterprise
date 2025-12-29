@@ -60,6 +60,10 @@ class MainActivity : AppCompatActivity() {
         private const val DEFAULT_CLINICIAN_NAME = "Clinician"
         // Speech feedback setting
         private const val PREF_SPEECH_FEEDBACK = "speech_feedback_enabled"
+        // Offline note drafts
+        private const val DRAFT_PREFIX = "note_draft_"
+        private const val DRAFT_IDS_KEY = "pending_draft_ids"
+        private const val MAX_SYNC_ATTEMPTS = 5
     }
 
     // Offline cache
@@ -109,6 +113,10 @@ class MainActivity : AppCompatActivity() {
     private var isAutoScrollEnabled: Boolean = true
     private var liveTranscriptScrollView: android.widget.ScrollView? = null
 
+    // Offline note drafts
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var isSyncing = false
+
     // Note type for clinical documentation (SOAP, PROGRESS, HP, CONSULT, AUTO)
     private var currentNoteType: String = "AUTO"  // Default to auto-detect
 
@@ -147,6 +155,15 @@ class MainActivity : AppCompatActivity() {
         loadFontSizeSetting()
         loadClinicianName()
         loadSpeechFeedbackSetting()
+
+        // Register network callback for auto-sync of offline drafts
+        registerNetworkCallback()
+
+        // Check for pending drafts on startup
+        val draftCount = getPendingDraftCount()
+        if (draftCount > 0) {
+            Log.d(TAG, "Found $draftCount pending draft(s) on startup")
+        }
 
         // Initialize Text-to-Speech for hands-free patient summaries
         initTextToSpeech()
@@ -1177,6 +1194,12 @@ class MainActivity : AppCompatActivity() {
             |• "Reset note" - Restore original note
             |• "Save note" - Sign off and save
             |
+            |📤 OFFLINE DRAFTS
+            |• "Show drafts" - View pending drafts
+            |• "Sync notes" - Upload pending drafts
+            |• "Delete draft [N]" - Remove draft
+            |• "View draft [N]" - See draft details
+            |
             |⚙️ SETTINGS
             |• "My name is Dr. [Name]" - Set clinician
             |• "Increase font" - Larger text
@@ -1567,7 +1590,8 @@ class MainActivity : AppCompatActivity() {
     private fun performNoteSave() {
         val note = lastGeneratedNote
         val transcript = lastNoteTranscript
-        val patientId = currentPatientData?.optString("patient_id")
+        val patientId = currentPatientData?.optString("patient_id") ?: TEST_PATIENT_ID
+        val patientName = currentPatientData?.optString("name") ?: "Unknown Patient"
 
         if (note == null) {
             Toast.makeText(this, "No note to save. Generate a note first.", Toast.LENGTH_SHORT).show()
@@ -1577,6 +1601,30 @@ class MainActivity : AppCompatActivity() {
         // Use edited content if available, otherwise use original
         val noteContent = editableNoteContent ?: note.optString("display_text", "")
         val wasEdited = isNoteEditing
+        val signedAt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        val summary = note.optString("summary", "")
+
+        // Check if offline - save as draft immediately
+        if (!isNetworkAvailable()) {
+            val draftId = saveDraftNote(
+                patientId = patientId,
+                patientName = patientName,
+                noteType = currentNoteType,
+                displayText = noteContent,
+                summary = summary,
+                transcript = transcript ?: "",
+                wasEdited = wasEdited,
+                signedBy = clinicianName,
+                signedAt = signedAt
+            )
+
+            Toast.makeText(this, "Offline - Note saved as draft: $draftId", Toast.LENGTH_LONG).show()
+            statusText.text = "Draft saved (offline)"
+            transcriptText.text = "Will sync when online"
+            speakFeedback("Note saved as offline draft")
+            clearAfterSave()
+            return
+        }
 
         statusText.text = "Saving note..."
         transcriptText.text = if (wasEdited) "Saving edited note..." else "Uploading to EHR"
@@ -1584,15 +1632,15 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val json = JSONObject().apply {
-                    put("patient_id", patientId ?: TEST_PATIENT_ID)
+                    put("patient_id", patientId)
                     put("note_type", currentNoteType)
-                    put("display_text", noteContent)  // Use edited content
-                    put("summary", note.optString("summary", ""))
+                    put("display_text", noteContent)
+                    put("summary", summary)
                     put("transcript", transcript ?: "")
                     put("timestamp", note.optString("timestamp", ""))
-                    put("was_edited", wasEdited)  // Flag if note was manually edited
-                    put("signed_by", clinicianName)  // Clinician who signed off
-                    put("signed_at", java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).format(java.util.Date()))
+                    put("was_edited", wasEdited)
+                    put("signed_by", clinicianName)
+                    put("signed_at", signedAt)
                 }
 
                 val request = Request.Builder()
@@ -1604,8 +1652,23 @@ class MainActivity : AppCompatActivity() {
                     override fun onFailure(call: Call, e: IOException) {
                         Log.e(TAG, "Save note error: ${e.message}")
                         runOnUiThread {
-                            Toast.makeText(this@MainActivity, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                            statusText.text = "Save failed"
+                            // Save as draft on network failure
+                            val draftId = saveDraftNote(
+                                patientId = patientId,
+                                patientName = patientName,
+                                noteType = currentNoteType,
+                                displayText = noteContent,
+                                summary = summary,
+                                transcript = transcript ?: "",
+                                wasEdited = wasEdited,
+                                signedBy = clinicianName,
+                                signedAt = signedAt
+                            )
+                            Toast.makeText(this@MainActivity, "Save failed - saved as draft: $draftId", Toast.LENGTH_LONG).show()
+                            statusText.text = "Saved as draft"
+                            transcriptText.text = "Will retry when online"
+                            speakFeedback("Save failed. Note saved as draft.")
+                            clearAfterSave()
                         }
                     }
 
@@ -1624,13 +1687,7 @@ class MainActivity : AppCompatActivity() {
                                     Toast.makeText(this@MainActivity, "Note saved$editMsg! ID: $noteId", Toast.LENGTH_LONG).show()
                                     statusText.text = "Note saved"
                                     transcriptText.text = "ID: $noteId"
-                                    // Clear the saved note and editing state
-                                    lastGeneratedNote = null
-                                    lastNoteTranscript = null
-                                    editableNoteContent = null
-                                    noteEditText = null
-                                    isNoteEditing = false
-                                    hideDataOverlay()
+                                    clearAfterSave()
                                     speakFeedback("Note saved successfully")
                                 } else {
                                     val message = result.optString("message", "Save failed")
@@ -1647,10 +1704,34 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save note: ${e.message}")
                 runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Save failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    // Save as draft on exception
+                    val draftId = saveDraftNote(
+                        patientId = patientId,
+                        patientName = patientName,
+                        noteType = currentNoteType,
+                        displayText = noteContent,
+                        summary = summary,
+                        transcript = transcript ?: "",
+                        wasEdited = wasEdited,
+                        signedBy = clinicianName,
+                        signedAt = signedAt
+                    )
+                    Toast.makeText(this@MainActivity, "Error - saved as draft: $draftId", Toast.LENGTH_LONG).show()
+                    statusText.text = "Saved as draft"
+                    speakFeedback("Error occurred. Note saved as draft.")
+                    clearAfterSave()
                 }
             }
         }.start()
+    }
+
+    private fun clearAfterSave() {
+        lastGeneratedNote = null
+        lastNoteTranscript = null
+        editableNoteContent = null
+        noteEditText = null
+        isNoteEditing = false
+        hideDataOverlay()
     }
 
     private fun fetchPatientByMrn(mrn: String) {
@@ -1860,6 +1941,326 @@ class MainActivity : AppCompatActivity() {
         cachePrefs.edit().clear().apply()
         Toast.makeText(this, "Patient cache cleared", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Cache cleared")
+    }
+
+    // ============ Offline Note Drafts Methods ============
+
+    private fun saveDraftNote(
+        patientId: String,
+        patientName: String,
+        noteType: String,
+        displayText: String,
+        summary: String,
+        transcript: String,
+        wasEdited: Boolean,
+        signedBy: String,
+        signedAt: String
+    ): String {
+        val draftId = "DRAFT-${java.util.UUID.randomUUID().toString().take(8).uppercase()}"
+
+        val draft = JSONObject().apply {
+            put("draft_id", draftId)
+            put("patient_id", patientId)
+            put("patient_name", patientName)
+            put("note_type", noteType)
+            put("display_text", displayText)
+            put("summary", summary)
+            put("transcript", transcript)
+            put("was_edited", wasEdited)
+            put("signed_by", signedBy)
+            put("signed_at", signedAt)
+            put("created_at", System.currentTimeMillis())
+            put("sync_attempts", 0)
+            put("last_sync_attempt", 0L)
+            put("last_error", JSONObject.NULL)
+        }
+
+        cachePrefs.edit().apply {
+            putString("$DRAFT_PREFIX$draftId", draft.toString())
+            val existingIds = cachePrefs.getString(DRAFT_IDS_KEY, "") ?: ""
+            val newIds = if (existingIds.isEmpty()) draftId else "$existingIds,$draftId"
+            putString(DRAFT_IDS_KEY, newIds)
+            apply()
+        }
+
+        Log.d(TAG, "Saved draft note: $draftId for patient $patientId")
+        updatePendingDraftsIndicator()
+        return draftId
+    }
+
+    private fun getPendingDrafts(): List<JSONObject> {
+        val idsString = cachePrefs.getString(DRAFT_IDS_KEY, "") ?: ""
+        if (idsString.isEmpty()) return emptyList()
+
+        return idsString.split(",")
+            .filter { it.isNotEmpty() }
+            .mapNotNull { draftId ->
+                cachePrefs.getString("$DRAFT_PREFIX$draftId", null)?.let { json ->
+                    try { JSONObject(json) } catch (e: Exception) { null }
+                }
+            }
+            .sortedByDescending { it.optLong("created_at", 0) }
+    }
+
+    private fun getPendingDraftCount(): Int {
+        val idsString = cachePrefs.getString(DRAFT_IDS_KEY, "") ?: ""
+        return if (idsString.isEmpty()) 0 else idsString.split(",").filter { it.isNotEmpty() }.size
+    }
+
+    private fun deleteDraft(draftId: String) {
+        cachePrefs.edit().apply {
+            remove("$DRAFT_PREFIX$draftId")
+
+            val existingIds = cachePrefs.getString(DRAFT_IDS_KEY, "") ?: ""
+            val newIds = existingIds.split(",")
+                .filter { it.isNotEmpty() && it != draftId }
+                .joinToString(",")
+            putString(DRAFT_IDS_KEY, newIds)
+            apply()
+        }
+
+        Log.d(TAG, "Deleted draft: $draftId")
+        updatePendingDraftsIndicator()
+    }
+
+    private fun updateDraftSyncStatus(draftId: String, error: String?) {
+        val draftJson = cachePrefs.getString("$DRAFT_PREFIX$draftId", null) ?: return
+
+        try {
+            val draft = JSONObject(draftJson)
+            draft.put("sync_attempts", draft.optInt("sync_attempts", 0) + 1)
+            draft.put("last_sync_attempt", System.currentTimeMillis())
+            draft.put("last_error", error ?: JSONObject.NULL)
+
+            cachePrefs.edit().putString("$DRAFT_PREFIX$draftId", draft.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update draft sync status: ${e.message}")
+        }
+    }
+
+    private fun updatePendingDraftsIndicator() {
+        val count = getPendingDraftCount()
+        runOnUiThread {
+            if (count > 0) {
+                transcriptText.text = "📋 $count draft(s) pending sync"
+            }
+        }
+    }
+
+    private fun formatTimeAgo(timestamp: Long): String {
+        val diff = System.currentTimeMillis() - timestamp
+        val minutes = diff / 60000
+        val hours = minutes / 60
+        val days = hours / 24
+
+        return when {
+            days > 0 -> "$days day(s) ago"
+            hours > 0 -> "$hours hour(s) ago"
+            minutes > 0 -> "$minutes min ago"
+            else -> "Just now"
+        }
+    }
+
+    private fun showPendingDraftsOverlay() {
+        val drafts = getPendingDrafts()
+
+        if (drafts.isEmpty()) {
+            Toast.makeText(this, "No pending drafts", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.append("📋 PENDING DRAFTS\n")
+        sb.append("${"═".repeat(30)}\n\n")
+
+        drafts.forEachIndexed { index, draft ->
+            val patientName = draft.optString("patient_name", "Unknown")
+            val noteType = draft.optString("note_type", "SOAP")
+            val createdAt = draft.optLong("created_at", 0)
+            val attempts = draft.optInt("sync_attempts", 0)
+            val lastError = draft.optString("last_error", "")
+            val timeAgo = formatTimeAgo(createdAt)
+            val draftIdShort = draft.optString("draft_id", "")
+
+            sb.append("${index + 1}. $patientName\n")
+            sb.append("   Type: $noteType | $timeAgo\n")
+            sb.append("   ID: $draftIdShort\n")
+            if (attempts > 0) {
+                sb.append("   ⚠️ Sync attempts: $attempts\n")
+                if (lastError.isNotEmpty() && lastError != "null") {
+                    sb.append("   Error: $lastError\n")
+                }
+            }
+            sb.append("\n")
+        }
+
+        sb.append("─".repeat(30) + "\n")
+        sb.append("Say 'sync notes' to sync now\n")
+        sb.append("Say 'delete draft [number]' to remove\n")
+        sb.append("Say 'view draft [number]' to see details")
+
+        showDataOverlay("Pending Drafts (${drafts.size})", sb.toString())
+    }
+
+    private fun showDraftDetails(draft: JSONObject) {
+        val patientName = draft.optString("patient_name", "Unknown")
+        val noteType = draft.optString("note_type", "SOAP")
+        val displayText = draft.optString("display_text", "")
+        val draftId = draft.optString("draft_id", "")
+
+        val title = "$noteType Draft - $patientName"
+        val content = "$displayText\n\n─────────────────\nDraft ID: $draftId\nSay 'delete draft' to remove"
+
+        showDataOverlay(title, content)
+    }
+
+    // ============ Network Monitoring & Auto-Sync ============
+
+    private fun registerNetworkCallback() {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                Log.d(TAG, "Network available - checking for pending drafts")
+                runOnUiThread {
+                    val draftCount = getPendingDraftCount()
+                    if (draftCount > 0 && !isSyncing) {
+                        Toast.makeText(this@MainActivity, "Network restored - $draftCount draft(s) pending", Toast.LENGTH_SHORT).show()
+                        syncPendingDrafts()
+                    }
+                }
+            }
+
+            override fun onLost(network: android.net.Network) {
+                Log.d(TAG, "Network lost")
+                runOnUiThread {
+                    val draftCount = getPendingDraftCount()
+                    if (draftCount > 0) {
+                        transcriptText.text = "Offline - $draftCount draft(s) pending"
+                    }
+                }
+            }
+        }
+
+        val networkRequest = android.net.NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+
+        connectivityManager.registerNetworkCallback(networkRequest, networkCallback!!)
+        Log.d(TAG, "Network callback registered")
+    }
+
+    private fun unregisterNetworkCallback() {
+        networkCallback?.let { callback ->
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            try {
+                connectivityManager.unregisterNetworkCallback(callback)
+                Log.d(TAG, "Network callback unregistered")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error unregistering network callback: ${e.message}")
+            }
+        }
+        networkCallback = null
+    }
+
+    private fun syncPendingDrafts() {
+        if (isSyncing) {
+            Log.d(TAG, "Sync already in progress")
+            return
+        }
+
+        val drafts = getPendingDrafts()
+        if (drafts.isEmpty()) {
+            Log.d(TAG, "No drafts to sync")
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            Log.d(TAG, "Network not available for sync")
+            Toast.makeText(this, "No network connection", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isSyncing = true
+        statusText.text = "Syncing ${drafts.size} draft(s)..."
+        speakFeedback("Syncing ${drafts.size} pending notes")
+
+        Thread {
+            var successCount = 0
+            var failCount = 0
+
+            for (draft in drafts) {
+                val draftId = draft.optString("draft_id", "")
+                val attempts = draft.optInt("sync_attempts", 0)
+
+                // Skip if too many attempts
+                if (attempts >= MAX_SYNC_ATTEMPTS) {
+                    Log.w(TAG, "Skipping draft $draftId - max attempts reached")
+                    failCount++
+                    continue
+                }
+
+                try {
+                    val json = JSONObject().apply {
+                        put("patient_id", draft.optString("patient_id"))
+                        put("note_type", draft.optString("note_type"))
+                        put("display_text", draft.optString("display_text"))
+                        put("summary", draft.optString("summary"))
+                        put("transcript", draft.optString("transcript"))
+                        put("timestamp", draft.optString("signed_at"))
+                        put("was_edited", draft.optBoolean("was_edited"))
+                        put("signed_by", draft.optString("signed_by"))
+                        put("signed_at", draft.optString("signed_at"))
+                    }
+
+                    val request = Request.Builder()
+                        .url("$EHR_PROXY_URL/api/v1/notes/save")
+                        .post(json.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val response = httpClient.newCall(request).execute()
+                    val body = response.body?.string()
+                    val result = JSONObject(body ?: "{}")
+
+                    if (result.optBoolean("success", false)) {
+                        deleteDraft(draftId)
+                        successCount++
+                        Log.d(TAG, "Synced draft $draftId successfully")
+                    } else {
+                        updateDraftSyncStatus(draftId, result.optString("message", "Unknown error"))
+                        failCount++
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Sync error for draft $draftId: ${e.message}")
+                    updateDraftSyncStatus(draftId, e.message)
+                    failCount++
+                }
+            }
+
+            isSyncing = false
+
+            runOnUiThread {
+                updatePendingDraftsIndicator()
+
+                when {
+                    successCount > 0 && failCount == 0 -> {
+                        Toast.makeText(this@MainActivity, "Synced $successCount note(s)", Toast.LENGTH_SHORT).show()
+                        statusText.text = "All notes synced"
+                        transcriptText.text = "Ready"
+                        speakFeedback("All notes synced successfully")
+                    }
+                    successCount > 0 && failCount > 0 -> {
+                        Toast.makeText(this@MainActivity, "Synced $successCount, $failCount failed", Toast.LENGTH_LONG).show()
+                        statusText.text = "$failCount draft(s) pending"
+                        speakFeedback("Synced $successCount notes. $failCount still pending.")
+                    }
+                    else -> {
+                        Toast.makeText(this@MainActivity, "Sync failed - will retry later", Toast.LENGTH_SHORT).show()
+                        statusText.text = "${drafts.size} draft(s) pending"
+                    }
+                }
+            }
+        }.start()
     }
 
     // ============ Font Size Methods ============
@@ -2355,6 +2756,55 @@ class MainActivity : AppCompatActivity() {
                 currentPatientData = null
                 hideDataOverlay()
             }
+            // Offline note drafts voice commands
+            lower.contains("sync notes") || lower.contains("sync drafts") || lower.contains("upload drafts") -> {
+                val draftCount = getPendingDraftCount()
+                if (draftCount > 0) {
+                    if (isNetworkAvailable()) {
+                        syncPendingDrafts()
+                    } else {
+                        Toast.makeText(this, "No network - cannot sync", Toast.LENGTH_SHORT).show()
+                        speakFeedback("No network connection. Cannot sync drafts.")
+                    }
+                } else {
+                    Toast.makeText(this, "No pending drafts", Toast.LENGTH_SHORT).show()
+                }
+            }
+            lower.contains("show drafts") || lower.contains("view drafts") || lower.contains("pending notes") || lower.contains("pending drafts") -> {
+                showPendingDraftsOverlay()
+            }
+            lower.contains("delete draft") -> {
+                // Extract draft number from command
+                val match = Regex("\\d+").find(lower)
+                if (match != null) {
+                    val draftIndex = match.value.toIntOrNull()?.minus(1) ?: -1
+                    val drafts = getPendingDrafts()
+                    if (draftIndex in drafts.indices) {
+                        val draftId = drafts[draftIndex].optString("draft_id")
+                        deleteDraft(draftId)
+                        Toast.makeText(this, "Draft ${draftIndex + 1} deleted", Toast.LENGTH_SHORT).show()
+                        speakFeedback("Draft deleted")
+                    } else {
+                        Toast.makeText(this, "Invalid draft number", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    showPendingDraftsOverlay()
+                    transcriptText.text = "Say 'delete draft [number]'"
+                }
+            }
+            lower.contains("view draft") && Regex("\\d+").containsMatchIn(lower) -> {
+                // View specific draft by number
+                val match = Regex("\\d+").find(lower)
+                if (match != null) {
+                    val draftIndex = match.value.toIntOrNull()?.minus(1) ?: -1
+                    val drafts = getPendingDrafts()
+                    if (draftIndex in drafts.indices) {
+                        showDraftDetails(drafts[draftIndex])
+                    } else {
+                        Toast.makeText(this, "Invalid draft number", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
             lower.contains("increase font") || lower.contains("bigger font") || lower.contains("larger font") || lower.contains("font bigger") || lower.contains("font larger") -> {
                 // Voice command to increase font size
                 increaseFontSize()
@@ -2712,5 +3162,7 @@ class MainActivity : AppCompatActivity() {
         // Clean up Text-to-Speech
         textToSpeech?.stop()
         textToSpeech?.shutdown()
+        // Clean up network callback
+        unregisterNetworkCallback()
     }
 }

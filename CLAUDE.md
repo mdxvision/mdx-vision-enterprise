@@ -252,6 +252,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 24. **Transcript Preview Before Generate** - Shows word count, detected topics, transcript preview before AI note generation ("generate note", "re-record")
 25. **Speech Feedback for Actions** - TTS confirms key actions ("Patient loaded", "Recording started", "Note saved") with toggle
 26. **Allergy Warnings Spoken** - Critical allergies automatically spoken aloud when patient loads (bypasses speech feedback toggle for safety)
+27. **Offline Note Drafts** - Notes saved locally when offline or save fails, auto-sync when connectivity restores ("sync notes", "show drafts", "delete draft [N]")
 
 ## Next Up (Recommended)
 
@@ -264,7 +265,6 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 | Feature | Notes |
 |---------|-------|
 | CPT modifier support | -25, -59, etc. |
-| Offline note drafts | Queue notes for sync when reconnected |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

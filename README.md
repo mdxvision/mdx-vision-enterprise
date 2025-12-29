@@ -68,6 +68,13 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Clinical Notes**: Read existing notes from EHR (DocumentReference)
 - **Care Plans**: Display patient care plans from EHR
 
+### Offline Note Drafts (NEW)
+- **Never Lose Work**: Notes automatically saved locally when offline or save fails
+- **Auto-Sync**: Drafts upload automatically when connectivity restores
+- **Voice Commands**: "sync notes", "show drafts", "delete draft [N]"
+- **Retry Logic**: Up to 5 attempts per draft with error tracking
+- **Persistent**: Drafts survive app restarts
+
 ## Architecture
 
 ```
