@@ -154,7 +154,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Stop button | Done | UI + voice |
 | [x] Generate note option | Done | After stop |
 | [x] Font size adjustment | Done | Voice commands + SharedPreferences |
-| [ ] Auto-scroll | Pending | Follow text |
+| [x] Auto-scroll | Done | Voice commands: scroll on/off/toggle |
 
 ---
 
@@ -186,6 +186,8 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Increase font" | Done | Larger text |
 | [x] "Decrease font" | Done | Smaller text |
 | [x] "Font small/medium/large" | Done | Set specific size |
+| [x] "Auto scroll on/off" | Done | Toggle auto-scroll |
+| [x] "Toggle scroll" | Done | Toggle auto-scroll |
 
 ---
 

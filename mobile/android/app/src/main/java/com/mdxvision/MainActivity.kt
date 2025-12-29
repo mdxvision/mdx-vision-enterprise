@@ -90,6 +90,10 @@ class MainActivity : AppCompatActivity() {
     // Font size for accessibility
     private var currentFontSizeLevel: Int = FONT_SIZE_MEDIUM
 
+    // Auto-scroll for live transcription
+    private var isAutoScrollEnabled: Boolean = true
+    private var liveTranscriptScrollView: android.widget.ScrollView? = null
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -413,6 +417,13 @@ class MainActivity : AppCompatActivity() {
                     }
                     liveTranscriptText?.text = display
                 }
+
+                // Auto-scroll to bottom if enabled
+                if (isAutoScrollEnabled) {
+                    liveTranscriptScrollView?.post {
+                        liveTranscriptScrollView?.fullScroll(android.view.View.FOCUS_DOWN)
+                    }
+                }
             }
         }
 
@@ -498,7 +509,7 @@ class MainActivity : AppCompatActivity() {
             innerLayout.addView(recordingIndicator)
 
             // Scrollable transcript area
-            val scrollView = android.widget.ScrollView(context).apply {
+            liveTranscriptScrollView = android.widget.ScrollView(context).apply {
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
                 )
@@ -512,8 +523,8 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(0xFFF8FAFC.toInt())
                 setLineSpacing(6f, 1.3f)
             }
-            scrollView.addView(liveTranscriptText)
-            innerLayout.addView(scrollView)
+            liveTranscriptScrollView?.addView(liveTranscriptText)
+            innerLayout.addView(liveTranscriptScrollView)
 
             // Stop button
             val stopButton = android.widget.Button(context).apply {
@@ -542,6 +553,7 @@ class MainActivity : AppCompatActivity() {
         }
         dataOverlay = null
         liveTranscriptText = null
+        liveTranscriptScrollView = null
     }
 
     private fun showTranscriptionCompleteOverlay(transcript: String) {
@@ -1099,6 +1111,34 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Font size set to ${getFontSizeName()}")
     }
 
+    // ============ Auto-Scroll Methods ============
+
+    private fun enableAutoScroll() {
+        isAutoScrollEnabled = true
+        Toast.makeText(this, "Auto-scroll enabled", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Auto-scroll: ON"
+        Log.d(TAG, "Auto-scroll enabled")
+        // Immediately scroll to bottom
+        liveTranscriptScrollView?.post {
+            liveTranscriptScrollView?.fullScroll(android.view.View.FOCUS_DOWN)
+        }
+    }
+
+    private fun disableAutoScroll() {
+        isAutoScrollEnabled = false
+        Toast.makeText(this, "Auto-scroll disabled", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Auto-scroll: OFF"
+        Log.d(TAG, "Auto-scroll disabled")
+    }
+
+    private fun toggleAutoScroll() {
+        if (isAutoScrollEnabled) {
+            disableAutoScroll()
+        } else {
+            enableAutoScroll()
+        }
+    }
+
     private fun checkPermissions() {
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -1390,6 +1430,15 @@ class MainActivity : AppCompatActivity() {
             }
             lower.contains("font extra large") || lower.contains("extra large font") -> {
                 setFontSize(FONT_SIZE_EXTRA_LARGE)
+            }
+            lower.contains("auto scroll on") || lower.contains("enable auto scroll") || lower.contains("scroll on") -> {
+                enableAutoScroll()
+            }
+            lower.contains("auto scroll off") || lower.contains("disable auto scroll") || lower.contains("scroll off") -> {
+                disableAutoScroll()
+            }
+            lower.contains("toggle scroll") || lower.contains("toggle auto scroll") -> {
+                toggleAutoScroll()
             }
             lower.contains("clear") || lower.contains("reset") -> {
                 // Clear current patient data (not cache)
