@@ -264,6 +264,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 36. **Patient Photo Display** - FHIR photo extraction with base64/URL support, initials placeholder, circular avatar in header
 37. **Patient Search History** - Recently viewed patients list, quick load by number ("load 1"), voice commands, relative timestamps
 38. **Session Timeout** - HIPAA compliance auto-lock after 5 min inactivity, configurable timeout, voice commands ("lock session", "unlock", "timeout N min")
+39. **Voice Note Editing** - Voice commands to edit notes: change/set sections, add to sections, delete last sentence/line/item, clear sections, insert macros (normal exam, normal vitals, negative ROS, follow up), 10-level undo history
 
 ## Next Up (Recommended)
 
@@ -274,7 +275,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)
-2. Push notes to EHR (FHIR DocumentReference)
-3. HIPAA audit logging
-4. OAuth2/SMART on FHIR authentication
-5. Vuzix HUD native overlay
+2. OAuth2/SMART on FHIR authentication
+3. Vuzix HUD native overlay
+4. Voice Navigation (scroll up/down, go to section, read back)
+5. Voice Dictation Mode (dictate directly into fields)

@@ -140,6 +140,15 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Activity Tracking**: Touch, voice commands reset the timeout
 - **Voice Commands**: "lock session", "unlock", "timeout 10 minutes"
 
+### Voice Note Editing (NEW)
+- **Section Editing**: "Change assessment to viral URI", "Set plan to follow up"
+- **Append Content**: "Add to plan: order CBC", "Include in assessment: rule out strep"
+- **Delete Content**: "Delete last sentence", "Remove plan item 2", "Clear assessment"
+- **Insert Macros**: "Insert normal exam", "Insert follow up", "Insert negative ROS"
+- **Undo Support**: 10-level undo history, say "undo" to revert
+- **Section Aliases**: Recognizes "chief complaint", "diagnosis", "impression", etc.
+- **TTS Feedback**: Confirms each edit action spoken aloud
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

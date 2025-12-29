@@ -143,6 +143,35 @@ class MainActivity : AppCompatActivity() {
     private var sessionCheckRunnable: Runnable? = null
     private var lockScreenOverlay: android.widget.FrameLayout? = null
 
+    // Voice note editing - edit history for undo functionality
+    private val editHistory = mutableListOf<String>()
+    private val MAX_EDIT_HISTORY = 10
+
+    // Section aliases for voice commands (maps spoken words to canonical section names)
+    private val sectionAliases = mapOf(
+        "subjective" to listOf("subjective", "chief complaint", "chief", "cc", "hpi", "history"),
+        "objective" to listOf("objective", "exam", "physical", "vitals", "physical exam"),
+        "assessment" to listOf("assessment", "diagnosis", "impression", "dx", "diagnoses"),
+        "plan" to listOf("plan", "treatment", "recommendations", "rx", "orders")
+    )
+
+    // Macro templates for quick insertion
+    private val macroTemplates = mapOf(
+        "normal_exam" to """General: Alert, oriented, no acute distress
+HEENT: Normocephalic, PERRL, oropharynx clear
+Neck: Supple, no lymphadenopathy
+Lungs: Clear to auscultation bilaterally
+Heart: Regular rate and rhythm, no murmurs
+Abdomen: Soft, non-tender, non-distended
+Extremities: No edema, pulses intact
+Neuro: Grossly intact""",
+        "normal_vitals" to "Vital signs within normal limits",
+        "negative_ros" to "Review of systems negative except as noted in HPI",
+        "follow_up" to "Follow up in 2 weeks, or sooner if symptoms worsen. Return to ED for fever >101, difficulty breathing, or worsening symptoms.",
+        "diabetes_followup" to "Continue current diabetes regimen. Check A1C in 3 months. Continue dietary modifications. Return for routine follow-up.",
+        "hypertension_followup" to "Continue current antihypertensive medications. Monitor blood pressure at home. Low sodium diet. Return in 1 month for BP check."
+    )
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -1344,6 +1373,378 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Note edit focused")
     }
 
+    // ============ Voice Note Editing Functions ============
+
+    /**
+     * Push current state to edit history for undo functionality.
+     */
+    private fun pushEditHistory() {
+        editableNoteContent?.let {
+            editHistory.add(it)
+            if (editHistory.size > MAX_EDIT_HISTORY) {
+                editHistory.removeAt(0)
+            }
+            Log.d(TAG, "Pushed to edit history (${editHistory.size} states)")
+        }
+    }
+
+    /**
+     * Undo the last edit by restoring previous state.
+     */
+    private fun undoLastEdit(): Boolean {
+        if (editHistory.isEmpty()) {
+            Toast.makeText(this, "Nothing to undo", Toast.LENGTH_SHORT).show()
+            speakFeedback("Nothing to undo")
+            return false
+        }
+
+        val previous = editHistory.removeLast()
+        noteEditText?.setText(previous)
+        editableNoteContent = previous
+        isNoteEditing = editHistory.isNotEmpty()
+        Toast.makeText(this, "Change undone", Toast.LENGTH_SHORT).show()
+        speakFeedback("Change undone")
+        Log.d(TAG, "Undid last edit (${editHistory.size} states remaining)")
+        return true
+    }
+
+    /**
+     * Resolve spoken section name to canonical section name.
+     */
+    private fun resolveSection(spoken: String): String? {
+        val lower = spoken.lowercase()
+        for ((canonical, aliases) in sectionAliases) {
+            if (aliases.any { lower.contains(it) }) {
+                return canonical
+            }
+        }
+        return null
+    }
+
+    /**
+     * Get the regex pattern for a SOAP section.
+     */
+    private fun getSectionPattern(section: String): Regex {
+        return when (section) {
+            "subjective" -> Regex("(▸ S(?:UBJECTIVE)?:?)([\\s\\S]*?)(?=\\n▸ [OAP]|\\n▸ ICD|$)", RegexOption.IGNORE_CASE)
+            "objective" -> Regex("(▸ O(?:BJECTIVE)?:?)([\\s\\S]*?)(?=\\n▸ [AP]|\\n▸ ICD|$)", RegexOption.IGNORE_CASE)
+            "assessment" -> Regex("(▸ A(?:SSESSMENT)?:?)([\\s\\S]*?)(?=\\n▸ P|\\n▸ ICD|$)", RegexOption.IGNORE_CASE)
+            "plan" -> Regex("(▸ P(?:LAN)?:?)([\\s\\S]*?)(?=\\n▸ ICD|\\n▸ CPT|\\n═|$)", RegexOption.IGNORE_CASE)
+            else -> Regex("($section:?)([\\s\\S]*?)(?=\\n▸|\\n═|$)", RegexOption.IGNORE_CASE)
+        }
+    }
+
+    /**
+     * Update a note section with new content (replace).
+     */
+    private fun updateNoteSection(section: String, newContent: String) {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "No note open. Generate a note first.", Toast.LENGTH_SHORT).show()
+            speakFeedback("No note open")
+            return
+        }
+
+        val canonicalSection = resolveSection(section)
+        if (canonicalSection == null) {
+            Toast.makeText(this, "Unknown section: $section", Toast.LENGTH_SHORT).show()
+            speakFeedback("Unknown section")
+            return
+        }
+
+        // Push to history before making changes
+        pushEditHistory()
+
+        val current = editableNoteContent ?: ""
+        val pattern = getSectionPattern(canonicalSection)
+        val sectionLabel = when (canonicalSection) {
+            "subjective" -> "▸ S:"
+            "objective" -> "▸ O:"
+            "assessment" -> "▸ A:"
+            "plan" -> "▸ P:"
+            else -> "▸ ${canonicalSection.uppercase()}:"
+        }
+
+        val updated = if (pattern.containsMatchIn(current)) {
+            current.replace(pattern) { matchResult ->
+                "${matchResult.groupValues[1]}\n$newContent\n"
+            }
+        } else {
+            // Section not found, append at end
+            "$current\n$sectionLabel\n$newContent\n"
+        }
+
+        noteEditText?.setText(updated)
+        editableNoteContent = updated
+        isNoteEditing = true
+
+        val sectionName = canonicalSection.replaceFirstChar { it.uppercase() }
+        Toast.makeText(this, "$sectionName updated", Toast.LENGTH_SHORT).show()
+        speakFeedback("$sectionName updated")
+        transcriptText.text = "Changed $sectionName"
+        Log.d(TAG, "Updated section $canonicalSection")
+    }
+
+    /**
+     * Append content to a note section.
+     */
+    private fun appendToNoteSection(section: String, content: String) {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "No note open. Generate a note first.", Toast.LENGTH_SHORT).show()
+            speakFeedback("No note open")
+            return
+        }
+
+        val canonicalSection = resolveSection(section)
+        if (canonicalSection == null) {
+            Toast.makeText(this, "Unknown section: $section", Toast.LENGTH_SHORT).show()
+            speakFeedback("Unknown section")
+            return
+        }
+
+        // Push to history before making changes
+        pushEditHistory()
+
+        val current = editableNoteContent ?: ""
+        val pattern = getSectionPattern(canonicalSection)
+
+        val updated = if (pattern.containsMatchIn(current)) {
+            current.replace(pattern) { matchResult ->
+                val existingContent = matchResult.groupValues[2].trimEnd()
+                "${matchResult.groupValues[1]}$existingContent\n$content\n"
+            }
+        } else {
+            // Section not found, create it
+            val sectionLabel = when (canonicalSection) {
+                "subjective" -> "▸ S:"
+                "objective" -> "▸ O:"
+                "assessment" -> "▸ A:"
+                "plan" -> "▸ P:"
+                else -> "▸ ${canonicalSection.uppercase()}:"
+            }
+            "$current\n$sectionLabel\n$content\n"
+        }
+
+        noteEditText?.setText(updated)
+        editableNoteContent = updated
+        isNoteEditing = true
+
+        val sectionName = canonicalSection.replaceFirstChar { it.uppercase() }
+        Toast.makeText(this, "Added to $sectionName", Toast.LENGTH_SHORT).show()
+        speakFeedback("Added to $sectionName")
+        transcriptText.text = "Added to $sectionName"
+        Log.d(TAG, "Appended to section $canonicalSection: $content")
+    }
+
+    /**
+     * Delete the last sentence from the note.
+     */
+    private fun deleteLastSentence() {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "No note open", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Push to history before making changes
+        pushEditHistory()
+
+        val current = editableNoteContent ?: ""
+        // Find last sentence (ends with . ! or ?)
+        val sentencePattern = Regex("[^.!?]*[.!?]\\s*$")
+        val updated = current.replace(sentencePattern, "").trimEnd()
+
+        if (updated == current) {
+            // Try removing last line instead
+            val lines = current.lines().dropLast(1)
+            val updatedLines = lines.joinToString("\n")
+            noteEditText?.setText(updatedLines)
+            editableNoteContent = updatedLines
+        } else {
+            noteEditText?.setText(updated)
+            editableNoteContent = updated
+        }
+
+        isNoteEditing = true
+        Toast.makeText(this, "Last sentence deleted", Toast.LENGTH_SHORT).show()
+        speakFeedback("Deleted")
+        transcriptText.text = "Deleted last sentence"
+        Log.d(TAG, "Deleted last sentence")
+    }
+
+    /**
+     * Delete the last line from the note.
+     */
+    private fun deleteLastLine() {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "No note open", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Push to history before making changes
+        pushEditHistory()
+
+        val current = editableNoteContent ?: ""
+        val lines = current.lines().dropLast(1)
+        val updated = lines.joinToString("\n")
+
+        noteEditText?.setText(updated)
+        editableNoteContent = updated
+        isNoteEditing = true
+
+        Toast.makeText(this, "Last line deleted", Toast.LENGTH_SHORT).show()
+        speakFeedback("Line deleted")
+        transcriptText.text = "Deleted last line"
+        Log.d(TAG, "Deleted last line")
+    }
+
+    /**
+     * Delete a specific item from a section (e.g., "delete plan item 2").
+     */
+    private fun deleteSectionItem(section: String, itemNumber: Int) {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "No note open", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val canonicalSection = resolveSection(section)
+        if (canonicalSection == null) {
+            Toast.makeText(this, "Unknown section: $section", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Push to history before making changes
+        pushEditHistory()
+
+        val current = editableNoteContent ?: ""
+        val pattern = getSectionPattern(canonicalSection)
+        val match = pattern.find(current)
+
+        if (match != null) {
+            val sectionContent = match.groupValues[2]
+            val lines = sectionContent.lines().filter { it.isNotBlank() }
+
+            if (itemNumber in 1..lines.size) {
+                val newLines = lines.toMutableList()
+                newLines.removeAt(itemNumber - 1)
+                val newContent = "\n" + newLines.joinToString("\n") + "\n"
+
+                val updated = current.replace(pattern) { m ->
+                    "${m.groupValues[1]}$newContent"
+                }
+
+                noteEditText?.setText(updated)
+                editableNoteContent = updated
+                isNoteEditing = true
+
+                Toast.makeText(this, "Item $itemNumber deleted", Toast.LENGTH_SHORT).show()
+                speakFeedback("Item $itemNumber deleted")
+                transcriptText.text = "Deleted ${canonicalSection} item $itemNumber"
+                Log.d(TAG, "Deleted item $itemNumber from $canonicalSection")
+            } else {
+                Toast.makeText(this, "Item $itemNumber not found", Toast.LENGTH_SHORT).show()
+                speakFeedback("Item not found")
+            }
+        }
+    }
+
+    /**
+     * Clear an entire section.
+     */
+    private fun clearSection(section: String) {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "No note open", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val canonicalSection = resolveSection(section)
+        if (canonicalSection == null) {
+            Toast.makeText(this, "Unknown section: $section", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Push to history before making changes
+        pushEditHistory()
+
+        val current = editableNoteContent ?: ""
+        val pattern = getSectionPattern(canonicalSection)
+
+        val updated = current.replace(pattern) { matchResult ->
+            "${matchResult.groupValues[1]}\n[Section cleared]\n"
+        }
+
+        noteEditText?.setText(updated)
+        editableNoteContent = updated
+        isNoteEditing = true
+
+        val sectionName = canonicalSection.replaceFirstChar { it.uppercase() }
+        Toast.makeText(this, "$sectionName cleared", Toast.LENGTH_SHORT).show()
+        speakFeedback("$sectionName cleared")
+        transcriptText.text = "Cleared $sectionName"
+        Log.d(TAG, "Cleared section $canonicalSection")
+    }
+
+    /**
+     * Insert a macro template into the note.
+     */
+    private fun insertMacro(macroName: String) {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "No note open", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val template = macroTemplates[macroName]
+        if (template == null) {
+            Toast.makeText(this, "Unknown macro: $macroName", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Push to history before making changes
+        pushEditHistory()
+
+        // Determine which section to insert into based on macro type
+        val targetSection = when (macroName) {
+            "normal_exam", "normal_vitals" -> "objective"
+            "negative_ros" -> "subjective"
+            "follow_up", "diabetes_followup", "hypertension_followup" -> "plan"
+            else -> "plan"
+        }
+
+        appendToNoteSection(targetSection, template)
+
+        val macroLabel = macroName.replace("_", " ").replaceFirstChar { it.uppercase() }
+        transcriptText.text = "Inserted $macroLabel"
+        Log.d(TAG, "Inserted macro $macroName into $targetSection")
+    }
+
+    /**
+     * Extract content after a keyword (e.g., "change assessment TO headache" -> "headache").
+     */
+    private fun extractContentAfter(text: String, keyword: String): String {
+        val lower = text.lowercase()
+        val keywordLower = keyword.lowercase()
+        val index = lower.lastIndexOf(keywordLower)
+        return if (index >= 0 && index + keyword.length < text.length) {
+            text.substring(index + keyword.length).trim()
+        } else {
+            ""
+        }
+    }
+
+    /**
+     * Extract section name from voice command.
+     */
+    private fun extractSectionFromCommand(text: String): String? {
+        val lower = text.lowercase()
+        // Check for section keywords
+        for ((canonical, aliases) in sectionAliases) {
+            for (alias in aliases) {
+                if (lower.contains(alias)) {
+                    return canonical
+                }
+            }
+        }
+        return null
+    }
+
     private fun showVoiceCommandHelp() {
         val helpText = """
             |🎤 VOICE COMMANDS
@@ -1391,6 +1792,16 @@ class MainActivity : AppCompatActivity() {
             |• "Edit note" - Focus note for editing
             |• "Reset note" - Restore original note
             |• "Save note" - Sign off and save
+            |
+            |✏️ VOICE NOTE EDITING
+            |• "Change [section] to [text]" - Replace section
+            |• "Add to [section]: [text]" - Append to section
+            |• "Delete last sentence" - Remove last sentence
+            |• "Delete [section] item [N]" - Remove item
+            |• "Clear [section]" - Clear entire section
+            |• "Insert normal exam" - Add normal exam
+            |• "Insert follow up" - Add follow-up text
+            |• "Undo" - Undo last change
             |
             |📤 OFFLINE DRAFTS
             |• "Show drafts" - View pending drafts
@@ -3585,6 +3996,82 @@ class MainActivity : AppCompatActivity() {
             lower.contains("edit note") || lower.contains("modify note") -> {
                 // Voice command to focus on note editing (bring up keyboard)
                 focusNoteEdit()
+            }
+            // Voice Note Editing Commands
+            (lower.contains("change") || lower.contains("set")) &&
+                (lower.contains("subjective") || lower.contains("objective") ||
+                 lower.contains("assessment") || lower.contains("plan") ||
+                 lower.contains("chief complaint") || lower.contains("diagnosis")) &&
+                lower.contains(" to ") -> {
+                // "Change assessment to viral URI", "Set plan to follow up in 1 week"
+                val section = extractSectionFromCommand(lower)
+                val content = extractContentAfter(transcript, " to ")
+                if (section != null && content.isNotEmpty()) {
+                    updateNoteSection(section, content)
+                } else {
+                    Toast.makeText(this, "Say: change [section] to [content]", Toast.LENGTH_SHORT).show()
+                }
+            }
+            (lower.contains("add to") || lower.contains("append to") || lower.contains("include in")) &&
+                (lower.contains("subjective") || lower.contains("objective") ||
+                 lower.contains("assessment") || lower.contains("plan")) -> {
+                // "Add to plan: order CBC", "Append to assessment: rule out strep"
+                val section = extractSectionFromCommand(lower)
+                // Extract content after colon or after the section name
+                val content = if (transcript.contains(":")) {
+                    transcript.substringAfter(":").trim()
+                } else {
+                    extractContentAfter(transcript, section ?: "")
+                }
+                if (section != null && content.isNotEmpty()) {
+                    appendToNoteSection(section, content)
+                } else {
+                    Toast.makeText(this, "Say: add to [section]: [content]", Toast.LENGTH_SHORT).show()
+                }
+            }
+            lower.contains("delete last sentence") || lower.contains("remove last sentence") -> {
+                deleteLastSentence()
+            }
+            lower.contains("delete last line") || lower.contains("remove last line") -> {
+                deleteLastLine()
+            }
+            lower.contains("delete") && lower.contains("item") && Regex("\\d+").containsMatchIn(lower) -> {
+                // "Delete plan item 2", "Remove assessment item 1"
+                val section = extractSectionFromCommand(lower)
+                val itemMatch = Regex("\\d+").find(lower)
+                if (section != null && itemMatch != null) {
+                    val itemNumber = itemMatch.value.toIntOrNull() ?: 0
+                    deleteSectionItem(section, itemNumber)
+                }
+            }
+            lower.contains("clear") && (lower.contains("subjective") || lower.contains("objective") ||
+                lower.contains("assessment") || lower.contains("plan")) -> {
+                // "Clear assessment", "Clear plan"
+                val section = extractSectionFromCommand(lower)
+                if (section != null) {
+                    clearSection(section)
+                }
+            }
+            lower.contains("insert") && lower.contains("normal") && lower.contains("exam") -> {
+                insertMacro("normal_exam")
+            }
+            lower.contains("insert") && lower.contains("normal") && lower.contains("vital") -> {
+                insertMacro("normal_vitals")
+            }
+            lower.contains("insert") && (lower.contains("negative ros") || lower.contains("negative review")) -> {
+                insertMacro("negative_ros")
+            }
+            lower.contains("insert") && lower.contains("follow") && lower.contains("up") -> {
+                insertMacro("follow_up")
+            }
+            lower.contains("insert") && lower.contains("diabetes") -> {
+                insertMacro("diabetes_followup")
+            }
+            lower.contains("insert") && lower.contains("hypertension") -> {
+                insertMacro("hypertension_followup")
+            }
+            lower == "undo" || lower.contains("undo last") || lower.contains("undo change") -> {
+                undoLastEdit()
             }
             lower.contains("live transcri") || lower.contains("start transcri") || lower.contains("transcribe") -> {
                 // Voice command to start/stop live transcription

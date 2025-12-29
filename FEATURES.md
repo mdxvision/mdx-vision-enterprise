@@ -184,6 +184,14 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Lock session" / "Lock" | Done |
 | [x] "Unlock" | Done |
 | [x] "Timeout [N] min" - Set timeout | Done |
+| [x] "Change [section] to [text]" | Done |
+| [x] "Add to [section]: [text]" | Done |
+| [x] "Delete last sentence" | Done |
+| [x] "Delete [section] item [N]" | Done |
+| [x] "Clear [section]" | Done |
+| [x] "Insert normal exam/vitals" | Done |
+| [x] "Insert follow up" | Done |
+| [x] "Undo" | Done |
 
 ---
 
@@ -235,6 +243,7 @@ Based on US Patent 15/237,980 and product requirements.
 29. ~~**Patient Photo Display**~~ - Done (FHIR photo or initials placeholder, circular avatar in header)
 30. ~~**Patient Search History**~~ - Done (Recently viewed patients list, quick load by number, voice commands, relative timestamps)
 31. ~~**Session Timeout**~~ - Done (HIPAA compliance auto-lock after inactivity, configurable timeout, voice commands, lock screen overlay)
+32. ~~**Voice Note Editing**~~ - Done (Voice commands to edit notes: change/add to sections, delete, insert macros, undo with 10-level history)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
