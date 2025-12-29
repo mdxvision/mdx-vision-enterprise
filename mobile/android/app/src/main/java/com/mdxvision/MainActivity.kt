@@ -94,8 +94,8 @@ class MainActivity : AppCompatActivity() {
     private var isAutoScrollEnabled: Boolean = true
     private var liveTranscriptScrollView: android.widget.ScrollView? = null
 
-    // Note type for clinical documentation (SOAP, PROGRESS, HP, CONSULT)
-    private var currentNoteType: String = "SOAP"
+    // Note type for clinical documentation (SOAP, PROGRESS, HP, CONSULT, AUTO)
+    private var currentNoteType: String = "AUTO"  // Default to auto-detect
 
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
@@ -405,18 +405,23 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 if (result.isFinal) {
-                    // Final transcript - add to buffer
+                    // Final transcript - add to buffer with speaker label if available
                     if (liveTranscriptBuffer.isNotEmpty()) {
-                        liveTranscriptBuffer.append(" ")
+                        liveTranscriptBuffer.append("\n")
                     }
-                    liveTranscriptBuffer.append(result.text)
+                    // Add speaker label if present and different from last
+                    val speakerPrefix = if (result.speaker != null) {
+                        "[${result.speaker}]: "
+                    } else ""
+                    liveTranscriptBuffer.append(speakerPrefix).append(result.text)
                     liveTranscriptText?.text = liveTranscriptBuffer.toString()
                 } else {
-                    // Interim result - show at end
+                    // Interim result - show at end with speaker
+                    val speakerPrefix = if (result.speaker != null) "[${result.speaker}]: " else ""
                     val display = if (liveTranscriptBuffer.isEmpty()) {
-                        result.text
+                        speakerPrefix + result.text
                     } else {
-                        "${liveTranscriptBuffer} ${result.text}"
+                        "${liveTranscriptBuffer}\n$speakerPrefix${result.text}"
                     }
                     liveTranscriptText?.text = display
                 }
@@ -675,8 +680,26 @@ class MainActivity : AppCompatActivity() {
                                 // Store for later saving
                                 lastGeneratedNote = result
                                 lastNoteTranscript = transcript
-                                val displayText = result.optString("display_text", "No note generated")
-                                showNoteWithSaveOption(noteTypeDisplay, displayText)
+
+                                var displayText = result.optString("display_text", "No note generated")
+
+                                // Check if note type was auto-detected
+                                if (result.optBoolean("auto_detected", false)) {
+                                    val detectedType = result.optString("note_type", "SOAP")
+                                    val confidence = result.optInt("detection_confidence", 0)
+                                    val reason = result.optString("detection_reason", "")
+                                    val detectedName = getDisplayNameForType(detectedType)
+
+                                    // Prepend auto-detection info
+                                    displayText = "🤖 Auto-detected: $detectedName ($confidence% confidence)\n" +
+                                            "Reason: $reason\n" +
+                                            "─".repeat(25) + "\n\n" +
+                                            displayText
+
+                                    showNoteWithSaveOption("$detectedName (Auto)", displayText)
+                                } else {
+                                    showNoteWithSaveOption(noteTypeDisplay, displayText)
+                                }
                             } catch (e: Exception) {
                                 showDataOverlay(noteTypeDisplay, body ?: "No response")
                             }
@@ -694,6 +717,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun getNoteTypeDisplayName(): String {
         return when (currentNoteType.uppercase()) {
+            "SOAP" -> "SOAP Note"
+            "PROGRESS" -> "Progress Note"
+            "HP" -> "H&P Note"
+            "CONSULT" -> "Consult Note"
+            "AUTO" -> "Auto-Detect Note"
+            else -> "Clinical Note"
+        }
+    }
+
+    private fun getDisplayNameForType(noteType: String): String {
+        return when (noteType.uppercase()) {
             "SOAP" -> "SOAP Note"
             "PROGRESS" -> "Progress Note"
             "HP" -> "H&P Note"
@@ -1475,6 +1509,9 @@ class MainActivity : AppCompatActivity() {
             }
             lower.contains("consult note") || lower.contains("consultation note") || lower.contains("note type consult") -> {
                 setNoteType("CONSULT")
+            }
+            lower.contains("auto note") || lower.contains("auto detect") || lower.contains("automatic note") || lower.contains("note type auto") -> {
+                setNoteType("AUTO")
             }
             lower.contains("clear") || lower.contains("reset") -> {
                 // Clear current patient data (not cache)

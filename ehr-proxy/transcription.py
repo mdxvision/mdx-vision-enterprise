@@ -68,27 +68,34 @@ class TranscriptionProvider(ABC):
 
 class AssemblyAIProvider(TranscriptionProvider):
     """
-    AssemblyAI Real-Time Transcription
+    AssemblyAI Real-Time Transcription with Speaker Diarization
     Docs: https://www.assemblyai.com/docs/speech-to-text/streaming
     """
 
     WEBSOCKET_URL = "wss://api.assemblyai.com/v2/realtime/ws"
 
-    def __init__(self, api_key: str = None, sample_rate: int = 16000):
+    def __init__(self, api_key: str = None, sample_rate: int = 16000, enable_diarization: bool = True):
         self.api_key = api_key or ASSEMBLYAI_API_KEY
         self.sample_rate = sample_rate
+        self.enable_diarization = enable_diarization
         self.websocket = None
         self._receive_task = None
         self._transcript_queue = asyncio.Queue()
+        self._current_speaker = None
 
     async def connect(self) -> bool:
         """Connect to AssemblyAI real-time WebSocket"""
         if not self.api_key:
             raise ValueError("ASSEMBLYAI_API_KEY not set")
 
-        url = f"{self.WEBSOCKET_URL}?sample_rate={self.sample_rate}"
+        # Build URL with parameters
+        params = [f"sample_rate={self.sample_rate}"]
+        if self.enable_diarization:
+            params.append("speaker_labels=true")
+
+        url = f"{self.WEBSOCKET_URL}?{'&'.join(params)}"
         headers = {"Authorization": self.api_key}
-        print(f"🔌 AssemblyAI: Connecting to {url[:50]}...")
+        print(f"🔌 AssemblyAI: Connecting with diarization={self.enable_diarization}...")
 
         try:
             self.websocket = await websockets.connect(url, additional_headers=headers)
@@ -112,30 +119,42 @@ class AssemblyAIProvider(TranscriptionProvider):
                     result = TranscriptionResult(
                         text=data.get("text", ""),
                         is_final=False,
-                        confidence=data.get("confidence", 0.0)
+                        confidence=data.get("confidence", 0.0),
+                        speaker=self._current_speaker  # Use last known speaker
                     )
                     await self._transcript_queue.put(result)
 
                 elif msg_type == "FinalTranscript":
                     words = []
+                    speaker = None
+
                     for word in data.get("words", []):
+                        word_speaker = word.get("speaker")
+                        if word_speaker is not None:
+                            speaker = f"Speaker {word_speaker}"
+                            self._current_speaker = speaker
+
                         words.append({
                             "text": word.get("text", ""),
                             "start": word.get("start", 0),
                             "end": word.get("end", 0),
-                            "confidence": word.get("confidence", 0.0)
+                            "confidence": word.get("confidence", 0.0),
+                            "speaker": word_speaker
                         })
 
                     result = TranscriptionResult(
                         text=data.get("text", ""),
                         is_final=True,
                         confidence=data.get("confidence", 0.0),
-                        words=words
+                        words=words,
+                        speaker=speaker or self._current_speaker
                     )
                     await self._transcript_queue.put(result)
 
                 elif msg_type == "SessionBegins":
-                    print(f"AssemblyAI session started: {data.get('session_id')}")
+                    session_id = data.get('session_id')
+                    expires = data.get('expires_at')
+                    print(f"AssemblyAI session started: {session_id} (diarization enabled)")
 
                 elif msg_type == "SessionTerminated":
                     print("AssemblyAI session ended")

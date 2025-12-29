@@ -16,7 +16,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Interim results | Done | Partial transcripts shown |
 | [x] Final transcript capture | Done | Accumulated in buffer |
 | [x] Voice command detection in stream | Done | "close", "stop transcription" |
-| [ ] Speaker diarization | Pending | Multi-speaker identification |
+| [x] Speaker diarization | Done | AssemblyAI/Deepgram speaker_labels |
 | [ ] Medical vocabulary boost | Pending | Custom medical terms |
 
 ### AI-Powered Note Generation
@@ -31,6 +31,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Assessment section | Done | Diagnosis summary |
 | [x] Plan section | Done | Treatment plan |
 | [x] Multiple note templates | Done | SOAP, Progress, H&P, Consult |
+| [x] Auto note type detection | Done | Detects from transcript keywords |
 | [ ] Specialty-specific templates | Pending | Cardiology, Ortho, etc. |
 
 ### Medical Coding
@@ -192,6 +193,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Progress note" | Done | Set note type to Progress |
 | [x] "H&P note" | Done | Set note type to H&P |
 | [x] "Consult note" | Done | Set note type to Consult |
+| [x] "Auto note" | Done | Set note type to Auto-detect |
 
 ---
 

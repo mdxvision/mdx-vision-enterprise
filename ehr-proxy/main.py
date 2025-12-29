@@ -1291,6 +1291,68 @@ def format_consult_display(note: dict) -> str:
     return "\n".join(lines)
 
 
+def detect_note_type(transcript: str) -> tuple:
+    """
+    Auto-detect appropriate note type from transcript content.
+    Returns (note_type, confidence, reason)
+    """
+    transcript_lower = transcript.lower()
+
+    # Keywords that suggest specific note types
+    progress_keywords = [
+        "follow up", "follow-up", "followup", "returns for", "came back",
+        "doing better", "feeling better", "no change", "still having",
+        "since last visit", "medication refill", "recheck", "routine visit"
+    ]
+
+    hp_keywords = [
+        "new patient", "initial visit", "first time", "never seen before",
+        "admission", "admitted", "complete history", "full history",
+        "new to the practice", "establishing care", "comprehensive exam"
+    ]
+
+    consult_keywords = [
+        "consultation", "consult", "referred by", "referral from",
+        "sent by dr", "sent by doctor", "second opinion", "specialist",
+        "requesting evaluation", "thank you for the referral"
+    ]
+
+    # Count matches
+    progress_score = sum(1 for kw in progress_keywords if kw in transcript_lower)
+    hp_score = sum(1 for kw in hp_keywords if kw in transcript_lower)
+    consult_score = sum(1 for kw in consult_keywords if kw in transcript_lower)
+
+    # Determine best match
+    scores = {
+        "PROGRESS": (progress_score, "follow-up/returning patient language detected"),
+        "HP": (hp_score, "new patient/comprehensive history language detected"),
+        "CONSULT": (consult_score, "consultation/referral language detected")
+    }
+
+    # Find highest scoring type
+    best_type = "SOAP"
+    best_score = 0
+    best_reason = "default - standard office visit"
+
+    for note_type, (score, reason) in scores.items():
+        if score > best_score:
+            best_score = score
+            best_type = note_type
+            best_reason = reason
+
+    # Calculate confidence (0-100)
+    if best_score == 0:
+        confidence = 50  # Default SOAP with medium confidence
+    elif best_score == 1:
+        confidence = 70
+    elif best_score == 2:
+        confidence = 85
+    else:
+        confidence = 95
+
+    return best_type, confidence, best_reason
+
+
 def generate_note_by_type(transcript: str, note_type: str, chief_complaint: str = None) -> tuple:
     """Generate note based on type, returns (note_data, format_function)"""
     note_type_upper = note_type.upper()
@@ -1309,12 +1371,33 @@ def generate_note_by_type(transcript: str, note_type: str, chief_complaint: str 
         return note_data, format_soap_display
 
 
+@app.post("/api/v1/notes/detect-type")
+async def detect_note_type_endpoint(request: NoteRequest):
+    """Detect appropriate note type from transcript content"""
+    note_type, confidence, reason = detect_note_type(request.transcript)
+    return {
+        "suggested_type": note_type,
+        "confidence": confidence,
+        "reason": reason,
+        "available_types": NOTE_TYPES
+    }
+
+
 @app.post("/api/v1/notes/generate")
 async def generate_clinical_note(request: NoteRequest):
-    """Generate clinical note from voice transcript - supports SOAP, PROGRESS, HP, CONSULT"""
+    """Generate clinical note from voice transcript - supports SOAP, PROGRESS, HP, CONSULT, AUTO"""
 
     try:
         note_type = request.note_type.upper()
+
+        # AUTO mode: detect note type from transcript
+        suggested_type = None
+        detection_confidence = None
+        detection_reason = None
+
+        if note_type == "AUTO":
+            suggested_type, detection_confidence, detection_reason = detect_note_type(request.transcript)
+            note_type = suggested_type
 
         # Try Claude API if available (currently only supports SOAP)
         if CLAUDE_API_KEY and note_type == "SOAP":
@@ -1342,7 +1425,7 @@ async def generate_clinical_note(request: NoteRequest):
         display_text = format_func(note_data)
         timestamp = datetime.now().isoformat()
 
-        return {
+        response = {
             "note_type": note_type,
             "display_text": display_text,
             "summary": note_data.get("summary", ""),
@@ -1352,6 +1435,14 @@ async def generate_clinical_note(request: NoteRequest):
             **note_data  # Include all note-specific fields
         }
 
+        # Include detection info if AUTO mode was used
+        if suggested_type:
+            response["auto_detected"] = True
+            response["detection_confidence"] = detection_confidence
+            response["detection_reason"] = detection_reason
+
+        return response
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Note generation failed: {str(e)}")
 
@@ -1360,12 +1451,20 @@ async def generate_clinical_note(request: NoteRequest):
 async def quick_note(request: NoteRequest):
     """Quick note for AR display - returns just the formatted text"""
     note = await generate_clinical_note(request)
-    return {
+    response = {
         "note_type": note.get("note_type", "SOAP"),
         "display_text": note.get("display_text", ""),
         "summary": note.get("summary", ""),
         "timestamp": note.get("timestamp", "")
     }
+
+    # Include auto-detection info if present
+    if note.get("auto_detected"):
+        response["auto_detected"] = True
+        response["detection_confidence"] = note.get("detection_confidence")
+        response["detection_reason"] = note.get("detection_reason")
+
+    return response
 
 
 # ============ Note Storage (Simulated - Cerner sandbox is read-only) ============
