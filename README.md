@@ -17,6 +17,7 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 | Medical Coding | **Working** | ICD-10 (90+) & CPT (100+) with modifiers |
 | Text-to-Speech | **Working** | Patient briefings, action confirmations |
 | Critical Lab Alerts | **Working** | Auto-detect dangerous values, TTS safety alerts |
+| Critical Vital Alerts | **Working** | BP, HR, SpO2, Temp thresholds, spoken first |
 | Web Dashboard | **Working** | localhost:5173 |
 | Camera/Barcode | **Working** | Patient wristband scan via ML Kit |
 
@@ -70,6 +71,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Spoken Alerts**: Critical values announced via TTS on patient load
 - **Safety-First**: Lab alerts always spoken, bypasses speech feedback toggle
 - **Critical Labs Section**: Prominent display of dangerous values at top of labs view
+
+### Critical Vital Alerts (NEW)
+- **Auto-Detection**: 10+ vital types monitored (BP, HR, SpO2, Temp, Respiratory Rate, etc.)
+- **Clinical Thresholds**: BP >180/120, HR <40/>150, SpO2 <88%, Temp >104°F
+- **Visual Indicators**: Vitals display with interpretation flags (‼️ critical, ↑ high, ↓ low)
+- **Spoken First**: Critical vitals announced BEFORE labs/allergies (most urgent)
+- **Safety-First**: Vital alerts always spoken, bypasses speech feedback toggle
+- **Speech-Friendly Names**: "blood pressure systolic", "respiratory rate" for clarity
 
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints

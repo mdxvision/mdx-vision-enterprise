@@ -273,6 +273,32 @@ Based on MDx v2.0 Brief Technical Description document.
 
 ---
 
+## Critical Vital Sign Detection
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| [x] Critical vital thresholds | Done | 10+ vital types with critical limits |
+| [x] Vital interpretation flags | Done | H, L, HH, LL, N indicators |
+| [x] Critical vitals list in response | Done | `critical_vitals`, `abnormal_vitals` arrays |
+| [x] has_critical_vitals flag | Done | Quick boolean check |
+| [x] Critical vitals display | Done | Visual indicators (‼️, ↑, ↓) |
+| [x] TTS critical vital alerts | Done | Spoken FIRST on patient load |
+| [x] Safety-first (bypasses toggle) | Done | Always alerts for critical values |
+| [x] Speech-friendly vital names | Done | "blood pressure systolic", "respiratory rate" |
+
+### Critical Vital Thresholds
+| Vital | Critical Low | Critical High | Normal Range |
+|-------|-------------|---------------|--------------|
+| Systolic BP | ≤70 | ≥180 | 90-140 mmHg |
+| Diastolic BP | ≤40 | ≥120 | 60-90 mmHg |
+| Heart Rate | ≤40 | ≥150 | 60-100 bpm |
+| Respiratory Rate | ≤8 | ≥30 | 12-20 /min |
+| SpO2 | ≤88% | - | >94% |
+| Temperature | ≤95°F | ≥104°F | 97-99.5°F |
+| Pain Scale | - | ≥9 | <7 |
+
+---
+
 ## Speech Feedback Features
 
 | Feature | Status | Implementation |
@@ -365,6 +391,7 @@ Based on MDx v2.0 Brief Technical Description document.
 12. Offline note drafts with auto-sync on reconnect (notes never lost)
 13. CPT modifier support with 20+ modifiers and auto-detection
 14. Critical lab alerts with TTS spoken warnings (potassium, glucose, troponin, etc.)
+15. Critical vital alerts with TTS spoken warnings (BP, HR, SpO2, Temp - spoken first)
 
 ### Next Priorities
 1. Epic/Veradigm live integration

@@ -1807,6 +1807,7 @@ class MainActivity : AppCompatActivity() {
                 transcriptText.text = "Using cached data"
                 // Speech feedback and safety warnings even when offline
                 speakFeedback("Patient $name loaded from cache")
+                speakCriticalVitalAlerts(cached)  // Vitals first (most urgent)
                 speakAllergyWarnings(cached)
                 speakCriticalLabAlerts(cached)
                 return
@@ -1843,6 +1844,7 @@ class MainActivity : AppCompatActivity() {
                                 transcriptText.text = "Network unavailable"
                                 // Speech feedback and safety warnings from cache
                                 speakFeedback("Patient $name loaded from cache")
+                                speakCriticalVitalAlerts(cached)  // Vitals first (most urgent)
                                 speakAllergyWarnings(cached)
                                 speakCriticalLabAlerts(cached)
                             } else {
@@ -1872,7 +1874,8 @@ class MainActivity : AppCompatActivity() {
                                 // Speech feedback
                                 speakFeedback("Patient $name loaded")
 
-                                // Safety-critical alerts (always spoken)
+                                // Safety-critical alerts (always spoken) - vitals first as most urgent
+                                speakCriticalVitalAlerts(patient)
                                 speakAllergyWarnings(patient)
                                 speakCriticalLabAlerts(patient)
                             } catch (e: Exception) {
@@ -2415,6 +2418,62 @@ class MainActivity : AppCompatActivity() {
             // Use QUEUE_ADD so it plays after allergies if both exist
             textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "critical_lab_alert_${System.currentTimeMillis()}")
             Log.d(TAG, "Spoke critical lab alert: $count critical labs")
+        }
+    }
+
+    /**
+     * Speak critical vital alerts when patient is loaded (safety-critical)
+     * Always speaks critical vitals regardless of speech feedback toggle for patient safety
+     */
+    private fun speakCriticalVitalAlerts(patient: JSONObject) {
+        if (!isTtsReady || textToSpeech == null) return
+
+        val criticalVitals = patient.optJSONArray("critical_vitals")
+        if (criticalVitals != null && criticalVitals.length() > 0) {
+            val count = criticalVitals.length()
+            val vitalWord = if (count == 1) "vital sign" else "vital signs"
+
+            val speechBuilder = StringBuilder()
+            speechBuilder.append("Warning: Patient has $count critical $vitalWord. ")
+
+            // Speak up to 3 critical vitals with values
+            for (i in 0 until minOf(count, 3)) {
+                val vital = criticalVitals.getJSONObject(i)
+                val name = vital.optString("name", "Unknown")
+                val value = vital.optString("value", "")
+                val unit = vital.optString("unit", "")
+                val interp = vital.optString("interpretation", "")
+
+                // Format interpretation for speech
+                val interpText = when (interp) {
+                    "HH" -> "critically high"
+                    "LL" -> "critically low"
+                    "H" -> "high"
+                    "L" -> "low"
+                    else -> "abnormal"
+                }
+
+                // Make vital names more speech-friendly
+                val speechName = when {
+                    name.contains("systolic", ignoreCase = true) -> "blood pressure systolic"
+                    name.contains("diastolic", ignoreCase = true) -> "blood pressure diastolic"
+                    name.contains("heart rate", ignoreCase = true) -> "heart rate"
+                    name.contains("pulse", ignoreCase = true) -> "pulse"
+                    name.contains("respiratory", ignoreCase = true) -> "respiratory rate"
+                    name.contains("oxygen", ignoreCase = true) || name.contains("spo2", ignoreCase = true) -> "oxygen saturation"
+                    name.contains("temp", ignoreCase = true) -> "temperature"
+                    else -> name
+                }
+
+                speechBuilder.append("$speechName is $interpText at $value $unit. ")
+            }
+            if (count > 3) {
+                speechBuilder.append("Plus ${count - 3} more critical vitals.")
+            }
+
+            // Use QUEUE_FLUSH to speak vitals FIRST (most urgent safety alert)
+            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_FLUSH, null, "critical_vital_alert_${System.currentTimeMillis()}")
+            Log.d(TAG, "Spoke critical vital alert: $count critical vitals")
         }
     }
 
@@ -3007,10 +3066,45 @@ class MainActivity : AppCompatActivity() {
 
     private fun formatVitals(patient: JSONObject): String {
         val vitals = patient.optJSONArray("vitals") ?: return "No vitals recorded"
-        val sb = StringBuilder("VITALS\n${"─".repeat(30)}\n")
+        if (vitals.length() == 0) return "No vitals available"
+
+        val sb = StringBuilder()
+
+        // Show critical vitals warning first if any
+        val criticalVitals = patient.optJSONArray("critical_vitals")
+        if (criticalVitals != null && criticalVitals.length() > 0) {
+            sb.append("🚨 CRITICAL VITALS\n${"─".repeat(30)}\n")
+            for (i in 0 until criticalVitals.length()) {
+                val v = criticalVitals.getJSONObject(i)
+                val interp = v.optString("interpretation", "")
+                val flag = if (interp == "HH" || interp == "LL") "‼️" else "⚠️"
+                sb.append("$flag ${v.getString("name")}: ${v.getString("value")} ${v.optString("unit", "")}")
+                if (interp.isNotEmpty()) sb.append(" [$interp]")
+                sb.append("\n")
+            }
+            sb.append("${"─".repeat(30)}\n\n")
+        }
+
+        sb.append("VITALS\n${"─".repeat(30)}\n")
         for (i in 0 until minOf(vitals.length(), 6)) {
             val v = vitals.getJSONObject(i)
-            sb.append("• ${v.getString("name")}: ${v.getString("value")}${v.getString("unit")}\n")
+            val interp = v.optString("interpretation", "")
+            val isCritical = v.optBoolean("is_critical", false)
+            val isAbnormal = v.optBoolean("is_abnormal", false)
+
+            // Add interpretation flag
+            val flag = when {
+                interp == "HH" || interp == "LL" -> "‼️"
+                interp == "H" -> "↑"
+                interp == "L" -> "↓"
+                isCritical -> "‼️"
+                isAbnormal -> "⚠"
+                else -> "•"
+            }
+
+            sb.append("$flag ${v.getString("name")}: ${v.getString("value")}${v.optString("unit", "")}")
+            if (interp.isNotEmpty() && interp != "N") sb.append(" [$interp]")
+            sb.append("\n")
         }
         return sb.toString()
     }

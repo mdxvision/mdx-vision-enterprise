@@ -114,6 +114,78 @@ def check_critical_value(lab_name: str, value_str: str) -> tuple:
 
     return False, False, ""
 
+# Critical vital sign thresholds for safety alerts
+# Format: {vital_name_pattern: {"critical_low": val, "critical_high": val, "low": val, "high": val}}
+CRITICAL_VITAL_THRESHOLDS = {
+    # Blood Pressure - Systolic
+    "systolic": {"critical_low": 70, "critical_high": 180, "low": 90, "high": 140},
+    # Blood Pressure - Diastolic
+    "diastolic": {"critical_low": 40, "critical_high": 120, "low": 60, "high": 90},
+    # Heart Rate
+    "heart rate": {"critical_low": 40, "critical_high": 150, "low": 60, "high": 100},
+    "pulse": {"critical_low": 40, "critical_high": 150, "low": 60, "high": 100},
+    # Respiratory Rate
+    "respiratory": {"critical_low": 8, "critical_high": 30, "low": 12, "high": 20},
+    # Oxygen Saturation
+    "oxygen saturation": {"critical_low": 88, "low": 94},
+    "spo2": {"critical_low": 88, "low": 94},
+    "o2 sat": {"critical_low": 88, "low": 94},
+    # Temperature (Fahrenheit)
+    "temperature": {"critical_low": 95.0, "critical_high": 104.0, "low": 97.0, "high": 99.5},
+    "temp": {"critical_low": 95.0, "critical_high": 104.0, "low": 97.0, "high": 99.5},
+    # Blood Glucose (if measured as vital)
+    "glucose": {"critical_low": 50, "critical_high": 400, "low": 70, "high": 180},
+    # BMI (informational, not critical)
+    "bmi": {"high": 30},
+    # Pain Scale
+    "pain": {"high": 7, "critical_high": 9},
+}
+
+def check_critical_vital(vital_name: str, value_str: str) -> tuple:
+    """
+    Check if a vital sign is critical or abnormal.
+    Returns (is_critical, is_abnormal, interpretation)
+    """
+    # Try to extract numeric value
+    try:
+        # Handle values like "120/80", "98.6", ">100"
+        clean_value = value_str.strip().replace(">", "").replace("<", "")
+        # For BP, extract systolic (first number)
+        if "/" in clean_value:
+            clean_value = clean_value.split("/")[0]
+        numeric_value = float(clean_value.split()[0])
+    except (ValueError, IndexError):
+        return False, False, ""
+
+    # Find matching threshold by checking if vital name contains the pattern
+    vital_lower = vital_name.lower()
+    for pattern, thresholds in CRITICAL_VITAL_THRESHOLDS.items():
+        if pattern in vital_lower:
+            is_critical = False
+            is_abnormal = False
+            interpretation = "N"  # Normal
+
+            # Check critical values first
+            if "critical_low" in thresholds and numeric_value <= thresholds["critical_low"]:
+                is_critical = True
+                is_abnormal = True
+                interpretation = "LL"  # Critically low
+            elif "critical_high" in thresholds and numeric_value >= thresholds["critical_high"]:
+                is_critical = True
+                is_abnormal = True
+                interpretation = "HH"  # Critically high
+            # Check abnormal values
+            elif "low" in thresholds and numeric_value < thresholds["low"]:
+                is_abnormal = True
+                interpretation = "L"  # Low
+            elif "high" in thresholds and numeric_value > thresholds["high"]:
+                is_abnormal = True
+                interpretation = "H"  # High
+
+            return is_critical, is_abnormal, interpretation
+
+    return False, False, ""
+
 app = FastAPI(
     title="MDx Vision EHR Proxy",
     description="Unified EHR access for AR glasses",
@@ -136,6 +208,9 @@ class VitalSign(BaseModel):
     name: str
     value: str
     unit: str
+    interpretation: str = ""   # e.g., "H", "L", "HH", "LL", "N"
+    is_critical: bool = False  # True if dangerously out of range
+    is_abnormal: bool = False  # True if outside normal range
 
 
 class LabResult(BaseModel):
@@ -195,6 +270,9 @@ class PatientSummary(BaseModel):
     gender: str
     mrn: Optional[str] = None
     vitals: List[VitalSign] = []
+    critical_vitals: List[VitalSign] = []  # Vitals with is_critical=True
+    abnormal_vitals: List[VitalSign] = []  # Vitals with is_abnormal=True
+    has_critical_vitals: bool = False      # Quick check for safety alerts
     allergies: List[str] = []
     medications: List[str] = []
     labs: List[LabResult] = []
@@ -316,7 +394,18 @@ def extract_vitals(bundle: dict) -> List[VitalSign]:
         value_qty = obs.get("valueQuantity", {})
         value = str(value_qty.get("value", "?"))
         unit = value_qty.get("unit", "")
-        vitals.append(VitalSign(name=name, value=value, unit=unit))
+
+        # Check for critical values
+        is_critical, is_abnormal, interpretation = check_critical_vital(name, value)
+
+        vitals.append(VitalSign(
+            name=name,
+            value=value,
+            unit=unit,
+            interpretation=interpretation,
+            is_critical=is_critical,
+            is_abnormal=is_abnormal
+        ))
     return vitals
 
 
@@ -682,7 +771,18 @@ def format_ar_display(summary: PatientSummary) -> str:
         "─" * 40,
     ]
 
-    # Show critical labs warning FIRST (safety priority)
+    # Show critical vitals warning FIRST (safety priority - before labs)
+    if summary.critical_vitals:
+        crit_lines = []
+        for v in summary.critical_vitals[:3]:
+            flag = "‼️" if v.interpretation in ("HH", "LL") else "⚠️"
+            interp = f" [{v.interpretation}]" if v.interpretation else ""
+            crit_lines.append(f"{flag} {v.name}: {v.value} {v.unit}{interp}")
+        lines.append("🚨 CRITICAL VITALS:")
+        lines.extend(crit_lines)
+        lines.append("─" * 40)
+
+    # Show critical labs warning (safety priority)
     if summary.critical_labs:
         crit_lines = []
         for lab in summary.critical_labs[:3]:
@@ -694,7 +794,16 @@ def format_ar_display(summary: PatientSummary) -> str:
         lines.append("─" * 40)
 
     if summary.vitals:
-        vital_str = " | ".join([f"{v.name}: {v.value}{v.unit}" for v in summary.vitals[:4]])
+        # Format vitals with interpretation flags
+        vital_parts = []
+        for v in summary.vitals[:4]:
+            flag = ""
+            if v.interpretation in ("HH", "LL"):
+                flag = "‼️"
+            elif v.interpretation in ("H", "L"):
+                flag = "↑" if v.interpretation == "H" else "↓"
+            vital_parts.append(f"{v.name}: {v.value}{v.unit}{flag}")
+        vital_str = " | ".join(vital_parts)
         lines.append(f"VITALS: {vital_str}")
 
     if summary.allergies:
@@ -818,6 +927,15 @@ async def get_patient(patient_id: str):
         print(f"⚠️ Could not fetch clinical notes: {e}")
         clinical_notes = []
 
+    # Filter critical and abnormal vitals for safety alerts
+    critical_vitals = [v for v in vitals if v.is_critical]
+    abnormal_vitals = [v for v in vitals if v.is_abnormal]
+
+    if critical_vitals:
+        print(f"🚨 CRITICAL VITALS DETECTED: {len(critical_vitals)}")
+        for v in critical_vitals:
+            print(f"   ‼️ {v.name}: {v.value} {v.unit} ({v.interpretation})")
+
     # Filter critical and abnormal labs for safety alerts
     critical_labs = [lab for lab in labs if lab.is_critical]
     abnormal_labs = [lab for lab in labs if lab.is_abnormal]
@@ -833,6 +951,9 @@ async def get_patient(patient_id: str):
         date_of_birth=dob,
         gender=gender,
         vitals=vitals,
+        critical_vitals=critical_vitals,
+        abnormal_vitals=abnormal_vitals,
+        has_critical_vitals=len(critical_vitals) > 0,
         allergies=allergies,
         medications=medications,
         labs=labs,
