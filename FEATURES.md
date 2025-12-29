@@ -62,8 +62,9 @@ Based on US Patent 15/237,980 and product requirements.
 | Feature | Status | Location |
 |---------|--------|----------|
 | [x] SOAP note generation | Done | `ehr-proxy/main.py` |
-| [x] Real-time transcription | Done | Android SpeechRecognizer |
+| [x] Real-time transcription | Done | AssemblyAI/Deepgram WebSocket |
 | [x] AI-structured notes | Done | Template + Claude API option |
+| [x] Live transcription streaming | Done | `AudioStreamingService.kt` |
 | [ ] Template selection | Pending | - |
 | [ ] Voice dictation to EHR | Future | - |
 | [ ] Auto-coding (ICD-10/CPT) | Future | - |

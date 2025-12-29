@@ -7,7 +7,7 @@ Run: python main.py
 Test: curl http://localhost:8002/api/v1/patient/12724066
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
@@ -15,7 +15,16 @@ from typing import Optional, List
 import uvicorn
 import os
 import re
+import json
+import asyncio
+import uuid
 from datetime import datetime
+
+# Import transcription service
+from transcription import (
+    create_session, get_session, end_session,
+    TranscriptionSession, TRANSCRIPTION_PROVIDER
+)
 
 app = FastAPI(
     title="MDx Vision EHR Proxy",
@@ -559,9 +568,229 @@ async def quick_note(request: NoteRequest):
     }
 
 
+# ============ Real-Time Transcription WebSocket ============
+
+@app.get("/api/v1/transcription/status")
+async def transcription_status():
+    """Check transcription service status and configuration"""
+    return {
+        "provider": TRANSCRIPTION_PROVIDER,
+        "status": "ready",
+        "supported_providers": ["assemblyai", "deepgram"],
+        "sample_rate": 16000,
+        "encoding": "linear16"
+    }
+
+
+@app.websocket("/ws/transcribe")
+async def websocket_transcribe(websocket: WebSocket):
+    """
+    Real-time transcription WebSocket endpoint
+
+    Protocol:
+    1. Client connects
+    2. Server sends: {"type": "connected", "session_id": "...", "provider": "..."}
+    3. Client sends audio chunks as binary data (16-bit PCM, 16kHz)
+    4. Server sends transcription results:
+       {"type": "transcript", "text": "...", "is_final": true/false}
+    5. Client sends: {"type": "stop"} to end session
+    6. Server sends: {"type": "ended", "full_transcript": "..."}
+    """
+    await websocket.accept()
+
+    # Generate session ID
+    session_id = str(uuid.uuid4())[:8]
+    session = None
+
+    try:
+        # Create transcription session
+        session = await create_session(session_id)
+
+        # Send connection confirmation
+        await websocket.send_json({
+            "type": "connected",
+            "session_id": session_id,
+            "provider": TRANSCRIPTION_PROVIDER
+        })
+        print(f"🎤 Transcription session started: {session_id} ({TRANSCRIPTION_PROVIDER})")
+
+        # Task to forward transcriptions to client
+        async def forward_transcriptions():
+            try:
+                async for result in session.get_transcriptions():
+                    await websocket.send_json({
+                        "type": "transcript",
+                        "text": result.text,
+                        "is_final": result.is_final,
+                        "confidence": result.confidence,
+                        "speaker": result.speaker
+                    })
+            except Exception as e:
+                print(f"Transcription forward error: {e}")
+
+        # Start forwarding task
+        forward_task = asyncio.create_task(forward_transcriptions())
+
+        # Receive audio from client
+        while True:
+            try:
+                message = await websocket.receive()
+
+                if message["type"] == "websocket.disconnect":
+                    break
+
+                if "bytes" in message:
+                    # Binary audio data
+                    await session.send_audio(message["bytes"])
+
+                elif "text" in message:
+                    # JSON control message
+                    data = json.loads(message["text"])
+
+                    if data.get("type") == "stop":
+                        break
+                    elif data.get("type") == "ping":
+                        await websocket.send_json({"type": "pong"})
+
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                print(f"WebSocket receive error: {e}")
+                break
+
+        # Clean up
+        forward_task.cancel()
+        full_transcript = await end_session(session_id)
+
+        # Send final transcript
+        try:
+            await websocket.send_json({
+                "type": "ended",
+                "session_id": session_id,
+                "full_transcript": full_transcript
+            })
+        except:
+            pass
+
+        print(f"🎤 Transcription session ended: {session_id}")
+
+    except Exception as e:
+        print(f"Transcription session error: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            pass
+        if session:
+            await end_session(session_id)
+
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
+@app.websocket("/ws/transcribe/{provider}")
+async def websocket_transcribe_with_provider(websocket: WebSocket, provider: str):
+    """
+    Real-time transcription with specific provider
+    Use: /ws/transcribe/deepgram or /ws/transcribe/assemblyai
+    """
+    await websocket.accept()
+
+    if provider not in ["assemblyai", "deepgram"]:
+        await websocket.send_json({
+            "type": "error",
+            "message": f"Unknown provider: {provider}. Use 'assemblyai' or 'deepgram'"
+        })
+        await websocket.close()
+        return
+
+    session_id = str(uuid.uuid4())[:8]
+    session = None
+
+    try:
+        # Create session with specific provider
+        from transcription import TranscriptionSession
+        session = TranscriptionSession(session_id, provider)
+        await session.start()
+
+        await websocket.send_json({
+            "type": "connected",
+            "session_id": session_id,
+            "provider": provider
+        })
+        print(f"🎤 Transcription session started: {session_id} ({provider})")
+
+        async def forward_transcriptions():
+            try:
+                async for result in session.get_transcriptions():
+                    await websocket.send_json({
+                        "type": "transcript",
+                        "text": result.text,
+                        "is_final": result.is_final,
+                        "confidence": result.confidence,
+                        "speaker": result.speaker
+                    })
+            except Exception as e:
+                print(f"Transcription forward error: {e}")
+
+        forward_task = asyncio.create_task(forward_transcriptions())
+
+        while True:
+            try:
+                message = await websocket.receive()
+
+                if message["type"] == "websocket.disconnect":
+                    break
+
+                if "bytes" in message:
+                    await session.send_audio(message["bytes"])
+                elif "text" in message:
+                    data = json.loads(message["text"])
+                    if data.get("type") == "stop":
+                        break
+
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                break
+
+        forward_task.cancel()
+        full_transcript = session.get_full_transcript()
+        await session.stop()
+
+        try:
+            await websocket.send_json({
+                "type": "ended",
+                "session_id": session_id,
+                "full_transcript": full_transcript
+            })
+        except:
+            pass
+
+    except Exception as e:
+        print(f"Transcription error: {e}")
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except:
+            pass
+        if session:
+            await session.stop()
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
     print("📡 Connected to: Cerner Open Sandbox")
     print("🔗 API: http://localhost:8002")
     print("📱 Android emulator: http://10.0.2.2:8002")
+    print(f"🎤 Transcription: {TRANSCRIPTION_PROVIDER} (ws://localhost:8002/ws/transcribe)")
     uvicorn.run(app, host="0.0.0.0", port=8002)

@@ -59,6 +59,12 @@ class MainActivity : AppCompatActivity() {
     private val WAKE_WORD = "hey mdx"
     private var awaitingCommand = false
 
+    // Live transcription via WebSocket (AssemblyAI/Deepgram)
+    private var audioStreamingService: AudioStreamingService? = null
+    private var isLiveTranscribing = false
+    private var liveTranscriptText: TextView? = null
+    private val liveTranscriptBuffer = StringBuilder()
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -156,7 +162,8 @@ class MainActivity : AppCompatActivity() {
             CommandButton("SHOW MEDS", 0xFFF59E0B.toInt()) { fetchPatientSection("medications") },
             CommandButton("SHOW LABS", 0xFF06B6D4.toInt()) { fetchPatientSection("labs") },
             CommandButton("SHOW PROCEDURES", 0xFF84CC16.toInt()) { fetchPatientSection("procedures") },
-            CommandButton("START NOTE", 0xFFFFB800.toInt()) { toggleDocumentationMode() }
+            CommandButton("START NOTE", 0xFFFFB800.toInt()) { toggleDocumentationMode() },
+            CommandButton("LIVE TRANSCRIBE", 0xFFE11D48.toInt()) { toggleLiveTranscription() }
         )
 
         commands.forEachIndexed { index, cmd ->
@@ -314,6 +321,259 @@ class MainActivity : AppCompatActivity() {
                 transcriptText.text = "No transcript captured"
             }
         }
+    }
+
+    /**
+     * Toggle real-time transcription via AssemblyAI/Deepgram WebSocket
+     * Shows live transcript overlay with streaming text
+     */
+    private fun toggleLiveTranscription() {
+        if (isLiveTranscribing) {
+            stopLiveTranscription()
+        } else {
+            startLiveTranscription()
+        }
+    }
+
+    private fun startLiveTranscription() {
+        // Check permission
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        liveTranscriptBuffer.clear()
+
+        // Create audio streaming service
+        audioStreamingService = AudioStreamingService(this) { result ->
+            runOnUiThread {
+                if (result.isFinal) {
+                    // Final transcript - add to buffer
+                    if (liveTranscriptBuffer.isNotEmpty()) {
+                        liveTranscriptBuffer.append(" ")
+                    }
+                    liveTranscriptBuffer.append(result.text)
+                    liveTranscriptText?.text = liveTranscriptBuffer.toString()
+                } else {
+                    // Interim result - show at end
+                    val display = if (liveTranscriptBuffer.isEmpty()) {
+                        result.text
+                    } else {
+                        "${liveTranscriptBuffer} ${result.text}"
+                    }
+                    liveTranscriptText?.text = display
+                }
+            }
+        }
+
+        audioStreamingService?.onConnected = { sessionId, provider ->
+            runOnUiThread {
+                statusText.text = "TRANSCRIBING ($provider)"
+                Log.d(TAG, "Live transcription started: $sessionId via $provider")
+            }
+        }
+
+        audioStreamingService?.onDisconnected = { fullTranscript ->
+            runOnUiThread {
+                Log.d(TAG, "Transcription ended, ${fullTranscript.length} chars")
+                // Offer to generate note from transcript
+                if (fullTranscript.isNotEmpty()) {
+                    showTranscriptionCompleteOverlay(fullTranscript)
+                }
+            }
+        }
+
+        audioStreamingService?.onError = { message ->
+            runOnUiThread {
+                Toast.makeText(this, "Transcription error: $message", Toast.LENGTH_SHORT).show()
+                statusText.text = "MDx Vision"
+            }
+        }
+
+        // Show live transcription overlay
+        showLiveTranscriptionOverlay()
+
+        // Start streaming
+        if (audioStreamingService?.startStreaming() == true) {
+            isLiveTranscribing = true
+        } else {
+            hideLiveTranscriptionOverlay()
+            Toast.makeText(this, "Failed to start transcription", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun stopLiveTranscription() {
+        isLiveTranscribing = false
+        audioStreamingService?.stopStreaming()
+        statusText.text = "MDx Vision"
+    }
+
+    private fun showLiveTranscriptionOverlay() {
+        dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dataOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            // Recording indicator
+            val recordingIndicator = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, 16)
+
+                val dot = TextView(context).apply {
+                    text = "🔴"
+                    textSize = 20f
+                    setPadding(0, 0, 16, 0)
+                }
+                addView(dot)
+
+                val title = TextView(context).apply {
+                    text = "LIVE TRANSCRIPTION"
+                    textSize = 20f
+                    setTextColor(0xFFE11D48.toInt())
+                }
+                addView(title)
+            }
+            innerLayout.addView(recordingIndicator)
+
+            // Scrollable transcript area
+            val scrollView = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+                setBackgroundColor(0xFF1E293B.toInt())
+                setPadding(16, 16, 16, 16)
+            }
+
+            liveTranscriptText = TextView(context).apply {
+                text = "Listening..."
+                textSize = 18f
+                setTextColor(0xFFF8FAFC.toInt())
+                setLineSpacing(6f, 1.3f)
+            }
+            scrollView.addView(liveTranscriptText)
+            innerLayout.addView(scrollView)
+
+            // Stop button
+            val stopButton = android.widget.Button(context).apply {
+                text = "⏹ STOP TRANSCRIPTION"
+                setBackgroundColor(0xFFE11D48.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 16f
+                setPadding(32, 24, 32, 24)
+                setOnClickListener {
+                    stopLiveTranscription()
+                    hideLiveTranscriptionOverlay()
+                }
+            }
+            innerLayout.addView(stopButton)
+
+            addView(innerLayout)
+        }
+
+        rootView.addView(dataOverlay)
+        statusText.text = "Connecting..."
+    }
+
+    private fun hideLiveTranscriptionOverlay() {
+        dataOverlay?.let { overlay ->
+            (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
+        }
+        dataOverlay = null
+        liveTranscriptText = null
+    }
+
+    private fun showTranscriptionCompleteOverlay(transcript: String) {
+        hideLiveTranscriptionOverlay()
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dataOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            val title = TextView(context).apply {
+                text = "✓ TRANSCRIPTION COMPLETE"
+                textSize = 20f
+                setTextColor(0xFF10B981.toInt())
+                setPadding(0, 0, 0, 16)
+            }
+            innerLayout.addView(title)
+
+            val scrollView = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+            }
+
+            val contentText = TextView(context).apply {
+                text = transcript
+                textSize = 16f
+                setTextColor(0xFFF8FAFC.toInt())
+                setLineSpacing(4f, 1.2f)
+            }
+            scrollView.addView(contentText)
+            innerLayout.addView(scrollView)
+
+            // Button row
+            val buttonRow = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 16, 0, 0)
+            }
+
+            val generateNoteBtn = android.widget.Button(context).apply {
+                text = "GENERATE NOTE"
+                setBackgroundColor(0xFF10B981.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = 8
+                }
+                setOnClickListener {
+                    hideDataOverlay()
+                    generateClinicalNote(transcript)
+                }
+            }
+            buttonRow.addView(generateNoteBtn)
+
+            val closeBtn = android.widget.Button(context).apply {
+                text = "CLOSE"
+                setBackgroundColor(0xFF475569.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 8
+                }
+                setOnClickListener { hideDataOverlay() }
+            }
+            buttonRow.addView(closeBtn)
+
+            innerLayout.addView(buttonRow)
+            addView(innerLayout)
+        }
+
+        rootView.addView(dataOverlay)
+        statusText.text = "MDx Vision"
     }
 
     private fun generateClinicalNote(transcript: String) {
@@ -684,6 +944,14 @@ class MainActivity : AppCompatActivity() {
                 // Voice command to stop documentation and generate note
                 if (isDocumentationMode) toggleDocumentationMode()
             }
+            lower.contains("live transcri") || lower.contains("start transcri") || lower.contains("transcribe") -> {
+                // Voice command to start/stop live transcription
+                toggleLiveTranscription()
+            }
+            lower.contains("stop transcri") -> {
+                // Voice command to stop live transcription
+                if (isLiveTranscribing) stopLiveTranscription()
+            }
             lower.contains("scan") || lower.contains("wristband") -> {
                 // Voice command to scan wristband
                 startBarcodeScanner()
@@ -917,5 +1185,7 @@ class MainActivity : AppCompatActivity() {
         if (::speechRecognizer.isInitialized) {
             speechRecognizer.destroy()
         }
+        // Clean up audio streaming service
+        audioStreamingService?.destroy()
     }
 }
