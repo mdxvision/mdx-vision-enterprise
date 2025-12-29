@@ -1687,8 +1687,9 @@ class MainActivity : AppCompatActivity() {
                                     Toast.makeText(this@MainActivity, "Note saved$editMsg! ID: $noteId", Toast.LENGTH_LONG).show()
                                     statusText.text = "Note saved"
                                     transcriptText.text = "ID: $noteId"
+                                    lastSavedNoteId = noteId  // Store for push-to-EHR
                                     clearAfterSave()
-                                    speakFeedback("Note saved successfully")
+                                    speakFeedback("Note saved successfully. Say push note to send to EHR.")
                                 } else {
                                     val message = result.optString("message", "Save failed")
                                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
@@ -1793,6 +1794,9 @@ class MainActivity : AppCompatActivity() {
 
     // Store current patient data for section views
     private var currentPatientData: JSONObject? = null
+
+    // Store last saved note ID for push-to-EHR feature
+    private var lastSavedNoteId: String? = null
 
     private fun fetchPatientData(patientId: String, forceOnline: Boolean = false) {
         // Check if offline - use cache
@@ -2342,6 +2346,98 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Push saved note to EHR as FHIR DocumentReference
+     */
+    private fun pushNoteToEhr() {
+        val noteId = lastSavedNoteId
+        if (noteId == null) {
+            Toast.makeText(this, "No saved note to push", Toast.LENGTH_SHORT).show()
+            speakFeedback("No saved note to push. Save a note first.")
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            Toast.makeText(this, "No network - cannot push to EHR", Toast.LENGTH_SHORT).show()
+            speakFeedback("No network connection. Cannot push to EHR.")
+            return
+        }
+
+        statusText.text = "Pushing to EHR..."
+        speakFeedback("Pushing note to EHR")
+
+        Thread {
+            try {
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/notes/$noteId/push")
+                    .post("".toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Push to EHR failed: ${e.message}")
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Push failed: ${e.message}", Toast.LENGTH_LONG).show()
+                            statusText.text = "Push failed"
+                            speakFeedback("Push to EHR failed. Network error.")
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "Push response: $body")
+
+                        runOnUiThread {
+                            try {
+                                val result = JSONObject(body ?: "{}")
+                                val success = result.optBoolean("success", false)
+
+                                if (success) {
+                                    val fhirId = result.optString("fhir_id", "")
+                                    val alreadyPushed = result.optBoolean("already_pushed", false)
+
+                                    if (alreadyPushed) {
+                                        Toast.makeText(this@MainActivity, "Note was already pushed to EHR", Toast.LENGTH_SHORT).show()
+                                        speakFeedback("Note was already pushed to EHR")
+                                    } else {
+                                        Toast.makeText(this@MainActivity, "Note pushed to EHR: $fhirId", Toast.LENGTH_LONG).show()
+                                        speakFeedback("Note successfully pushed to EHR")
+                                    }
+                                    statusText.text = "Pushed to EHR"
+                                    transcriptText.text = fhirId
+                                } else {
+                                    val error = result.optString("error", "Push failed")
+                                    val statusCode = result.optInt("status_code", 0)
+
+                                    // Handle sandbox read-only gracefully
+                                    if (statusCode == 403) {
+                                        Toast.makeText(this@MainActivity, "EHR sandbox is read-only", Toast.LENGTH_LONG).show()
+                                        speakFeedback("EHR sandbox is read-only. Production credentials required.")
+                                        statusText.text = "Sandbox read-only"
+                                    } else {
+                                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                                        speakFeedback("Push to EHR failed")
+                                        statusText.text = "Push failed"
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Toast.makeText(this@MainActivity, "Push response error", Toast.LENGTH_SHORT).show()
+                                speakFeedback("Push response error")
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to push note: ${e.message}")
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Push error: ${e.message}", Toast.LENGTH_LONG).show()
+                    statusText.text = "Push error"
+                    speakFeedback("Failed to push note to EHR")
+                }
+            }
+        }.start()
+    }
+
+    /**
      * Speak feedback for actions (respects toggle setting)
      * Use this for confirmations like "Patient loaded", "Note saved", etc.
      */
@@ -2805,6 +2901,10 @@ class MainActivity : AppCompatActivity() {
             lower.contains("save note") || lower.contains("save the note") || lower.contains("submit note") -> {
                 // Voice command to save the current note
                 saveCurrentNote()
+            }
+            lower.contains("push note") || lower.contains("send to ehr") || lower.contains("push to ehr") || lower.contains("upload note") -> {
+                // Voice command to push saved note to EHR
+                pushNoteToEhr()
             }
             lower.contains("reset note") || lower.contains("undo changes") || lower.contains("undo edit") || lower.contains("restore note") -> {
                 // Voice command to reset edited note to original

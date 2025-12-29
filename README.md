@@ -88,6 +88,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Visual Display**: Drug interaction warnings shown at top of medications view
 - **Key Interactions**: Warfarin+NSAIDs, Opioids+Benzos (FDA black box), SSRIs+MAOIs, Statins+Macrolides
 
+### Push Notes to EHR (NEW)
+- **FHIR DocumentReference**: Push generated notes directly to patient's EHR chart
+- **Voice Commands**: "push note", "send to EHR", "push to EHR"
+- **Auto-Push Option**: Enable push_to_ehr flag to auto-push after save
+- **LOINC Codes**: Proper coding for SOAP, Progress, H&P, Consult notes
+- **Status Tracking**: Tracks pushed_to_ehr, fhir_document_id, pushed_at
+- **Graceful Degradation**: Handles sandbox read-only (403) with clear messaging
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

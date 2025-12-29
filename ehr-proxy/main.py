@@ -18,6 +18,7 @@ import re
 import json
 import asyncio
 import uuid
+import base64
 from datetime import datetime
 
 # Import transcription service
@@ -2113,6 +2114,186 @@ async def quick_note(request: NoteRequest):
 # In-memory storage for saved notes (in production, this would go to the EHR)
 saved_notes: dict = {}
 
+# LOINC codes for clinical note types (FHIR DocumentReference.type)
+NOTE_TYPE_LOINC = {
+    "SOAP": {"code": "11506-3", "display": "Progress note"},
+    "PROGRESS": {"code": "11506-3", "display": "Progress note"},
+    "HP": {"code": "34117-2", "display": "History and physical note"},
+    "CONSULT": {"code": "11488-4", "display": "Consultation note"},
+}
+
+
+def build_document_reference(note: dict) -> dict:
+    """
+    Build FHIR R4 DocumentReference from saved note.
+
+    Maps internal note format to FHIR DocumentReference for EHR posting.
+    """
+    note_type = note.get("note_type", "SOAP").upper()
+    loinc = NOTE_TYPE_LOINC.get(note_type, NOTE_TYPE_LOINC["SOAP"])
+
+    # Get timestamp in ISO format
+    timestamp = note.get("timestamp") or note.get("created_at") or datetime.now().isoformat()
+    if not timestamp.endswith("Z") and "+" not in timestamp:
+        timestamp = timestamp + "Z"
+
+    # Base64 encode the note content
+    content_text = note.get("display_text", "")
+    content_b64 = base64.b64encode(content_text.encode("utf-8")).decode("utf-8")
+
+    # Build author reference
+    author = []
+    if note.get("signed_by"):
+        author.append({"display": note["signed_by"]})
+
+    # Determine status
+    status = "current" if note.get("signed_by") else "preliminary"
+
+    # Build description
+    description = f"{loinc['display']} - AI Generated"
+    if note.get("was_edited"):
+        description += " (Clinician Edited)"
+
+    doc_ref = {
+        "resourceType": "DocumentReference",
+        "status": status,
+        "type": {
+            "coding": [{
+                "system": "http://loinc.org",
+                "code": loinc["code"],
+                "display": loinc["display"]
+            }]
+        },
+        "subject": {
+            "reference": f"Patient/{note.get('patient_id', 'unknown')}"
+        },
+        "date": timestamp,
+        "description": description,
+        "content": [{
+            "attachment": {
+                "contentType": "text/plain",
+                "data": content_b64
+            }
+        }]
+    }
+
+    if author:
+        doc_ref["author"] = author
+
+    return doc_ref
+
+
+async def push_note_to_ehr(note_id: str) -> dict:
+    """
+    Push a saved note to the EHR as a FHIR DocumentReference.
+
+    Returns success status and EHR document ID if successful.
+    """
+    # Get the saved note
+    if note_id not in saved_notes:
+        return {
+            "success": False,
+            "error": "Note not found",
+            "note_id": note_id
+        }
+
+    note = saved_notes[note_id]
+
+    # Check if already pushed
+    if note.get("pushed_to_ehr") and note.get("fhir_document_id"):
+        return {
+            "success": True,
+            "note_id": note_id,
+            "fhir_id": note["fhir_document_id"],
+            "message": "Note was already pushed to EHR",
+            "already_pushed": True
+        }
+
+    # Build FHIR DocumentReference
+    doc_ref = build_document_reference(note)
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{CERNER_BASE_URL}/DocumentReference",
+                json=doc_ref,
+                headers={
+                    "Content-Type": "application/fhir+json",
+                    "Accept": "application/fhir+json"
+                }
+            )
+
+            if response.status_code == 201:
+                # Success - extract FHIR ID from response
+                result = response.json()
+                fhir_id = result.get("id", "")
+
+                # Update local note record
+                note["pushed_to_ehr"] = True
+                note["fhir_document_id"] = fhir_id
+                note["pushed_at"] = datetime.now().isoformat()
+                note["push_error"] = None
+
+                print(f"✅ Note {note_id} pushed to EHR as DocumentReference/{fhir_id}")
+
+                return {
+                    "success": True,
+                    "note_id": note_id,
+                    "fhir_id": f"DocumentReference/{fhir_id}",
+                    "ehr_url": f"{CERNER_BASE_URL}/DocumentReference/{fhir_id}",
+                    "message": "Note pushed to EHR successfully"
+                }
+
+            elif response.status_code == 403:
+                # Sandbox is read-only
+                error_msg = "EHR sandbox is read-only - cannot create documents"
+                note["push_error"] = error_msg
+                print(f"⚠️ Note {note_id} push failed: {error_msg}")
+
+                return {
+                    "success": False,
+                    "note_id": note_id,
+                    "error": error_msg,
+                    "status_code": 403
+                }
+
+            else:
+                # Other error
+                error_msg = f"EHR returned status {response.status_code}"
+                try:
+                    error_detail = response.json()
+                    if "issue" in error_detail:
+                        error_msg += f": {error_detail['issue'][0].get('diagnostics', '')}"
+                except:
+                    error_msg += f": {response.text[:200]}"
+
+                note["push_error"] = error_msg
+                print(f"❌ Note {note_id} push failed: {error_msg}")
+
+                return {
+                    "success": False,
+                    "note_id": note_id,
+                    "error": error_msg,
+                    "status_code": response.status_code
+                }
+
+    except httpx.TimeoutException:
+        error_msg = "Request timed out connecting to EHR"
+        note["push_error"] = error_msg
+        return {
+            "success": False,
+            "note_id": note_id,
+            "error": error_msg
+        }
+    except Exception as e:
+        error_msg = f"Failed to connect to EHR: {str(e)}"
+        note["push_error"] = error_msg
+        return {
+            "success": False,
+            "note_id": note_id,
+            "error": error_msg
+        }
+
 
 class SaveNoteRequest(BaseModel):
     patient_id: str
@@ -2124,6 +2305,7 @@ class SaveNoteRequest(BaseModel):
     was_edited: bool = False  # True if note was manually edited before saving
     signed_by: str = ""  # Clinician who signed off on the note
     signed_at: str = ""  # Timestamp when note was signed
+    push_to_ehr: bool = False  # If True, auto-push to EHR after saving
 
 
 @app.post("/api/v1/notes/save")
@@ -2155,7 +2337,12 @@ async def save_note(request: SaveNoteRequest):
             "status": "signed" if request.signed_by else "final",
             "was_edited": request.was_edited,  # Track if clinician manually edited
             "signed_by": request.signed_by,  # Clinician who signed off
-            "signed_at": request.signed_at or datetime.now().isoformat()  # Sign-off timestamp
+            "signed_at": request.signed_at or datetime.now().isoformat(),  # Sign-off timestamp
+            # EHR push tracking
+            "pushed_to_ehr": False,
+            "fhir_document_id": None,
+            "pushed_at": None,
+            "push_error": None
         }
 
         # Store in memory (simulated EHR storage)
@@ -2166,13 +2353,24 @@ async def save_note(request: SaveNoteRequest):
         print(f"📝 Note saved{edited_indicator}{signed_indicator}: {note_id} for patient {request.patient_id}")
         print(f"   Summary: {request.summary[:50]}..." if request.summary else "   (No summary)")
 
-        return {
+        # Auto-push to EHR if requested
+        push_result = None
+        if request.push_to_ehr:
+            print(f"🚀 Auto-pushing note {note_id} to EHR...")
+            push_result = await push_note_to_ehr(note_id)
+
+        response = {
             "success": True,
             "note_id": note_id,
             "message": "Note saved successfully",
             "patient_id": request.patient_id,
             "timestamp": note_record["created_at"]
         }
+
+        if push_result:
+            response["push_result"] = push_result
+
+        return response
 
     except Exception as e:
         print(f"❌ Save note error: {e}")
@@ -2202,6 +2400,23 @@ async def get_patient_notes(patient_id: str):
         "count": len(patient_notes),
         "notes": patient_notes
     }
+
+
+@app.post("/api/v1/notes/{note_id}/push")
+async def push_note_endpoint(note_id: str):
+    """
+    Push a saved note to the EHR as a FHIR DocumentReference.
+
+    This creates a DocumentReference in the EHR containing the note content.
+    Note: Cerner sandbox is read-only, so this will return 403 until
+    production credentials are configured.
+    """
+    result = await push_note_to_ehr(note_id)
+
+    if not result.get("success") and result.get("error") == "Note not found":
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    return result
 
 
 # ============ Real-Time Transcription WebSocket ============
