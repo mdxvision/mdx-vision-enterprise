@@ -41,6 +41,14 @@ class VitalSign(BaseModel):
     unit: str
 
 
+class LabResult(BaseModel):
+    name: str
+    value: str
+    unit: str
+    status: str = ""
+    date: str = ""
+
+
 class PatientSummary(BaseModel):
     patient_id: str
     name: str
@@ -50,6 +58,7 @@ class PatientSummary(BaseModel):
     vitals: List[VitalSign] = []
     allergies: List[str] = []
     medications: List[str] = []
+    labs: List[LabResult] = []
     display_text: str = ""
 
 
@@ -137,6 +146,46 @@ def extract_medications(bundle: dict) -> List[str]:
     return meds
 
 
+def extract_labs(bundle: dict) -> List[LabResult]:
+    """Extract lab results from FHIR Observation bundle (laboratory category)"""
+    labs = []
+    for entry in bundle.get("entry", [])[:10]:
+        obs = entry.get("resource", {})
+
+        # Get lab name
+        name = obs.get("code", {}).get("text", "")
+        if not name:
+            coding = obs.get("code", {}).get("coding", [])
+            if coding:
+                name = coding[0].get("display", "Unknown")
+
+        # Get value
+        value = "?"
+        unit = ""
+        if "valueQuantity" in obs:
+            value = str(obs["valueQuantity"].get("value", "?"))
+            unit = obs["valueQuantity"].get("unit", "")
+        elif "valueString" in obs:
+            value = obs["valueString"]
+        elif "valueCodeableConcept" in obs:
+            value = obs["valueCodeableConcept"].get("text", "?")
+
+        # Get status and date
+        status = obs.get("status", "")
+        date = obs.get("effectiveDateTime", "")[:10] if obs.get("effectiveDateTime") else ""
+
+        if name and name != "Unknown":
+            labs.append(LabResult(
+                name=name,
+                value=value,
+                unit=unit,
+                status=status,
+                date=date
+            ))
+
+    return labs
+
+
 def format_ar_display(summary: PatientSummary) -> str:
     """Format patient data for AR glasses display"""
     lines = [
@@ -153,6 +202,10 @@ def format_ar_display(summary: PatientSummary) -> str:
 
     if summary.medications:
         lines.append(f"💊 MEDS: {', '.join(summary.medications[:5])}")
+
+    if summary.labs:
+        lab_str = " | ".join([f"{l.name}: {l.value}{l.unit}" for l in summary.labs[:4]])
+        lines.append(f"🔬 LABS: {lab_str}")
 
     return "\n".join(lines)
 
@@ -188,6 +241,10 @@ async def get_patient(patient_id: str):
     med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=10")
     medications = extract_medications(med_bundle)
 
+    # Fetch lab results
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=10")
+    labs = extract_labs(lab_bundle)
+
     summary = PatientSummary(
         patient_id=patient_id,
         name=name,
@@ -195,7 +252,8 @@ async def get_patient(patient_id: str):
         gender=gender,
         vitals=vitals,
         allergies=allergies,
-        medications=medications
+        medications=medications,
+        labs=labs
     )
     summary.display_text = format_ar_display(summary)
 
