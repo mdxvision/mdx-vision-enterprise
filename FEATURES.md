@@ -67,7 +67,9 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Live transcription streaming | Done | `AudioStreamingService.kt` |
 | [ ] Template selection | Pending | - |
 | [ ] Voice dictation to EHR | Future | - |
-| [x] Auto-coding (ICD-10) | Done | `ehr-proxy/main.py` |
+| [x] Auto-coding (ICD-10) | Done | `ehr-proxy/main.py` (90+ codes) |
+| [x] Auto-coding (CPT) | Done | `ehr-proxy/main.py` (100+ codes) |
+| [x] Save note to EHR | Done | `ehr-proxy/main.py` (simulated) |
 
 ---
 
@@ -132,8 +134,8 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Patient load button | Done |
 | [x] Patient data display | Done |
 | [x] Error handling | Done |
-| [ ] Offline mode | Pending |
-| [ ] Data caching | Pending |
+| [x] Offline mode | Done |
+| [x] Data caching | Done |
 
 ### Voice Commands
 | Command | Status |
@@ -146,7 +148,9 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Show labs" | Done |
 | [x] "Show procedures" | Done |
 | [x] "Start note" | Done |
-| [ ] "Save note" | Pending |
+| [x] "Save note" | Done |
+| [x] "Clear cache" | Done |
+| [x] "Live transcribe" | Done |
 
 ---
 
@@ -166,11 +170,13 @@ Based on US Patent 15/237,980 and product requirements.
 
 ## Next Priority Items
 
-1. **Camera Barcode Scanning** - Patient wristband MRN lookup
+1. ~~**Camera Barcode Scanning**~~ - ✅ Done (ML Kit)
 2. **Epic Integration** - Complete with credentials
-3. **AI Clinical Notes** - Voice to structured SOAP notes
+3. ~~**AI Clinical Notes**~~ - ✅ Done (SOAP + ICD-10 + CPT)
 4. **Vuzix HUD Overlay** - True AR display mode
-5. **Offline Mode** - Cache patient data locally
+5. ~~**Offline Mode**~~ - ✅ Done (SharedPreferences cache)
+6. **HIPAA Audit Logging** - Security compliance
+7. **User Authentication** - OAuth2/SMART on FHIR
 
 ---
 
@@ -185,4 +191,4 @@ Based on US Patent 15/237,980 and product requirements.
 
 ---
 
-Last Updated: December 28, 2024
+Last Updated: December 29, 2024
