@@ -25,8 +25,8 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] Patient lookup by ID | Done | `ehr-proxy/main.py:139-176` |
 | [x] Patient search by name | Done | `ehr-proxy/main.py:186-201` |
 | [x] Patient lookup by MRN | Done | `ehr-proxy/main.py:204-214` |
-| [ ] Camera barcode scanning | Pending | ML Kit integration needed |
-| [ ] Wristband QR code reader | Pending | - |
+| [x] Camera barcode scanning | Done | `BarcodeScannerActivity.kt` |
+| [x] Wristband QR code reader | Done | ML Kit barcode scanning |
 | [ ] Facial recognition (opt-in) | Future | - |
 
 ### AR Display (Claim 8)

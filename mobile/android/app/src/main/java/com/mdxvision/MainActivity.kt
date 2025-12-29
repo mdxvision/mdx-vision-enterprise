@@ -10,6 +10,7 @@ import android.speech.SpeechRecognizer
 import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -44,6 +45,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var transcriptText: TextView
     private lateinit var patientDataText: TextView
     private val httpClient = OkHttpClient()
+
+    // Barcode scanner launcher
+    private val barcodeLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val mrn = result.data?.getStringExtra(BarcodeScannerActivity.EXTRA_MRN)
+            if (mrn != null) {
+                Log.d(TAG, "Scanned MRN: $mrn")
+                transcriptText.text = "Scanned MRN: $mrn"
+                fetchPatientByMrn(mrn)
+            }
+        }
+    }
 
     private val requiredPermissions = arrayOf(
         Manifest.permission.RECORD_AUDIO,
@@ -106,6 +121,13 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(patientButton)
 
+        // Scan wristband button (Patent Claims 5-7)
+        val scanButton = android.widget.Button(this).apply {
+            text = "Scan Wristband"
+            setOnClickListener { startBarcodeScanner() }
+        }
+        layout.addView(scanButton)
+
         // Patient data display
         patientDataText = TextView(this).apply {
             text = ""
@@ -116,6 +138,62 @@ class MainActivity : AppCompatActivity() {
         layout.addView(patientDataText)
 
         setContentView(layout)
+    }
+
+    private fun startBarcodeScanner() {
+        val intent = Intent(this, BarcodeScannerActivity::class.java)
+        barcodeLauncher.launch(intent)
+    }
+
+    private fun fetchPatientByMrn(mrn: String) {
+        statusText.text = "Looking up MRN..."
+        patientDataText.text = ""
+
+        Thread {
+            try {
+                val encodedMrn = java.net.URLEncoder.encode(mrn, "UTF-8")
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/patient/mrn/$encodedMrn")
+                    .get()
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "MRN lookup error: ${e.message}")
+                        runOnUiThread {
+                            statusText.text = "Lookup failed"
+                            patientDataText.text = "Error: ${e.message}"
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "MRN lookup response: $body")
+
+                        runOnUiThread {
+                            if (response.code == 200) {
+                                statusText.text = "Patient Found!"
+                                try {
+                                    val patient = JSONObject(body ?: "{}")
+                                    val displayText = patient.optString("display_text", "No data")
+                                    patientDataText.text = displayText
+                                } catch (e: Exception) {
+                                    patientDataText.text = body ?: "No response"
+                                }
+                            } else {
+                                statusText.text = "Patient Not Found"
+                                patientDataText.text = "No patient with MRN: $mrn"
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "MRN lookup failed: ${e.message}")
+                runOnUiThread {
+                    patientDataText.text = "Error: ${e.message}"
+                }
+            }
+        }.start()
     }
 
     private fun fetchPatientData(patientId: String) {
