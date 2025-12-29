@@ -230,3 +230,31 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 4. **Live Transcription UI** - Full-screen overlay with real-time text
 5. **Voice Commands in Transcription** - Say "close" or "stop transcription"
 6. **12-Button Command Grid** - All voice commands as tappable buttons
+7. **ICD-10/CPT JSON Databases** - Full code lookup with keyword mapping
+8. **Font Size Adjustment** - Voice commands for accessibility (small/medium/large/extra-large)
+9. **Patient Conditions Display** - FHIR Condition resource with voice command
+10. **Auto-Scroll Transcription** - Automatic scroll to latest text with voice toggle
+
+## Next Up (Recommended)
+
+### Quick Wins
+| Feature | Notes |
+|---------|-------|
+| **Multiple note templates** | Progress Note, H&P, Consult Note formats - high clinical value |
+| **Speaker diarization** | AssemblyAI supports natively, just enable `speaker_labels` |
+| **Medical vocabulary boost** | Custom medical terms for better transcription accuracy |
+
+### Medium Effort
+| Feature | Notes |
+|---------|-------|
+| Edit note before save | Allow modifications before saving |
+| Care plans display | FHIR CarePlan resource |
+| CPT modifier support | -25, -59, etc. |
+| Offline note drafts | Queue notes for sync when reconnected |
+
+### Larger Features
+1. Epic/Veradigm live integration (needs credentials)
+2. Push notes to EHR (FHIR DocumentReference)
+3. HIPAA audit logging
+4. OAuth2/SMART on FHIR authentication
+5. Vuzix HUD native overlay
