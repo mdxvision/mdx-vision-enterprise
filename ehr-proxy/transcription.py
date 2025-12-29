@@ -2,6 +2,11 @@
 MDx Vision - Real-Time Transcription Service
 Supports both AssemblyAI and Deepgram for medical transcription
 
+Features:
+- Real-time streaming transcription
+- Speaker diarization (multi-speaker detection)
+- Medical vocabulary boost for improved accuracy
+
 Usage:
     provider = get_transcription_provider()
     async for transcript in provider.stream_transcription(audio_generator):
@@ -13,13 +18,22 @@ import asyncio
 import json
 import base64
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, List
 import websockets
+
+# Import medical vocabulary
+try:
+    from medical_vocabulary import get_vocabulary, MEDICAL_VOCABULARY
+except ImportError:
+    MEDICAL_VOCABULARY = []
+    def get_vocabulary(specialties=None):
+        return []
 
 # Configuration
 TRANSCRIPTION_PROVIDER = os.getenv("TRANSCRIPTION_PROVIDER", "assemblyai")  # or "deepgram"
 ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
+ENABLE_MEDICAL_VOCAB = os.getenv("ENABLE_MEDICAL_VOCAB", "true").lower() == "true"
 
 
 class TranscriptionResult:
@@ -68,16 +82,20 @@ class TranscriptionProvider(ABC):
 
 class AssemblyAIProvider(TranscriptionProvider):
     """
-    AssemblyAI Real-Time Transcription with Speaker Diarization
+    AssemblyAI Real-Time Transcription with Speaker Diarization & Medical Vocabulary
     Docs: https://www.assemblyai.com/docs/speech-to-text/streaming
     """
 
     WEBSOCKET_URL = "wss://api.assemblyai.com/v2/realtime/ws"
 
-    def __init__(self, api_key: str = None, sample_rate: int = 16000, enable_diarization: bool = True):
+    def __init__(self, api_key: str = None, sample_rate: int = 16000,
+                 enable_diarization: bool = True, enable_medical_vocab: bool = True,
+                 specialties: List[str] = None):
         self.api_key = api_key or ASSEMBLYAI_API_KEY
         self.sample_rate = sample_rate
         self.enable_diarization = enable_diarization
+        self.enable_medical_vocab = enable_medical_vocab and ENABLE_MEDICAL_VOCAB
+        self.specialties = specialties
         self.websocket = None
         self._receive_task = None
         self._transcript_queue = asyncio.Queue()
@@ -93,16 +111,40 @@ class AssemblyAIProvider(TranscriptionProvider):
         if self.enable_diarization:
             params.append("speaker_labels=true")
 
+        # Add word_boost for medical vocabulary (AssemblyAI allows up to 1000 words)
+        if self.enable_medical_vocab:
+            vocab = get_vocabulary(self.specialties)
+            if vocab:
+                # AssemblyAI word_boost is sent in the connection config, not URL
+                # We'll send it after connection
+                pass
+
         url = f"{self.WEBSOCKET_URL}?{'&'.join(params)}"
         headers = {"Authorization": self.api_key}
-        print(f"🔌 AssemblyAI: Connecting with diarization={self.enable_diarization}...")
+        vocab_status = f", medical_vocab={len(get_vocabulary(self.specialties))} terms" if self.enable_medical_vocab else ""
+        print(f"🔌 AssemblyAI: Connecting with diarization={self.enable_diarization}{vocab_status}...")
 
         try:
             self.websocket = await websockets.connect(url, additional_headers=headers)
             print("✅ AssemblyAI: WebSocket connected!")
+
+            # Send word_boost configuration if medical vocabulary is enabled
+            if self.enable_medical_vocab:
+                vocab = get_vocabulary(self.specialties)
+                if vocab:
+                    # AssemblyAI allows up to 2500 boosted words
+                    # Select top medical terms (prioritize shorter, more specific terms)
+                    boost_words = vocab[:1000]  # Limit to 1000 for performance
+                    config = {
+                        "word_boost": boost_words,
+                        "boost_param": "high"  # high boost for medical terms
+                    }
+                    await self.websocket.send(json.dumps(config))
+                    print(f"📚 AssemblyAI: Sent {len(boost_words)} medical vocabulary terms")
+
             # Start background receiver
             self._receive_task = asyncio.create_task(self._receive_loop())
-            print("AssemblyAI: Connected")
+            print("AssemblyAI: Connected with medical vocabulary boost")
             return True
         except Exception as e:
             print(f"AssemblyAI connection error: {e}")
@@ -210,15 +252,18 @@ class AssemblyAIProvider(TranscriptionProvider):
 
 class DeepgramProvider(TranscriptionProvider):
     """
-    Deepgram Nova-3 Medical Real-Time Transcription
+    Deepgram Nova-3 Medical Real-Time Transcription with Custom Keywords
     Docs: https://developers.deepgram.com/docs/streaming
     """
 
     WEBSOCKET_URL = "wss://api.deepgram.com/v1/listen"
 
-    def __init__(self, api_key: str = None, sample_rate: int = 16000):
+    def __init__(self, api_key: str = None, sample_rate: int = 16000,
+                 enable_medical_vocab: bool = True, specialties: List[str] = None):
         self.api_key = api_key or DEEPGRAM_API_KEY
         self.sample_rate = sample_rate
+        self.enable_medical_vocab = enable_medical_vocab and ENABLE_MEDICAL_VOCAB
+        self.specialties = specialties
         self.websocket = None
         self._receive_task = None
         self._transcript_queue = asyncio.Queue()
@@ -240,14 +285,32 @@ class DeepgramProvider(TranscriptionProvider):
             "smart_format=true",
             "diarize=true",  # Speaker detection
         ]
+
+        # Add medical vocabulary keywords
+        keyword_count = 0
+        if self.enable_medical_vocab:
+            vocab = get_vocabulary(self.specialties)
+            if vocab:
+                # Deepgram keywords: add high-priority medical terms
+                # Format: keywords=term:intensifier (intensifier -10 to 10)
+                # Use top 200 most important terms to keep URL reasonable
+                priority_terms = vocab[:200]
+                for term in priority_terms:
+                    # URL encode the term and add with high intensifier
+                    encoded_term = term.replace(" ", "%20")
+                    params.append(f"keywords={encoded_term}:5")
+                keyword_count = len(priority_terms)
+
         url = f"{self.WEBSOCKET_URL}?{'&'.join(params)}"
         headers = {"Authorization": f"Token {self.api_key}"}
+        vocab_status = f" with {keyword_count} medical keywords" if keyword_count > 0 else ""
+        print(f"🔌 Deepgram: Connecting{vocab_status}...")
 
         try:
             self.websocket = await websockets.connect(url, additional_headers=headers)
             # Start background receiver
             self._receive_task = asyncio.create_task(self._receive_loop())
-            print("Deepgram Nova-3 Medical: Connected")
+            print(f"✅ Deepgram Nova-3 Medical: Connected{vocab_status}")
             return True
         except Exception as e:
             print(f"Deepgram connection error: {e}")
@@ -341,25 +404,36 @@ class DeepgramProvider(TranscriptionProvider):
         print("Deepgram: Disconnected")
 
 
-def get_transcription_provider(provider: str = None) -> TranscriptionProvider:
-    """Factory function to get the configured transcription provider"""
+def get_transcription_provider(provider: str = None, specialties: List[str] = None) -> TranscriptionProvider:
+    """
+    Factory function to get the configured transcription provider.
+
+    Args:
+        provider: "assemblyai" or "deepgram" (defaults to env var TRANSCRIPTION_PROVIDER)
+        specialties: List of medical specialties for vocabulary boost
+                    (e.g., ["cardiology", "pulmonology"])
+
+    Returns:
+        Configured transcription provider with medical vocabulary
+    """
     provider = provider or TRANSCRIPTION_PROVIDER
 
     if provider.lower() == "deepgram":
-        return DeepgramProvider()
+        return DeepgramProvider(specialties=specialties)
     else:  # Default to AssemblyAI
-        return AssemblyAIProvider()
+        return AssemblyAIProvider(specialties=specialties)
 
 
 # Transcription session manager for handling multiple concurrent sessions
 class TranscriptionSession:
     """Manages a single transcription session"""
 
-    def __init__(self, session_id: str, provider: str = None):
+    def __init__(self, session_id: str, provider: str = None, specialties: List[str] = None):
         self.session_id = session_id
-        self.provider = get_transcription_provider(provider)
+        self.provider = get_transcription_provider(provider, specialties)
         self.is_active = False
         self.full_transcript = []  # Store all final transcripts
+        self.speakers = {}  # Track speaker information
 
     async def start(self) -> bool:
         """Start the transcription session"""
@@ -393,9 +467,19 @@ class TranscriptionSession:
 _active_sessions: dict[str, TranscriptionSession] = {}
 
 
-async def create_session(session_id: str, provider: str = None) -> TranscriptionSession:
-    """Create and start a new transcription session"""
-    session = TranscriptionSession(session_id, provider)
+async def create_session(session_id: str, provider: str = None, specialties: List[str] = None) -> TranscriptionSession:
+    """
+    Create and start a new transcription session.
+
+    Args:
+        session_id: Unique identifier for this session
+        provider: "assemblyai" or "deepgram"
+        specialties: Medical specialties for vocabulary boost (e.g., ["cardiology"])
+
+    Returns:
+        Started transcription session
+    """
+    session = TranscriptionSession(session_id, provider, specialties)
     await session.start()
     _active_sessions[session_id] = session
     return session

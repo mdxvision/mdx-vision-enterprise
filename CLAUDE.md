@@ -95,7 +95,8 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 ### EHR Proxy
 - `ehr-proxy/main.py` - FastAPI proxy, SOAP notes, ICD-10 codes, WebSocket endpoints
-- `ehr-proxy/transcription.py` - AssemblyAI/Deepgram dual-provider abstraction
+- `ehr-proxy/transcription.py` - AssemblyAI/Deepgram dual-provider abstraction with diarization
+- `ehr-proxy/medical_vocabulary.py` - 500+ medical terms for transcription boost
 - `ehr-proxy/.env.example` - API key configuration template
 
 ### Backend (Java)
@@ -190,6 +191,7 @@ curl http://localhost:8002/api/v1/transcription/status
 TRANSCRIPTION_PROVIDER=assemblyai  # or "deepgram"
 ASSEMBLYAI_API_KEY=your_key
 DEEPGRAM_API_KEY=your_key
+ENABLE_MEDICAL_VOCAB=true  # Enable medical vocabulary boost
 
 # AI Notes
 CLAUDE_API_KEY=your_key
@@ -234,15 +236,18 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 8. **Font Size Adjustment** - Voice commands for accessibility (small/medium/large/extra-large)
 9. **Patient Conditions Display** - FHIR Condition resource with voice command
 10. **Auto-Scroll Transcription** - Automatic scroll to latest text with voice toggle
+11. **Multiple Note Templates** - SOAP, Progress Note, H&P, Consult Note with voice selection
+12. **Auto Note Type Detection** - Keyword analysis to suggest appropriate note format
+13. **Speaker Diarization** - Multi-speaker detection with speaker labels in transcript
+14. **Medical Vocabulary Boost** - 500+ medical terms for improved transcription accuracy
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| **Multiple note templates** | Progress Note, H&P, Consult Note formats - high clinical value |
-| **Speaker diarization** | AssemblyAI supports natively, just enable `speaker_labels` |
-| **Medical vocabulary boost** | Custom medical terms for better transcription accuracy |
+| **Speaker context from chart** | Use patient/doctor names from appointment context |
+| **Specialty vocabulary** | Auto-load cardiology/ortho/neuro terms based on department |
 
 ### Medium Effort
 | Feature | Notes |

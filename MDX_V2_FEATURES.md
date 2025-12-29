@@ -17,7 +17,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Final transcript capture | Done | Accumulated in buffer |
 | [x] Voice command detection in stream | Done | "close", "stop transcription" |
 | [x] Speaker diarization | Done | AssemblyAI/Deepgram speaker_labels |
-| [ ] Medical vocabulary boost | Pending | Custom medical terms |
+| [x] Medical vocabulary boost | Done | 500+ terms, specialty support |
 
 ### AI-Powered Note Generation
 | Feature | Status | Implementation |
