@@ -1,8 +1,12 @@
 package com.mdxvision
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -38,7 +42,15 @@ class MainActivity : AppCompatActivity() {
         private const val EHR_PROXY_URL = "http://10.0.2.2:8002" // EHR Proxy on host machine
         // Test patient from Cerner sandbox
         private const val TEST_PATIENT_ID = "12724066"
+        // Offline cache
+        private const val PREFS_NAME = "MDxVisionCache"
+        private const val CACHE_PREFIX = "patient_"
+        private const val CACHE_TIMESTAMP_SUFFIX = "_timestamp"
+        private const val CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
     }
+
+    // Offline cache
+    private lateinit var cachePrefs: SharedPreferences
 
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var statusText: TextView
@@ -90,6 +102,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize offline cache
+        cachePrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         // Simple layout for AR glasses
         setupUI()
@@ -836,6 +851,13 @@ class MainActivity : AppCompatActivity() {
                                 try {
                                     val patient = JSONObject(body ?: "{}")
                                     currentPatientData = patient
+
+                                    // Cache by patient ID for offline access
+                                    val patientId = patient.optString("patient_id", "")
+                                    if (patientId.isNotEmpty()) {
+                                        cachePatientData(patientId, body ?: "{}")
+                                    }
+
                                     val name = patient.optString("name", "Unknown")
                                     val displayText = patient.optString("display_text", "No data")
                                     showDataOverlay("Patient: $name", displayText)
@@ -860,7 +882,26 @@ class MainActivity : AppCompatActivity() {
     // Store current patient data for section views
     private var currentPatientData: JSONObject? = null
 
-    private fun fetchPatientData(patientId: String) {
+    private fun fetchPatientData(patientId: String, forceOnline: Boolean = false) {
+        // Check if offline - use cache
+        if (!forceOnline && !isNetworkAvailable()) {
+            val cached = getCachedPatient(patientId)
+            if (cached != null) {
+                currentPatientData = cached
+                val name = cached.optString("name", "Unknown")
+                val displayText = cached.optString("display_text", "No data")
+                showDataOverlay("📴 OFFLINE: $name", displayText + "\n\n⚠️ Showing cached data")
+                statusText.text = "Offline Mode"
+                transcriptText.text = "Using cached data"
+                return
+            } else {
+                statusText.text = "Offline - No cache"
+                transcriptText.text = "Connect to network"
+                Toast.makeText(this, "No cached data for this patient", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+
         statusText.text = "Loading patient..."
         transcriptText.text = "Connecting to EHR"
 
@@ -875,8 +916,19 @@ class MainActivity : AppCompatActivity() {
                     override fun onFailure(call: Call, e: IOException) {
                         Log.e(TAG, "EHR proxy error: ${e.message}")
                         runOnUiThread {
-                            statusText.text = "Connection failed"
-                            transcriptText.text = "Error: ${e.message}"
+                            // Try to use cache on failure
+                            val cached = getCachedPatient(patientId)
+                            if (cached != null) {
+                                currentPatientData = cached
+                                val name = cached.optString("name", "Unknown")
+                                val displayText = cached.optString("display_text", "No data")
+                                showDataOverlay("📴 CACHED: $name", displayText + "\n\n⚠️ Network error - showing cached data")
+                                statusText.text = "Using cache"
+                                transcriptText.text = "Network unavailable"
+                            } else {
+                                statusText.text = "Connection failed"
+                                transcriptText.text = "Error: ${e.message}"
+                            }
                         }
                     }
 
@@ -888,6 +940,10 @@ class MainActivity : AppCompatActivity() {
                             try {
                                 val patient = JSONObject(body ?: "{}")
                                 currentPatientData = patient
+
+                                // Cache the patient data for offline use
+                                cachePatientData(patientId, body ?: "{}")
+
                                 val name = patient.optString("name", "Unknown")
                                 val displayText = patient.optString("display_text", "No data")
                                 showDataOverlay("Patient: $name", displayText)
@@ -911,6 +967,54 @@ class MainActivity : AppCompatActivity() {
         val manufacturer = android.os.Build.MANUFACTURER.lowercase()
         val model = android.os.Build.MODEL.lowercase()
         return manufacturer.contains("vuzix") || model.contains("blade")
+    }
+
+    // ============ Offline Cache Methods ============
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun cachePatientData(patientId: String, patientJson: String) {
+        cachePrefs.edit().apply {
+            putString("$CACHE_PREFIX$patientId", patientJson)
+            putLong("$CACHE_PREFIX$patientId$CACHE_TIMESTAMP_SUFFIX", System.currentTimeMillis())
+            apply()
+        }
+        Log.d(TAG, "Cached patient data: $patientId")
+    }
+
+    private fun getCachedPatient(patientId: String): JSONObject? {
+        val cached = cachePrefs.getString("$CACHE_PREFIX$patientId", null) ?: return null
+        val timestamp = cachePrefs.getLong("$CACHE_PREFIX$patientId$CACHE_TIMESTAMP_SUFFIX", 0)
+
+        // Check if cache is expired
+        if (System.currentTimeMillis() - timestamp > CACHE_MAX_AGE_MS) {
+            Log.d(TAG, "Cache expired for patient: $patientId")
+            return null
+        }
+
+        return try {
+            JSONObject(cached)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse cached patient: ${e.message}")
+            null
+        }
+    }
+
+    private fun getCachedPatientIds(): List<String> {
+        return cachePrefs.all.keys
+            .filter { it.startsWith(CACHE_PREFIX) && !it.endsWith(CACHE_TIMESTAMP_SUFFIX) }
+            .map { it.removePrefix(CACHE_PREFIX) }
+    }
+
+    private fun clearCache() {
+        cachePrefs.edit().clear().apply()
+        Toast.makeText(this, "Patient cache cleared", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Cache cleared")
     }
 
     private fun checkPermissions() {
@@ -1175,8 +1279,14 @@ class MainActivity : AppCompatActivity() {
                 }
                 hideDataOverlay()
             }
+            lower.contains("clear cache") || lower.contains("clear offline") -> {
+                // Clear the offline cache
+                clearCache()
+                currentPatientData = null
+                hideDataOverlay()
+            }
             lower.contains("clear") || lower.contains("reset") -> {
-                // Clear cached patient data
+                // Clear current patient data (not cache)
                 currentPatientData = null
                 hideDataOverlay()
                 transcriptText.text = "Patient data cleared"
