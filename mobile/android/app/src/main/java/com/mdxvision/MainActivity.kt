@@ -47,6 +47,12 @@ class MainActivity : AppCompatActivity() {
         private const val CACHE_PREFIX = "patient_"
         private const val CACHE_TIMESTAMP_SUFFIX = "_timestamp"
         private const val CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000L // 24 hours
+        // Font size settings
+        private const val PREF_FONT_SIZE = "font_size_level"
+        private const val FONT_SIZE_SMALL = 0
+        private const val FONT_SIZE_MEDIUM = 1
+        private const val FONT_SIZE_LARGE = 2
+        private const val FONT_SIZE_EXTRA_LARGE = 3
     }
 
     // Offline cache
@@ -81,6 +87,9 @@ class MainActivity : AppCompatActivity() {
     private var lastGeneratedNote: JSONObject? = null
     private var lastNoteTranscript: String? = null
 
+    // Font size for accessibility
+    private var currentFontSizeLevel: Int = FONT_SIZE_MEDIUM
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -103,8 +112,9 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Initialize offline cache
+        // Initialize offline cache and settings
         cachePrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        loadFontSizeSetting()
 
         // Simple layout for AR glasses
         setupUI()
@@ -269,7 +279,7 @@ class MainActivity : AppCompatActivity() {
             // Title
             val titleText = TextView(context).apply {
                 text = title
-                textSize = 22f
+                textSize = getTitleFontSize()
                 setTextColor(0xFF10B981.toInt())
                 setPadding(0, 0, 0, 16)
             }
@@ -284,7 +294,7 @@ class MainActivity : AppCompatActivity() {
 
             val contentText = TextView(context).apply {
                 text = content
-                textSize = 16f
+                textSize = getContentFontSize()
                 setTextColor(0xFFF8FAFC.toInt())
                 setLineSpacing(4f, 1.2f)
             }
@@ -498,7 +508,7 @@ class MainActivity : AppCompatActivity() {
 
             liveTranscriptText = TextView(context).apply {
                 text = "Listening..."
-                textSize = 18f
+                textSize = getContentFontSize() + 2f  // Slightly larger for transcription
                 setTextColor(0xFFF8FAFC.toInt())
                 setLineSpacing(6f, 1.3f)
             }
@@ -554,7 +564,7 @@ class MainActivity : AppCompatActivity() {
 
             val title = TextView(context).apply {
                 text = "✓ TRANSCRIPTION COMPLETE"
-                textSize = 20f
+                textSize = getTitleFontSize()
                 setTextColor(0xFF10B981.toInt())
                 setPadding(0, 0, 0, 16)
             }
@@ -568,7 +578,7 @@ class MainActivity : AppCompatActivity() {
 
             val contentText = TextView(context).apply {
                 text = transcript
-                textSize = 16f
+                textSize = getContentFontSize()
                 setTextColor(0xFFF8FAFC.toInt())
                 setLineSpacing(4f, 1.2f)
             }
@@ -687,7 +697,7 @@ class MainActivity : AppCompatActivity() {
             // Title
             val titleText = TextView(context).apply {
                 text = title
-                textSize = 22f
+                textSize = getTitleFontSize()
                 setTextColor(0xFF10B981.toInt())
                 setPadding(0, 0, 0, 16)
             }
@@ -702,7 +712,7 @@ class MainActivity : AppCompatActivity() {
 
             val contentText = TextView(context).apply {
                 text = content
-                textSize = 16f
+                textSize = getContentFontSize()
                 setTextColor(0xFFF8FAFC.toInt())
                 setLineSpacing(4f, 1.2f)
             }
@@ -1017,6 +1027,78 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "Cache cleared")
     }
 
+    // ============ Font Size Methods ============
+
+    private fun getContentFontSize(): Float {
+        return when (currentFontSizeLevel) {
+            FONT_SIZE_SMALL -> 14f
+            FONT_SIZE_MEDIUM -> 16f
+            FONT_SIZE_LARGE -> 20f
+            FONT_SIZE_EXTRA_LARGE -> 24f
+            else -> 16f
+        }
+    }
+
+    private fun getTitleFontSize(): Float {
+        return when (currentFontSizeLevel) {
+            FONT_SIZE_SMALL -> 18f
+            FONT_SIZE_MEDIUM -> 22f
+            FONT_SIZE_LARGE -> 26f
+            FONT_SIZE_EXTRA_LARGE -> 30f
+            else -> 22f
+        }
+    }
+
+    private fun getFontSizeName(): String {
+        return when (currentFontSizeLevel) {
+            FONT_SIZE_SMALL -> "Small"
+            FONT_SIZE_MEDIUM -> "Medium"
+            FONT_SIZE_LARGE -> "Large"
+            FONT_SIZE_EXTRA_LARGE -> "Extra Large"
+            else -> "Medium"
+        }
+    }
+
+    private fun loadFontSizeSetting() {
+        currentFontSizeLevel = cachePrefs.getInt(PREF_FONT_SIZE, FONT_SIZE_MEDIUM)
+    }
+
+    private fun saveFontSizeSetting() {
+        cachePrefs.edit().putInt(PREF_FONT_SIZE, currentFontSizeLevel).apply()
+    }
+
+    private fun increaseFontSize() {
+        if (currentFontSizeLevel < FONT_SIZE_EXTRA_LARGE) {
+            currentFontSizeLevel++
+            saveFontSizeSetting()
+            Toast.makeText(this, "Font size: ${getFontSizeName()}", Toast.LENGTH_SHORT).show()
+            transcriptText.text = "Font: ${getFontSizeName()}"
+            Log.d(TAG, "Font size increased to ${getFontSizeName()}")
+        } else {
+            Toast.makeText(this, "Font size already at maximum", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun decreaseFontSize() {
+        if (currentFontSizeLevel > FONT_SIZE_SMALL) {
+            currentFontSizeLevel--
+            saveFontSizeSetting()
+            Toast.makeText(this, "Font size: ${getFontSizeName()}", Toast.LENGTH_SHORT).show()
+            transcriptText.text = "Font: ${getFontSizeName()}"
+            Log.d(TAG, "Font size decreased to ${getFontSizeName()}")
+        } else {
+            Toast.makeText(this, "Font size already at minimum", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setFontSize(level: Int) {
+        currentFontSizeLevel = level.coerceIn(FONT_SIZE_SMALL, FONT_SIZE_EXTRA_LARGE)
+        saveFontSizeSetting()
+        Toast.makeText(this, "Font size: ${getFontSizeName()}", Toast.LENGTH_SHORT).show()
+        transcriptText.text = "Font: ${getFontSizeName()}"
+        Log.d(TAG, "Font size set to ${getFontSizeName()}")
+    }
+
     private fun checkPermissions() {
         val missingPermissions = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -1284,6 +1366,26 @@ class MainActivity : AppCompatActivity() {
                 clearCache()
                 currentPatientData = null
                 hideDataOverlay()
+            }
+            lower.contains("increase font") || lower.contains("bigger font") || lower.contains("larger font") || lower.contains("font bigger") || lower.contains("font larger") -> {
+                // Voice command to increase font size
+                increaseFontSize()
+            }
+            lower.contains("decrease font") || lower.contains("smaller font") || lower.contains("font smaller") -> {
+                // Voice command to decrease font size
+                decreaseFontSize()
+            }
+            lower.contains("font small") && !lower.contains("smaller") -> {
+                setFontSize(FONT_SIZE_SMALL)
+            }
+            lower.contains("font medium") -> {
+                setFontSize(FONT_SIZE_MEDIUM)
+            }
+            lower.contains("font large") && !lower.contains("larger") -> {
+                setFontSize(FONT_SIZE_LARGE)
+            }
+            lower.contains("font extra large") || lower.contains("extra large font") -> {
+                setFontSize(FONT_SIZE_EXTRA_LARGE)
             }
             lower.contains("clear") || lower.contains("reset") -> {
                 // Clear current patient data (not cache)

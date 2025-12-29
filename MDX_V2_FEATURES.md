@@ -153,7 +153,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Real-time text update | Done | Streaming display |
 | [x] Stop button | Done | UI + voice |
 | [x] Generate note option | Done | After stop |
-| [ ] Font size adjustment | Pending | Accessibility |
+| [x] Font size adjustment | Done | Voice commands + SharedPreferences |
 | [ ] Auto-scroll | Pending | Follow text |
 
 ---
@@ -183,6 +183,9 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Close" | Done | Dismiss overlay |
 | [x] "Clear cache" | Done | Purge offline data |
 | [x] "Hey MDx [command]" | Done | Wake + command |
+| [x] "Increase font" | Done | Larger text |
+| [x] "Decrease font" | Done | Smaller text |
+| [x] "Font small/medium/large" | Done | Set specific size |
 
 ---
 
