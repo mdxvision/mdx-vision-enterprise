@@ -202,6 +202,22 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Show care plans" | Done | Display patient care plans |
 | [x] "Show notes" / "Clinical notes" | Done | Display existing clinical notes |
 | [x] "Help" / "What can I say" | Done | Show all voice commands |
+| [x] "Patient summary" / "Quick summary" | Done | Show visual patient summary |
+| [x] "Brief me" / "Tell me about patient" | Done | TTS reads summary aloud |
+| [x] "Stop talking" / "Be quiet" | Done | Stop TTS speech |
+
+---
+
+## Text-to-Speech Features
+
+| Feature | Status | Implementation |
+|---------|--------|----------------|
+| [x] TTS engine initialization | Done | Android TextToSpeech |
+| [x] Patient summary speech | Done | `speakPatientSummary()` |
+| [x] Natural date formatting | Done | "September 15th, 1990" |
+| [x] Vital names for speech | Done | "B M I", "Blood pressure" |
+| [x] Stop speaking command | Done | Voice command |
+| [x] Speech rate optimization | Done | 0.9x for medical clarity |
 
 ---
 
@@ -264,7 +280,7 @@ Based on MDx v2.0 Brief Technical Description document.
 
 ## Implementation Summary
 
-**Completed:** 65+ features
+**Completed:** 70+ features
 **Pending:** 25+ features
 **Future:** 5+ features
 
@@ -276,6 +292,7 @@ Based on MDx v2.0 Brief Technical Description document.
 5. Save note workflow
 6. 12-button voice command grid
 7. Wake word activation
+8. Text-to-Speech patient briefing (hands-free while walking)
 
 ### Next Priorities
 1. Epic/Veradigm live integration

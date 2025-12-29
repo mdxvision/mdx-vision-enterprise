@@ -247,6 +247,8 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 19. **Note Sign-Off Workflow** - Confirmation dialog with checkbox, signed_by/signed_at tracking
 20. **Clinical Notes Read** - FHIR DocumentReference with voice command ("show notes", "clinical notes")
 21. **Voice Command Help** - Say "Help" or "What can I say" to see all available commands
+22. **Quick Patient Summary** - Visual summary with "patient summary" voice command (demographics, allergies, conditions, meds, vitals)
+23. **Hands-Free Patient Briefing** - Text-to-Speech reads patient summary aloud ("brief me", "tell me about patient") while walking to next room
 
 ## Next Up (Recommended)
 
@@ -254,7 +256,6 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 | Feature | Notes |
 |---------|-------|
 | **Note preview before generate** | Show transcript summary before AI generation |
-| **Quick patient summary voice** | "Summarize patient" for key info |
 
 ### Medium Effort
 | Feature | Notes |

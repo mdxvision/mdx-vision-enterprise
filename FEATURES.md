@@ -172,6 +172,9 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Show care plans" | Done |
 | [x] "Show notes" / "Clinical notes" | Done |
 | [x] "Help" / "What can I say" | Done |
+| [x] "Patient summary" / "Quick summary" | Done |
+| [x] "Brief me" / "Tell me about patient" | Done |
+| [x] "Stop talking" / "Be quiet" | Done |
 
 ---
 
@@ -206,6 +209,8 @@ Based on US Patent 15/237,980 and product requirements.
 12. ~~**Note Sign-Off Workflow**~~ - Done (Confirmation dialog with checkbox)
 13. ~~**Clinical Notes Read**~~ - Done (FHIR DocumentReference with voice command)
 14. ~~**Voice Command Help**~~ - Done ("Help" shows all available commands)
+15. ~~**Quick Patient Summary**~~ - Done (Visual summary with allergies, conditions, meds, vitals)
+16. ~~**Hands-Free Patient Briefing**~~ - Done (TTS reads patient summary aloud while walking)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

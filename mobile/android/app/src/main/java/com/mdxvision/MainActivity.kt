@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
@@ -108,6 +110,10 @@ class MainActivity : AppCompatActivity() {
     // Clinician name for speaker context (can be configured in settings)
     private var clinicianName: String = "Clinician"  // Default name, update from settings/login
 
+    // Text-to-Speech for spoken patient summaries (hands-free while walking)
+    private var textToSpeech: TextToSpeech? = null
+    private var isTtsReady: Boolean = false
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -134,6 +140,9 @@ class MainActivity : AppCompatActivity() {
         cachePrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         loadFontSizeSetting()
         loadClinicianName()
+
+        // Initialize Text-to-Speech for hands-free patient summaries
+        initTextToSpeech()
 
         // Simple layout for AR glasses
         setupUI()
@@ -989,6 +998,12 @@ class MainActivity : AppCompatActivity() {
             |• "Show care plans" - Display care plans
             |• "Show notes" - Display clinical notes
             |
+            |🔊 PATIENT SUMMARY (Hands-Free)
+            |• "Patient summary" - Show quick overview
+            |• "Brief me" - Speak summary aloud
+            |• "Tell me about patient" - Spoken briefing
+            |• "Stop talking" - Stop speech
+            |
             |📝 DOCUMENTATION
             |• "Start note" - Begin documentation
             |• "Live transcribe" - Real-time transcription
@@ -1021,6 +1036,269 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "Voice Command Help"
         transcriptText.text = "Say any command or 'close'"
         Log.d(TAG, "Showing voice command help")
+    }
+
+    private fun showQuickPatientSummary() {
+        val patient = currentPatientData
+        if (patient == null) {
+            Toast.makeText(this, "No patient loaded. Say 'load patient' first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val dob = patient.optString("date_of_birth", "")
+        val gender = patient.optString("gender", "").uppercase()
+
+        val sb = StringBuilder()
+        sb.append("👤 PATIENT SUMMARY\n")
+        sb.append("${"═".repeat(30)}\n\n")
+
+        // Demographics
+        sb.append("$name\n")
+        if (dob.isNotEmpty()) sb.append("DOB: $dob")
+        if (gender.isNotEmpty()) sb.append(" | $gender")
+        sb.append("\n\n")
+
+        // Critical: Allergies (always show first)
+        val allergies = patient.optJSONArray("allergies")
+        sb.append("⚠️ ALLERGIES\n")
+        if (allergies != null && allergies.length() > 0) {
+            for (i in 0 until minOf(allergies.length(), 5)) {
+                sb.append("  • ${allergies.getString(i)}\n")
+            }
+            if (allergies.length() > 5) sb.append("  (+${allergies.length() - 5} more)\n")
+        } else {
+            sb.append("  No known allergies\n")
+        }
+        sb.append("\n")
+
+        // Active Conditions
+        val conditions = patient.optJSONArray("conditions")
+        sb.append("📋 ACTIVE CONDITIONS\n")
+        if (conditions != null && conditions.length() > 0) {
+            var activeCount = 0
+            for (i in 0 until minOf(conditions.length(), 5)) {
+                val cond = conditions.getJSONObject(i)
+                val condName = cond.optString("name", "")
+                val status = cond.optString("status", "")
+                if (condName.isNotEmpty()) {
+                    sb.append("  • $condName")
+                    if (status.isNotEmpty()) sb.append(" [$status]")
+                    sb.append("\n")
+                    activeCount++
+                }
+            }
+            if (conditions.length() > 5) sb.append("  (+${conditions.length() - 5} more)\n")
+            if (activeCount == 0) sb.append("  None recorded\n")
+        } else {
+            sb.append("  None recorded\n")
+        }
+        sb.append("\n")
+
+        // Current Medications
+        val meds = patient.optJSONArray("medications")
+        sb.append("💊 CURRENT MEDICATIONS\n")
+        if (meds != null && meds.length() > 0) {
+            for (i in 0 until minOf(meds.length(), 5)) {
+                sb.append("  • ${meds.getString(i)}\n")
+            }
+            if (meds.length() > 5) sb.append("  (+${meds.length() - 5} more)\n")
+        } else {
+            sb.append("  None recorded\n")
+        }
+        sb.append("\n")
+
+        // Recent Vitals (just the key ones)
+        val vitals = patient.optJSONArray("vitals")
+        sb.append("📊 RECENT VITALS\n")
+        if (vitals != null && vitals.length() > 0) {
+            for (i in 0 until minOf(vitals.length(), 4)) {
+                val v = vitals.getJSONObject(i)
+                sb.append("  • ${v.optString("name")}: ${v.optString("value")}${v.optString("unit")}\n")
+            }
+        } else {
+            sb.append("  None recorded\n")
+        }
+
+        showDataOverlay("Patient Summary", sb.toString())
+        statusText.text = "Patient Summary"
+        transcriptText.text = "Key info for $name"
+        Log.d(TAG, "Showing quick patient summary for $name")
+    }
+
+    /**
+     * Initialize Text-to-Speech for hands-free patient information
+     * Allows clinicians to hear patient summary while walking to the room
+     */
+    private fun initTextToSpeech() {
+        textToSpeech = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val result = textToSpeech?.setLanguage(Locale.US)
+                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Log.e(TAG, "TTS: Language not supported")
+                    isTtsReady = false
+                } else {
+                    isTtsReady = true
+                    // Set slightly slower speech rate for medical info clarity
+                    textToSpeech?.setSpeechRate(0.9f)
+                    Log.d(TAG, "TTS: Initialized successfully")
+                }
+            } else {
+                Log.e(TAG, "TTS: Initialization failed")
+                isTtsReady = false
+            }
+        }
+    }
+
+    /**
+     * Speak text aloud using Text-to-Speech
+     */
+    private fun speak(text: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH) {
+        if (isTtsReady && textToSpeech != null) {
+            textToSpeech?.speak(text, queueMode, null, "mdx_tts_${System.currentTimeMillis()}")
+        } else {
+            Toast.makeText(this, "Speech not available", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Stop any ongoing speech
+     */
+    private fun stopSpeaking() {
+        textToSpeech?.stop()
+    }
+
+    /**
+     * Speak patient summary aloud - hands-free briefing while walking to patient
+     * Creates a natural, conversational summary of key patient information
+     */
+    private fun speakPatientSummary() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speak("No patient loaded. Say load patient first.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown patient")
+        val dob = patient.optString("date_of_birth", "")
+        val gender = patient.optString("gender", "")
+
+        val speechBuilder = StringBuilder()
+
+        // Start with patient identification
+        speechBuilder.append("Patient summary for $name. ")
+        if (gender.isNotEmpty()) {
+            speechBuilder.append("${gender}. ")
+        }
+        if (dob.isNotEmpty()) {
+            speechBuilder.append("Date of birth: ${formatDateForSpeech(dob)}. ")
+        }
+
+        // Critical: Allergies first (safety)
+        val allergies = patient.optJSONArray("allergies")
+        if (allergies != null && allergies.length() > 0) {
+            speechBuilder.append("Alert: Patient has ${allergies.length()} known ${if (allergies.length() == 1) "allergy" else "allergies"}. ")
+            for (i in 0 until minOf(allergies.length(), 3)) {
+                speechBuilder.append("${allergies.getString(i)}. ")
+            }
+            if (allergies.length() > 3) {
+                speechBuilder.append("And ${allergies.length() - 3} more. ")
+            }
+        } else {
+            speechBuilder.append("No known allergies. ")
+        }
+
+        // Active Conditions
+        val conditions = patient.optJSONArray("conditions")
+        if (conditions != null && conditions.length() > 0) {
+            speechBuilder.append("Active conditions: ")
+            for (i in 0 until minOf(conditions.length(), 3)) {
+                val cond = conditions.getJSONObject(i)
+                val condName = cond.optString("name", "")
+                if (condName.isNotEmpty()) {
+                    speechBuilder.append("$condName. ")
+                }
+            }
+            if (conditions.length() > 3) {
+                speechBuilder.append("Plus ${conditions.length() - 3} more. ")
+            }
+        }
+
+        // Current Medications (brief)
+        val meds = patient.optJSONArray("medications")
+        if (meds != null && meds.length() > 0) {
+            speechBuilder.append("On ${meds.length()} ${if (meds.length() == 1) "medication" else "medications"}. ")
+            // Only read top 2 for brevity
+            for (i in 0 until minOf(meds.length(), 2)) {
+                speechBuilder.append("${meds.getString(i)}. ")
+            }
+        }
+
+        // Recent Vitals (key ones)
+        val vitals = patient.optJSONArray("vitals")
+        if (vitals != null && vitals.length() > 0) {
+            speechBuilder.append("Recent vitals: ")
+            for (i in 0 until minOf(vitals.length(), 3)) {
+                val v = vitals.getJSONObject(i)
+                val vitalName = v.optString("name", "")
+                val vitalValue = v.optString("value", "")
+                val vitalUnit = v.optString("unit", "")
+                if (vitalName.isNotEmpty() && vitalValue.isNotEmpty()) {
+                    speechBuilder.append("${formatVitalNameForSpeech(vitalName)}: $vitalValue $vitalUnit. ")
+                }
+            }
+        }
+
+        speechBuilder.append("End of summary.")
+
+        // Also show on screen while speaking
+        showQuickPatientSummary()
+
+        // Speak the summary
+        speak(speechBuilder.toString())
+        Log.d(TAG, "Speaking patient summary for $name")
+    }
+
+    /**
+     * Format date string for natural speech (e.g., "1990-09-15" -> "September 15th, 1990")
+     */
+    private fun formatDateForSpeech(dateStr: String): String {
+        return try {
+            val parts = dateStr.split("-")
+            if (parts.size == 3) {
+                val months = listOf("January", "February", "March", "April", "May", "June",
+                    "July", "August", "September", "October", "November", "December")
+                val month = months.getOrElse(parts[1].toInt() - 1) { parts[1] }
+                val day = parts[2].toInt()
+                val daySuffix = when {
+                    day in 11..13 -> "th"
+                    day % 10 == 1 -> "st"
+                    day % 10 == 2 -> "nd"
+                    day % 10 == 3 -> "rd"
+                    else -> "th"
+                }
+                "$month $day$daySuffix, ${parts[0]}"
+            } else {
+                dateStr
+            }
+        } catch (e: Exception) {
+            dateStr
+        }
+    }
+
+    /**
+     * Format vital names for natural speech
+     */
+    private fun formatVitalNameForSpeech(name: String): String {
+        return when {
+            name.contains("BP", ignoreCase = true) || name.contains("Blood Pressure", ignoreCase = true) -> "Blood pressure"
+            name.contains("HR", ignoreCase = true) || name.contains("Heart Rate", ignoreCase = true) -> "Heart rate"
+            name.contains("Temp", ignoreCase = true) -> "Temperature"
+            name.contains("SpO2", ignoreCase = true) || name.contains("O2 Sat", ignoreCase = true) -> "Oxygen saturation"
+            name.contains("RR", ignoreCase = true) || name.contains("Resp", ignoreCase = true) -> "Respiratory rate"
+            name.contains("BMI", ignoreCase = true) -> "B M I"
+            else -> name
+        }
     }
 
     private fun saveCurrentNote() {
@@ -1799,6 +2077,22 @@ class MainActivity : AppCompatActivity() {
                 // Show voice command help
                 showVoiceCommandHelp()
             }
+            // Patient summary commands - spoken and visual
+            lower.contains("tell me about") || lower.contains("read summary") || lower.contains("speak summary") ||
+            lower.contains("brief me") || lower.contains("briefing") || lower.contains("tell me about patient") -> {
+                // Hands-free spoken summary while walking to patient
+                speakPatientSummary()
+            }
+            lower.contains("patient summary") || lower.contains("summarize patient") || lower.contains("quick summary") ||
+            lower.contains("show summary") || lower.contains("overview") -> {
+                // Show visual summary (no TTS)
+                showQuickPatientSummary()
+            }
+            lower.contains("stop talking") || lower.contains("stop speaking") || lower.contains("be quiet") || lower.contains("quiet") -> {
+                // Stop any ongoing TTS
+                stopSpeaking()
+                transcriptText.text = "Speech stopped"
+            }
             lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
                 // Close any open overlay
                 if (isLiveTranscribing) {
@@ -2162,5 +2456,8 @@ class MainActivity : AppCompatActivity() {
         }
         // Clean up audio streaming service
         audioStreamingService?.destroy()
+        // Clean up Text-to-Speech
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
     }
 }
