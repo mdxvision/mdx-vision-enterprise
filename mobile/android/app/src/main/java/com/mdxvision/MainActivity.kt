@@ -88,76 +88,178 @@ class MainActivity : AppCompatActivity() {
         checkPermissions()
     }
 
+    // Data overlay for showing patient info
+    private var dataOverlay: android.widget.FrameLayout? = null
+
     private fun setupUI() {
-        // Create a simple layout programmatically for AR glasses
-        val layout = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
+        // Main container
+        val rootLayout = android.widget.FrameLayout(this).apply {
             setBackgroundColor(0xFF0A1628.toInt())
-            setPadding(32, 32, 32, 32)
+        }
+
+        // Voice command grid layout
+        val mainLayout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(24, 24, 24, 24)
+        }
+
+        // Status bar at top
+        val statusBar = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, 16)
         }
 
         statusText = TextView(this).apply {
             text = "MDx Vision"
-            textSize = 24f
-            setTextColor(0xFFF8FAFC.toInt())
+            textSize = 20f
+            setTextColor(0xFF10B981.toInt())
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        layout.addView(statusText)
+        statusBar.addView(statusText)
 
         transcriptText = TextView(this).apply {
-            text = "Say 'Hey MDx' to start..."
-            textSize = 18f
+            text = "Tap or speak a command"
+            textSize = 14f
             setTextColor(0xFF94A3B8.toInt())
-            setPadding(0, 16, 0, 0)
+            gravity = android.view.Gravity.END
         }
-        layout.addView(transcriptText)
+        statusBar.addView(transcriptText)
+        mainLayout.addView(statusBar)
 
-        // Voice button
-        val voiceButton = android.widget.Button(this).apply {
-            text = "Start Listening"
-            setOnClickListener { startVoiceRecognition() }
-        }
-        layout.addView(voiceButton)
-
-        // Patient data button
-        val patientButton = android.widget.Button(this).apply {
-            text = "Load Patient (Cerner)"
-            setOnClickListener { fetchPatientData(TEST_PATIENT_ID) }
-        }
-        layout.addView(patientButton)
-
-        // Scan wristband button (Patent Claims 5-7)
-        val scanButton = android.widget.Button(this).apply {
-            text = "Scan Wristband"
-            setOnClickListener { startBarcodeScanner() }
-        }
-        layout.addView(scanButton)
-
-        // Start Note button (AI Clinical Documentation)
-        val noteButton = android.widget.Button(this).apply {
-            text = "Start Note"
-            setOnClickListener { toggleDocumentationMode() }
-        }
-        layout.addView(noteButton)
-
-        // Scrollable patient data display
-        val scrollView = android.widget.ScrollView(this).apply {
+        // Voice commands grid - 2 columns
+        val gridLayout = android.widget.GridLayout(this).apply {
+            columnCount = 2
+            rowCount = 5
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f  // Take remaining space
+                0, 1f
             )
         }
 
-        patientDataText = TextView(this).apply {
-            text = ""
-            textSize = 14f
-            setTextColor(0xFF10B981.toInt()) // Green for patient data
-            setPadding(0, 24, 0, 24)
-        }
-        scrollView.addView(patientDataText)
-        layout.addView(scrollView)
+        // Define all voice commands
+        val commands = listOf(
+            CommandButton("START LISTENING", 0xFF3B82F6.toInt()) { startVoiceRecognition() },
+            CommandButton("LOAD PATIENT", 0xFF6366F1.toInt()) { fetchPatientData(TEST_PATIENT_ID) },
+            CommandButton("FIND PATIENT", 0xFF8B5CF6.toInt()) { promptFindPatient() },
+            CommandButton("SCAN WRISTBAND", 0xFFEC4899.toInt()) { startBarcodeScanner() },
+            CommandButton("SHOW VITALS", 0xFF10B981.toInt()) { fetchPatientSection("vitals") },
+            CommandButton("SHOW ALLERGIES", 0xFFEF4444.toInt()) { fetchPatientSection("allergies") },
+            CommandButton("SHOW MEDS", 0xFFF59E0B.toInt()) { fetchPatientSection("medications") },
+            CommandButton("SHOW LABS", 0xFF06B6D4.toInt()) { fetchPatientSection("labs") },
+            CommandButton("SHOW PROCEDURES", 0xFF84CC16.toInt()) { fetchPatientSection("procedures") },
+            CommandButton("START NOTE", 0xFFFFB800.toInt()) { toggleDocumentationMode() }
+        )
 
-        setContentView(layout)
+        commands.forEachIndexed { index, cmd ->
+            val button = android.widget.Button(this).apply {
+                text = cmd.label
+                setBackgroundColor(cmd.color)
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 16f
+                isAllCaps = true
+                setPadding(16, 32, 16, 32)
+
+                val params = android.widget.GridLayout.LayoutParams().apply {
+                    width = 0
+                    height = 0
+                    columnSpec = android.widget.GridLayout.spec(index % 2, 1f)
+                    rowSpec = android.widget.GridLayout.spec(index / 2, 1f)
+                    setMargins(8, 8, 8, 8)
+                }
+                layoutParams = params
+
+                setOnClickListener { cmd.action() }
+            }
+            gridLayout.addView(button)
+        }
+
+        mainLayout.addView(gridLayout)
+        rootLayout.addView(mainLayout)
+
+        // Hidden patient data overlay (shown when data is loaded)
+        patientDataText = TextView(this) // Hidden placeholder
+
+        setContentView(rootLayout)
+    }
+
+    private data class CommandButton(val label: String, val color: Int, val action: () -> Unit)
+
+    private fun promptFindPatient() {
+        // Start voice recognition for patient name search
+        statusText.text = "Say patient name..."
+        transcriptText.text = "Listening for name"
+        startVoiceRecognition()
+    }
+
+    private fun showDataOverlay(title: String, content: String) {
+        // Remove existing overlay if any
+        dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dataOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            // Title
+            val titleText = TextView(context).apply {
+                text = title
+                textSize = 22f
+                setTextColor(0xFF10B981.toInt())
+                setPadding(0, 0, 0, 16)
+            }
+            innerLayout.addView(titleText)
+
+            // Scrollable content
+            val scrollView = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+            }
+
+            val contentText = TextView(context).apply {
+                text = content
+                textSize = 16f
+                setTextColor(0xFFF8FAFC.toInt())
+                setLineSpacing(4f, 1.2f)
+            }
+            scrollView.addView(contentText)
+            innerLayout.addView(scrollView)
+
+            // Close button
+            val closeButton = android.widget.Button(context).apply {
+                text = "CLOSE (or say 'close')"
+                setBackgroundColor(0xFF475569.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                setPadding(32, 24, 32, 24)
+                setOnClickListener { hideDataOverlay() }
+            }
+            innerLayout.addView(closeButton)
+
+            addView(innerLayout)
+        }
+
+        rootView.addView(dataOverlay)
+        statusText.text = title
+        transcriptText.text = "Say 'close' to dismiss"
+    }
+
+    private fun hideDataOverlay() {
+        dataOverlay?.let { overlay ->
+            (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
+            dataOverlay = null
+        }
+        statusText.text = "MDx Vision"
+        transcriptText.text = "Tap or speak a command"
     }
 
     private fun startBarcodeScanner() {
@@ -171,10 +273,8 @@ class MainActivity : AppCompatActivity() {
         if (isDocumentationMode) {
             // Start documentation mode
             documentationTranscripts.clear()
-            statusText.text = "DOCUMENTING..."
-            transcriptText.text = "Speak to document. Tap 'Start Note' again to generate."
-            patientDataText.text = ""
-            patientDataText.setTextColor(0xFFFFB800.toInt()) // Yellow for documentation
+            statusText.text = "DOCUMENTING"
+            transcriptText.text = "Speak... say 'stop note' to finish"
             startVoiceRecognition()
         } else {
             // End documentation mode - generate note
@@ -189,7 +289,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun generateClinicalNote(transcript: String) {
         statusText.text = "Generating SOAP Note..."
-        patientDataText.text = ""
+        transcriptText.text = "Processing transcript"
 
         Thread {
             try {
@@ -207,9 +307,7 @@ class MainActivity : AppCompatActivity() {
                     override fun onFailure(call: Call, e: IOException) {
                         Log.e(TAG, "Note generation error: ${e.message}")
                         runOnUiThread {
-                            statusText.text = "Note Generation Failed"
-                            patientDataText.text = "Error: ${e.message}"
-                            patientDataText.setTextColor(0xFF10B981.toInt())
+                            showDataOverlay("Note Generation Failed", "Error: ${e.message}")
                         }
                     }
 
@@ -218,14 +316,12 @@ class MainActivity : AppCompatActivity() {
                         Log.d(TAG, "Generated note: $body")
 
                         runOnUiThread {
-                            statusText.text = "SOAP Note Generated"
                             try {
                                 val result = JSONObject(body ?: "{}")
                                 val displayText = result.optString("display_text", "No note generated")
-                                patientDataText.text = displayText
-                                patientDataText.setTextColor(0xFF10B981.toInt())
+                                showDataOverlay("SOAP Note", displayText)
                             } catch (e: Exception) {
-                                patientDataText.text = body ?: "No response"
+                                showDataOverlay("SOAP Note", body ?: "No response")
                             }
                         }
                     }
@@ -233,7 +329,7 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to generate note: ${e.message}")
                 runOnUiThread {
-                    patientDataText.text = "Error: ${e.message}"
+                    showDataOverlay("Error", "Failed: ${e.message}")
                 }
             }
         }.start()
@@ -241,7 +337,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchPatientByMrn(mrn: String) {
         statusText.text = "Looking up MRN..."
-        patientDataText.text = ""
+        transcriptText.text = "Scanning: $mrn"
 
         Thread {
             try {
@@ -255,8 +351,7 @@ class MainActivity : AppCompatActivity() {
                     override fun onFailure(call: Call, e: IOException) {
                         Log.e(TAG, "MRN lookup error: ${e.message}")
                         runOnUiThread {
-                            statusText.text = "Lookup failed"
-                            patientDataText.text = "Error: ${e.message}"
+                            showDataOverlay("Lookup Failed", "Error: ${e.message}")
                         }
                     }
 
@@ -266,17 +361,17 @@ class MainActivity : AppCompatActivity() {
 
                         runOnUiThread {
                             if (response.code == 200) {
-                                statusText.text = "Patient Found!"
                                 try {
                                     val patient = JSONObject(body ?: "{}")
+                                    currentPatientData = patient
+                                    val name = patient.optString("name", "Unknown")
                                     val displayText = patient.optString("display_text", "No data")
-                                    patientDataText.text = displayText
+                                    showDataOverlay("Patient: $name", displayText)
                                 } catch (e: Exception) {
-                                    patientDataText.text = body ?: "No response"
+                                    showDataOverlay("Patient Found", body ?: "No response")
                                 }
                             } else {
-                                statusText.text = "Patient Not Found"
-                                patientDataText.text = "No patient with MRN: $mrn"
+                                showDataOverlay("Not Found", "No patient with MRN: $mrn")
                             }
                         }
                     }
@@ -284,15 +379,18 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "MRN lookup failed: ${e.message}")
                 runOnUiThread {
-                    patientDataText.text = "Error: ${e.message}"
+                    showDataOverlay("Error", "MRN lookup failed: ${e.message}")
                 }
             }
         }.start()
     }
 
+    // Store current patient data for section views
+    private var currentPatientData: JSONObject? = null
+
     private fun fetchPatientData(patientId: String) {
-        statusText.text = "Fetching patient..."
-        patientDataText.text = ""
+        statusText.text = "Loading patient..."
+        transcriptText.text = "Connecting to EHR"
 
         Thread {
             try {
@@ -306,7 +404,7 @@ class MainActivity : AppCompatActivity() {
                         Log.e(TAG, "EHR proxy error: ${e.message}")
                         runOnUiThread {
                             statusText.text = "Connection failed"
-                            patientDataText.text = "Error: ${e.message}"
+                            transcriptText.text = "Error: ${e.message}"
                         }
                     }
 
@@ -315,13 +413,14 @@ class MainActivity : AppCompatActivity() {
                         Log.d(TAG, "Patient data: $body")
 
                         runOnUiThread {
-                            statusText.text = "MDx Vision - Patient Loaded"
                             try {
                                 val patient = JSONObject(body ?: "{}")
+                                currentPatientData = patient
+                                val name = patient.optString("name", "Unknown")
                                 val displayText = patient.optString("display_text", "No data")
-                                patientDataText.text = displayText
+                                showDataOverlay("Patient: $name", displayText)
                             } catch (e: Exception) {
-                                patientDataText.text = body ?: "No response"
+                                showDataOverlay("Error", body ?: "No response")
                             }
                         }
                     }
@@ -329,7 +428,8 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to fetch patient: ${e.message}")
                 runOnUiThread {
-                    patientDataText.text = "Error: ${e.message}"
+                    statusText.text = "Error"
+                    transcriptText.text = e.message ?: "Unknown error"
                 }
             }
         }.start()
@@ -490,7 +590,11 @@ class MainActivity : AppCompatActivity() {
             }
             lower.contains("start note") || lower.contains("start documentation") -> {
                 // Voice command to start documentation
-                toggleDocumentationMode()
+                if (!isDocumentationMode) toggleDocumentationMode()
+            }
+            lower.contains("stop note") || lower.contains("end note") || lower.contains("finish note") -> {
+                // Voice command to stop documentation and generate note
+                if (isDocumentationMode) toggleDocumentationMode()
             }
             lower.contains("scan") || lower.contains("wristband") -> {
                 // Voice command to scan wristband
@@ -516,6 +620,16 @@ class MainActivity : AppCompatActivity() {
                 // Show procedures
                 fetchPatientSection("procedures")
             }
+            lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
+                // Close any open overlay
+                hideDataOverlay()
+            }
+            lower.contains("clear") || lower.contains("reset") -> {
+                // Clear cached patient data
+                currentPatientData = null
+                hideDataOverlay()
+                transcriptText.text = "Patient data cleared"
+            }
             else -> {
                 // Display transcribed text
                 transcriptText.text = "\"$transcript\""
@@ -525,8 +639,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fetchPatientSection(section: String) {
+        // Use cached patient data if available
+        currentPatientData?.let { patient ->
+            val title = section.uppercase().replace("_", " ")
+            val content = when (section) {
+                "vitals" -> formatVitals(patient)
+                "allergies" -> formatAllergies(patient)
+                "medications" -> formatMedications(patient)
+                "labs" -> formatLabs(patient)
+                "procedures" -> formatProcedures(patient)
+                else -> patient.optString("display_text", "No data")
+            }
+            showDataOverlay(title, content)
+            return
+        }
+
+        // If no cached data, fetch fresh
         statusText.text = "Loading ${section}..."
-        patientDataText.text = ""
+        transcriptText.text = "Fetching from EHR"
 
         Thread {
             try {
@@ -540,7 +670,7 @@ class MainActivity : AppCompatActivity() {
                         Log.e(TAG, "Fetch error: ${e.message}")
                         runOnUiThread {
                             statusText.text = "Failed to load"
-                            patientDataText.text = "Error: ${e.message}"
+                            transcriptText.text = "Error: ${e.message}"
                         }
                     }
 
@@ -551,7 +681,9 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             try {
                                 val patient = JSONObject(body ?: "{}")
-                                val display = when (section) {
+                                currentPatientData = patient
+                                val title = section.uppercase().replace("_", " ")
+                                val content = when (section) {
                                     "vitals" -> formatVitals(patient)
                                     "allergies" -> formatAllergies(patient)
                                     "medications" -> formatMedications(patient)
@@ -559,10 +691,9 @@ class MainActivity : AppCompatActivity() {
                                     "procedures" -> formatProcedures(patient)
                                     else -> patient.optString("display_text", "No data")
                                 }
-                                statusText.text = section.uppercase()
-                                patientDataText.text = display
+                                showDataOverlay(title, content)
                             } catch (e: Exception) {
-                                patientDataText.text = "Parse error: ${e.message}"
+                                showDataOverlay("Error", "Parse error: ${e.message}")
                             }
                         }
                     }
