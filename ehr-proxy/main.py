@@ -1320,6 +1320,94 @@ async def get_patient_display(patient_id: str, request: Request):
     return {"patient_id": patient_id, "display": summary.display_text}
 
 
+@app.get("/api/v1/patient/{patient_id}/vital-history")
+async def get_vital_history(patient_id: str, request: Request, count: int = 100):
+    """
+    Get full vital sign history for a patient, grouped by vital type.
+    Returns last N readings for each vital type with timestamps.
+    """
+    # Fetch vitals
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count={count}&_sort=-date")
+
+    # Extract all vitals (not just most recent)
+    vitals_raw = []
+    for entry in vitals_bundle.get("entry", []):
+        obs = entry.get("resource", {})
+
+        # Get vital name
+        code = obs.get("code", {})
+        name = code.get("text", "")
+        if not name:
+            for coding in code.get("coding", []):
+                name = coding.get("display", "")
+                if name:
+                    break
+
+        if not name:
+            continue
+
+        # Get value
+        value = ""
+        unit = ""
+        if "valueQuantity" in obs:
+            value = str(obs["valueQuantity"].get("value", ""))
+            unit = obs["valueQuantity"].get("unit", "")
+        elif "valueString" in obs:
+            value = obs["valueString"]
+
+        # Get date
+        date = obs.get("effectiveDateTime", obs.get("issued", ""))
+
+        # Get interpretation
+        interpretation = ""
+        for interp in obs.get("interpretation", []):
+            for coding in interp.get("coding", []):
+                interpretation = coding.get("display", coding.get("code", ""))
+                if interpretation:
+                    break
+
+        if value:
+            vitals_raw.append({
+                "name": name,
+                "value": value,
+                "unit": unit,
+                "date": date,
+                "interpretation": interpretation
+            })
+
+    # Group by vital name
+    grouped = {}
+    for vital in vitals_raw:
+        name = vital["name"]
+        if name not in grouped:
+            grouped[name] = []
+        grouped[name].append(vital)
+
+    # Sort each group by date (newest first) and limit to 10 readings
+    history = {}
+    for name, readings in grouped.items():
+        readings.sort(key=lambda x: x["date"] or "", reverse=True)
+        history[name] = readings[:10]  # Last 10 readings per vital
+
+    # HIPAA Audit: Log vital history access
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.VIEW_PATIENT,
+        patient_id=patient_id,
+        endpoint="/api/v1/patient/{patient_id}/vital-history",
+        status="success",
+        details=f"vital_types={len(history)}, total_readings={sum(len(v) for v in history.values())}",
+        ip_address=ip_address,
+        user_agent=request.headers.get("User-Agent", "")
+    )
+
+    return {
+        "patient_id": patient_id,
+        "vital_types": len(history),
+        "history": history
+    }
+
+
 @app.get("/api/v1/patient/search", response_model=List[SearchResult])
 async def search_patients(name: str, request: Request):
     """Search patients by name - for voice command 'Find patient...'"""

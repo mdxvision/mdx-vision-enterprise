@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
@@ -4730,6 +4731,217 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // VITAL HISTORY - Historical Vital Sign Display
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Fetch and display vital sign history from EHR
+     */
+    private fun fetchVitalHistory() {
+        val patientId = currentPatientData?.optString("patient_id")
+        if (patientId.isNullOrEmpty()) {
+            speakFeedback("No patient loaded. Load a patient first.")
+            return
+        }
+
+        statusText.text = "Loading vital history..."
+        transcriptText.text = "Fetching from EHR"
+
+        Thread {
+            try {
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/patient/$patientId/vital-history")
+                    .get()
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Vital history fetch error: ${e.message}")
+                        runOnUiThread {
+                            statusText.text = "Failed to load"
+                            transcriptText.text = "Error: ${e.message}"
+                            speakFeedback("Failed to load vital history.")
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "Vital history response: $body")
+
+                        runOnUiThread {
+                            try {
+                                val json = JSONObject(body ?: "{}")
+                                showVitalHistoryOverlay(json)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Parse error: ${e.message}")
+                                showDataOverlay("Error", "Parse error: ${e.message}")
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch vital history: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Display vital history in a timeline format
+     */
+    private fun showVitalHistoryOverlay(historyJson: JSONObject) {
+        val history = historyJson.optJSONObject("history")
+        if (history == null || history.length() == 0) {
+            showDataOverlay("Vital History", "No vital sign history available.")
+            speakFeedback("No vital history found for this patient.")
+            return
+        }
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("📊 VITAL SIGN HISTORY\n")
+        content.append("═══════════════════════════════════\n\n")
+
+        // Define the order we want to display vitals
+        val vitalOrder = listOf(
+            "Blood Pressure",
+            "Systolic Blood Pressure",
+            "Diastolic Blood Pressure",
+            "Heart rate",
+            "Body temperature",
+            "Oxygen saturation",
+            "Respiratory rate",
+            "Body Weight",
+            "Body Height",
+            "BMI"
+        )
+
+        // Track displayed vitals
+        val displayedVitals = mutableSetOf<String>()
+
+        // First, display vitals in preferred order
+        for (vitalName in vitalOrder) {
+            if (history.has(vitalName)) {
+                displayVitalTimeline(content, vitalName, history.getJSONArray(vitalName))
+                displayedVitals.add(vitalName)
+            }
+        }
+
+        // Then display any remaining vitals not in our preferred order
+        val keys = history.keys()
+        while (keys.hasNext()) {
+            val vitalName = keys.next()
+            if (vitalName !in displayedVitals) {
+                displayVitalTimeline(content, vitalName, history.getJSONArray(vitalName))
+            }
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("📅 Last ${historyJson.optInt("vital_types", 0)} vital types shown")
+
+        showDataOverlay("Vital History", content.toString())
+
+        // Provide TTS summary
+        val vitalCount = historyJson.optInt("vital_types", 0)
+        speakFeedback("Showing history for $vitalCount vital types.")
+    }
+
+    /**
+     * Display a single vital's timeline with trend indicators
+     */
+    private fun displayVitalTimeline(sb: StringBuilder, vitalName: String, readings: JSONArray) {
+        if (readings.length() == 0) return
+
+        // Get emoji for vital type
+        val emoji = when {
+            vitalName.contains("Blood Pressure", ignoreCase = true) -> "🩸"
+            vitalName.contains("Heart", ignoreCase = true) || vitalName.contains("Pulse", ignoreCase = true) -> "💓"
+            vitalName.contains("Temperature", ignoreCase = true) -> "🌡️"
+            vitalName.contains("Oxygen", ignoreCase = true) || vitalName.contains("SpO2", ignoreCase = true) -> "🫁"
+            vitalName.contains("Respiratory", ignoreCase = true) -> "💨"
+            vitalName.contains("Weight", ignoreCase = true) -> "⚖️"
+            vitalName.contains("Height", ignoreCase = true) -> "📏"
+            vitalName.contains("BMI", ignoreCase = true) -> "📊"
+            else -> "•"
+        }
+
+        sb.append("$emoji $vitalName\n")
+        sb.append("───────────────────────────────────\n")
+
+        var previousValue: Double? = null
+
+        for (i in 0 until readings.length()) {
+            val reading = readings.getJSONObject(i)
+            val value = reading.optString("value", "N/A")
+            val unit = reading.optString("unit", "")
+            val dateStr = reading.optString("date", "")
+            val interpretation = reading.optString("interpretation", "")
+
+            // Parse numeric value for trend calculation
+            val numericValue = value.replace(Regex("[^0-9.-]"), "").toDoubleOrNull()
+
+            // Calculate trend indicator
+            val trendIcon = if (numericValue != null && previousValue != null) {
+                val diff = numericValue - previousValue
+                when {
+                    diff > 0 -> "↗️"
+                    diff < 0 -> "↘️"
+                    else -> "→"
+                }
+            } else if (i == 0) {
+                "🆕"  // Most recent
+            } else {
+                ""
+            }
+
+            // Format date to be more readable
+            val formattedDate = formatVitalDate(dateStr)
+
+            // Interpretation indicator
+            val interpIndicator = when (interpretation) {
+                "HH" -> "‼️"
+                "LL" -> "‼️"
+                "H" -> "↑"
+                "L" -> "↓"
+                else -> ""
+            }
+
+            // Build the reading line
+            sb.append("  $trendIcon $value $unit $interpIndicator")
+            if (formattedDate.isNotEmpty()) {
+                sb.append(" ($formattedDate)")
+            }
+            sb.append("\n")
+
+            previousValue = numericValue
+        }
+
+        sb.append("\n")
+    }
+
+    /**
+     * Format FHIR date string to readable format
+     */
+    private fun formatVitalDate(dateStr: String): String {
+        if (dateStr.isEmpty()) return ""
+
+        try {
+            // Parse ISO date format (e.g., "2024-12-29T10:30:00Z" or "2024-12-29")
+            val inputFormat = if (dateStr.contains("T")) {
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+            } else {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            }
+            val outputFormat = java.text.SimpleDateFormat("MMM d", java.util.Locale.US)
+
+            val date = inputFormat.parse(dateStr.substringBefore("Z").substringBefore("+"))
+            return date?.let { outputFormat.format(it) } ?: dateStr.substring(0, minOf(10, dateStr.length))
+        } catch (e: Exception) {
+            // Return first 10 chars if parsing fails
+            return dateStr.substring(0, minOf(10, dateStr.length))
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // ENCOUNTER TIMER - Timer Control Functions
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -5067,6 +5279,7 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Height 5 foot 10" - Record height
             |• "Pain 5 out of 10" - Record pain level
             |• "Show captured vitals" - View all vitals
+            |• "Vital history" - View past readings
             |• "Add vitals to note" - Insert into note
             |• "Clear vitals" - Remove all captured
             |
@@ -7522,6 +7735,13 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             lower.contains("add vital") && lower.contains("note") ||
             lower.contains("insert vital") || lower.contains("vitals to note") -> {
                 addVitalsToNote()
+            }
+            // Vital history: "vital history", "show vital history", "past vitals", "vitals over time"
+            lower.contains("vital history") || lower.contains("vitals history") ||
+            lower.contains("past vital") || lower.contains("vitals over time") ||
+            lower.contains("previous vital") || lower.contains("historical vital") ||
+            (lower.contains("history") && lower.contains("vital")) -> {
+                fetchVitalHistory()
             }
             // Vital entry: "BP 120 over 80", "pulse 72", "temp 98.6", etc.
             isVitalEntry(lower) -> {

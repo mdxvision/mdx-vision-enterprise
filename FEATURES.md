@@ -216,6 +216,12 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Stop timer" / "End encounter" | Done |
 | [x] "How long" / "Check timer" | Done |
 | [x] "Reset timer" | Done |
+| [x] "BP 120 over 80" - Capture blood pressure | Done |
+| [x] "Pulse 72" - Capture heart rate | Done |
+| [x] "Show captured vitals" | Done |
+| [x] "Add vitals to note" | Done |
+| [x] "Clear vitals" | Done |
+| [x] "Vital history" / "Past vitals" | Done |
 
 ---
 
@@ -275,6 +281,7 @@ Based on US Patent 15/237,980 and product requirements.
 37. ~~**Encounter Timer**~~ - Done (Track time spent with patients, voice commands to start/stop/check/reset, visual indicator, auto-include in notes)
 38. ~~**Order Sets**~~ - Done (12 clinical order bundles: chest pain, sepsis, stroke, CHF, COPD, DKA, PE, pneumonia, UTI, abdominal pain, admission labs, preop labs)
 39. ~~**Voice Vitals Entry**~~ - Done (Capture vitals by voice: BP, HR, Temp, O2, RR, Weight, Height, Pain; range validation; critical value warnings; add to notes)
+40. ~~**Vital History Display**~~ - Done (View historical vital readings timeline, "vital history" voice command, last 10 readings per vital type with trend icons and dates)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
