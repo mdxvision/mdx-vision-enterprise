@@ -6273,6 +6273,12 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Tell me about patient" - Spoken briefing
             |• "Stop talking" - Stop speech
             |
+            |📋 SBAR HANDOFF
+            |• "Handoff report" - Generate SBAR report
+            |• "SBAR" - Show handoff report
+            |• "Read handoff" - Speak handoff aloud
+            |• "Give handoff" - Verbal SBAR report
+            |
             |📝 DOCUMENTATION
             |• "Start note" - Begin documentation
             |• "Live transcribe" - Real-time transcription
@@ -9004,6 +9010,17 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             lower.contains("show summary") || lower.contains("overview") -> {
                 // Show visual summary (no TTS)
                 showQuickPatientSummary()
+            }
+            // SBAR Handoff report commands
+            lower.contains("handoff report") || lower.contains("hand off report") || lower.contains("sbar report") ||
+            lower.contains("sbar") || lower.contains("shift report") || lower.contains("handoff") -> {
+                // Generate visual SBAR handoff report
+                generateHandoffReport()
+            }
+            lower.contains("read handoff") || lower.contains("speak handoff") || lower.contains("tell me handoff") ||
+            lower.contains("verbal handoff") || lower.contains("give handoff") -> {
+                // Speak SBAR handoff report aloud
+                speakHandoffReport()
             }
             lower.contains("stop talking") || lower.contains("stop speaking") || lower.contains("be quiet") || lower.contains("quiet") -> {
                 // Stop any ongoing TTS
