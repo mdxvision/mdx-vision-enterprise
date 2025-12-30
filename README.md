@@ -149,6 +149,15 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Section Aliases**: Recognizes "chief complaint", "diagnosis", "impression", etc.
 - **TTS Feedback**: Confirms each edit action spoken aloud
 
+### Voice Navigation (NEW)
+- **Scroll Control**: "Scroll down", "Scroll up", "Page down", "Page up"
+- **Position Control**: "Go to top", "Go to bottom", "Top of page"
+- **Section Jump**: "Go to assessment", "Jump to plan", "Navigate to subjective"
+- **Section Focus**: "Show plan only", "Show assessment only" - isolate single section
+- **Read Back**: "Read assessment", "Read the plan" - TTS reads section aloud
+- **Full Read**: "Read note", "Read entire note" - TTS reads complete note
+- **Hands-Free Navigation**: Navigate and review notes without touching device
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

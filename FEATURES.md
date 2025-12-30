@@ -192,6 +192,13 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Insert normal exam/vitals" | Done |
 | [x] "Insert follow up" | Done |
 | [x] "Undo" | Done |
+| [x] "Scroll down" / "Page down" | Done |
+| [x] "Scroll up" / "Page up" | Done |
+| [x] "Go to top" / "Go to bottom" | Done |
+| [x] "Go to [section]" - Jump to section | Done |
+| [x] "Show [section] only" | Done |
+| [x] "Read [section]" - TTS read-back | Done |
+| [x] "Read note" - Read entire note | Done |
 
 ---
 
@@ -244,6 +251,7 @@ Based on US Patent 15/237,980 and product requirements.
 30. ~~**Patient Search History**~~ - Done (Recently viewed patients list, quick load by number, voice commands, relative timestamps)
 31. ~~**Session Timeout**~~ - Done (HIPAA compliance auto-lock after inactivity, configurable timeout, voice commands, lock screen overlay)
 32. ~~**Voice Note Editing**~~ - Done (Voice commands to edit notes: change/add to sections, delete, insert macros, undo with 10-level history)
+33. ~~**Voice Navigation**~~ - Done (Scroll up/down, go to top/bottom, jump to sections, show section only, read sections/note aloud via TTS)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

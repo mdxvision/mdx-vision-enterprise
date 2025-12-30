@@ -172,6 +172,10 @@ Neuro: Grossly intact""",
         "hypertension_followup" to "Continue current antihypertensive medications. Monitor blood pressure at home. Low sodium diet. Return in 1 month for BP check."
     )
 
+    // Voice navigation - track current active scroll view for scroll commands
+    private var currentScrollView: android.widget.ScrollView? = null
+    private var currentContentText: TextView? = null  // For read-back
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -401,6 +405,10 @@ Neuro: Grossly intact""",
             scrollView.addView(contentText)
             innerLayout.addView(scrollView)
 
+            // Track for voice navigation
+            currentScrollView = scrollView
+            currentContentText = contentText
+
             // Close button
             val closeButton = android.widget.Button(context).apply {
                 text = "CLOSE (or say 'close')"
@@ -416,7 +424,7 @@ Neuro: Grossly intact""",
 
         rootView.addView(dataOverlay)
         statusText.text = title
-        transcriptText.text = "Say 'close' to dismiss"
+        transcriptText.text = "Say 'close' or navigate with 'scroll up/down'"
     }
 
     /**
@@ -509,6 +517,10 @@ Neuro: Grossly intact""",
             scrollView.addView(contentText)
             innerLayout.addView(scrollView)
 
+            // Track for voice navigation
+            currentScrollView = scrollView
+            currentContentText = contentText
+
             // Close button
             val closeButton = android.widget.Button(context).apply {
                 text = "CLOSE (or say 'close')"
@@ -524,7 +536,7 @@ Neuro: Grossly intact""",
 
         rootView.addView(dataOverlay)
         statusText.text = "Patient: $name"
-        transcriptText.text = "Say 'close' to dismiss"
+        transcriptText.text = "Say 'close' or navigate with 'scroll up/down'"
     }
 
     /**
@@ -603,6 +615,9 @@ Neuro: Grossly intact""",
             (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
             dataOverlay = null
         }
+        // Clear voice navigation tracking
+        currentScrollView = null
+        currentContentText = null
         statusText.text = "MDx Vision"
         transcriptText.text = "Tap or speak a command"
     }
@@ -1263,6 +1278,9 @@ Neuro: Grossly intact""",
             scrollView.addView(noteEditText)
             innerLayout.addView(scrollView)
 
+            // Track for voice navigation
+            currentScrollView = scrollView
+
             // Button row with Edit actions, Save, and Close
             val buttonRow = android.widget.LinearLayout(context).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
@@ -1745,6 +1763,230 @@ Neuro: Grossly intact""",
         return null
     }
 
+    // ============ Voice Navigation Functions ============
+
+    /**
+     * Scroll the current view down by a page.
+     */
+    private fun scrollDown() {
+        val scrollView = currentScrollView ?: liveTranscriptScrollView
+        if (scrollView == null) {
+            Toast.makeText(this, "Nothing to scroll", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        scrollView.post {
+            val scrollAmount = scrollView.height * 3 / 4  // Scroll 75% of visible height
+            scrollView.smoothScrollBy(0, scrollAmount)
+        }
+        speakFeedback("Scrolling down")
+        Log.d(TAG, "Voice navigation: scroll down")
+    }
+
+    /**
+     * Scroll the current view up by a page.
+     */
+    private fun scrollUp() {
+        val scrollView = currentScrollView ?: liveTranscriptScrollView
+        if (scrollView == null) {
+            Toast.makeText(this, "Nothing to scroll", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        scrollView.post {
+            val scrollAmount = scrollView.height * 3 / 4  // Scroll 75% of visible height
+            scrollView.smoothScrollBy(0, -scrollAmount)
+        }
+        speakFeedback("Scrolling up")
+        Log.d(TAG, "Voice navigation: scroll up")
+    }
+
+    /**
+     * Scroll to the top of the current view.
+     */
+    private fun scrollToTop() {
+        val scrollView = currentScrollView ?: liveTranscriptScrollView
+        if (scrollView == null) {
+            Toast.makeText(this, "Nothing to scroll", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        scrollView.post {
+            scrollView.smoothScrollTo(0, 0)
+        }
+        speakFeedback("Top of page")
+        transcriptText.text = "Scrolled to top"
+        Log.d(TAG, "Voice navigation: scroll to top")
+    }
+
+    /**
+     * Scroll to the bottom of the current view.
+     */
+    private fun scrollToBottom() {
+        val scrollView = currentScrollView ?: liveTranscriptScrollView
+        if (scrollView == null) {
+            Toast.makeText(this, "Nothing to scroll", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        scrollView.post {
+            scrollView.fullScroll(android.view.View.FOCUS_DOWN)
+        }
+        speakFeedback("Bottom of page")
+        transcriptText.text = "Scrolled to bottom"
+        Log.d(TAG, "Voice navigation: scroll to bottom")
+    }
+
+    /**
+     * Navigate to a specific section in the note (scroll to section header).
+     */
+    private fun goToSection(section: String) {
+        val content = editableNoteContent ?: currentContentText?.text?.toString()
+        if (content == null) {
+            Toast.makeText(this, "No content to navigate", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val scrollView = currentScrollView ?: liveTranscriptScrollView
+        val textView = noteEditText ?: currentContentText
+        if (scrollView == null || textView == null) {
+            Toast.makeText(this, "Cannot navigate", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Find section header in content
+        val sectionPattern = when (section) {
+            "subjective" -> Regex("(?:▸ S:|S:|SUBJECTIVE:)", RegexOption.IGNORE_CASE)
+            "objective" -> Regex("(?:▸ O:|O:|OBJECTIVE:)", RegexOption.IGNORE_CASE)
+            "assessment" -> Regex("(?:▸ A:|A:|ASSESSMENT:)", RegexOption.IGNORE_CASE)
+            "plan" -> Regex("(?:▸ P:|P:|PLAN:)", RegexOption.IGNORE_CASE)
+            else -> {
+                Toast.makeText(this, "Unknown section: $section", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+
+        val match = sectionPattern.find(content)
+        if (match == null) {
+            Toast.makeText(this, "Section not found: $section", Toast.LENGTH_SHORT).show()
+            speakFeedback("Section not found")
+            return
+        }
+
+        // Calculate scroll position based on character offset
+        val charOffset = match.range.first
+        val layout = textView.layout
+
+        if (layout != null) {
+            val line = layout.getLineForOffset(charOffset)
+            val yPosition = layout.getLineTop(line)
+
+            scrollView.post {
+                scrollView.smoothScrollTo(0, yPosition)
+            }
+
+            val sectionName = section.replaceFirstChar { it.uppercase() }
+            speakFeedback("$sectionName section")
+            transcriptText.text = "Navigated to $sectionName"
+            Log.d(TAG, "Voice navigation: go to $section at line $line")
+        } else {
+            // Fallback: just scroll to approximate position
+            val approximatePosition = (charOffset.toFloat() / content.length * scrollView.getChildAt(0).height).toInt()
+            scrollView.post {
+                scrollView.smoothScrollTo(0, approximatePosition)
+            }
+            speakFeedback("$section section")
+            Log.d(TAG, "Voice navigation: go to $section (approximate)")
+        }
+    }
+
+    /**
+     * Read back a specific section of the note using TTS.
+     */
+    private fun readSection(section: String) {
+        val content = editableNoteContent ?: currentContentText?.text?.toString()
+        if (content == null) {
+            Toast.makeText(this, "No content to read", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Extract section content
+        val sectionContent = extractSectionContent(content, section)
+        if (sectionContent.isNullOrEmpty()) {
+            Toast.makeText(this, "Section not found: $section", Toast.LENGTH_SHORT).show()
+            speakFeedback("Section not found")
+            return
+        }
+
+        val sectionName = section.replaceFirstChar { it.uppercase() }
+        transcriptText.text = "Reading $sectionName..."
+
+        // Speak the section content
+        textToSpeech?.speak("$sectionName. $sectionContent", TextToSpeech.QUEUE_FLUSH, null, "read_section")
+        Log.d(TAG, "Voice navigation: reading $section section")
+    }
+
+    /**
+     * Extract the content of a specific section from the note.
+     */
+    private fun extractSectionContent(content: String, section: String): String? {
+        // Define patterns for section boundaries
+        val sectionPatterns = mapOf(
+            "subjective" to Regex("(?:▸ S:|S:|SUBJECTIVE:?)\\s*(.+?)(?=(?:\\n▸ [OAP]:|\\n[OAP]:|\\nOBJECTIVE:|\\nASSESSMENT:|\\nPLAN:|$))", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)),
+            "objective" to Regex("(?:▸ O:|O:|OBJECTIVE:?)\\s*(.+?)(?=(?:\\n▸ [AP]:|\\n[AP]:|\\nASSESSMENT:|\\nPLAN:|$))", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)),
+            "assessment" to Regex("(?:▸ A:|A:|ASSESSMENT:?)\\s*(.+?)(?=(?:\\n▸ P:|\\nP:|\\nPLAN:|$))", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)),
+            "plan" to Regex("(?:▸ P:|P:|PLAN:?)\\s*(.+?)(?=(?:\\n▸|\\n═|$))", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+        )
+
+        val pattern = sectionPatterns[section] ?: return null
+        val match = pattern.find(content)
+        return match?.groupValues?.getOrNull(1)?.trim()
+    }
+
+    /**
+     * Read the entire note using TTS.
+     */
+    private fun readEntireNote() {
+        val content = editableNoteContent ?: currentContentText?.text?.toString()
+        if (content == null) {
+            Toast.makeText(this, "No content to read", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        transcriptText.text = "Reading note..."
+
+        // Clean up the content for speech (remove decorative characters)
+        val cleanContent = content
+            .replace("▸", "")
+            .replace("═", "")
+            .replace(Regex("─+"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        textToSpeech?.speak(cleanContent, TextToSpeech.QUEUE_FLUSH, null, "read_note")
+        Log.d(TAG, "Voice navigation: reading entire note")
+    }
+
+    /**
+     * Show only a specific section of the note (hide others).
+     */
+    private fun showSectionOnly(section: String) {
+        val content = editableNoteContent ?: return
+
+        val sectionContent = extractSectionContent(content, section)
+        if (sectionContent.isNullOrEmpty()) {
+            Toast.makeText(this, "Section not found: $section", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sectionName = section.replaceFirstChar { it.uppercase() }
+        val displayContent = "▸ ${sectionName.first()}:\n$sectionContent"
+
+        showDataOverlay("$sectionName Section", displayContent)
+        speakFeedback("$sectionName only")
+        Log.d(TAG, "Voice navigation: showing $section only")
+    }
+
     private fun showVoiceCommandHelp() {
         val helpText = """
             |🎤 VOICE COMMANDS
@@ -1802,6 +2044,16 @@ Neuro: Grossly intact""",
             |• "Insert normal exam" - Add normal exam
             |• "Insert follow up" - Add follow-up text
             |• "Undo" - Undo last change
+            |
+            |🧭 VOICE NAVIGATION
+            |• "Scroll down" / "Page down" - Scroll down
+            |• "Scroll up" / "Page up" - Scroll up
+            |• "Go to top" - Scroll to top
+            |• "Go to bottom" - Scroll to bottom
+            |• "Go to [section]" - Jump to section
+            |• "Show [section] only" - Show one section
+            |• "Read [section]" - Read section aloud
+            |• "Read note" - Read entire note aloud
             |
             |📤 OFFLINE DRAFTS
             |• "Show drafts" - View pending drafts
@@ -4206,6 +4458,52 @@ Neuro: Grossly intact""",
                     val index = match.groupValues[1].toIntOrNull() ?: 0
                     loadPatientFromHistory(index)
                 }
+            }
+            // Voice Navigation Commands
+            lower.contains("scroll down") || lower.contains("page down") || lower.contains("next page") -> {
+                scrollDown()
+            }
+            lower.contains("scroll up") || lower.contains("page up") || lower.contains("previous page") -> {
+                scrollUp()
+            }
+            lower.contains("go to top") || lower.contains("scroll to top") || lower.contains("top of page") -> {
+                scrollToTop()
+            }
+            lower.contains("go to bottom") || lower.contains("scroll to bottom") || lower.contains("bottom of page") -> {
+                scrollToBottom()
+            }
+            (lower.contains("go to") || lower.contains("jump to") || lower.contains("navigate to")) &&
+                (lower.contains("subjective") || lower.contains("objective") ||
+                 lower.contains("assessment") || lower.contains("plan") ||
+                 lower.contains("chief complaint")) -> {
+                // Navigate to specific section: "go to assessment", "jump to plan"
+                val section = extractSectionFromCommand(lower)
+                if (section != null) {
+                    goToSection(section)
+                }
+            }
+            lower.contains("show") && lower.contains("only") &&
+                (lower.contains("subjective") || lower.contains("objective") ||
+                 lower.contains("assessment") || lower.contains("plan")) -> {
+                // Show only one section: "show plan only", "show assessment only"
+                val section = extractSectionFromCommand(lower)
+                if (section != null) {
+                    showSectionOnly(section)
+                }
+            }
+            (lower.contains("read") || lower.contains("read back") || lower.contains("say")) &&
+                (lower.contains("subjective") || lower.contains("objective") ||
+                 lower.contains("assessment") || lower.contains("plan") ||
+                 lower.contains("chief complaint")) -> {
+                // Read a section aloud: "read assessment", "read back the plan"
+                val section = extractSectionFromCommand(lower)
+                if (section != null) {
+                    readSection(section)
+                }
+            }
+            lower.contains("read note") || lower.contains("read entire note") || lower.contains("read the note") || lower.contains("read all") -> {
+                // Read entire note aloud
+                readEntireNote()
             }
             // Offline note drafts voice commands
             lower.contains("sync notes") || lower.contains("sync drafts") || lower.contains("upload drafts") -> {
