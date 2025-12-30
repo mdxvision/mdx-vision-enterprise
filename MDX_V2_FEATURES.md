@@ -132,9 +132,11 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Summary generation | Done | In SOAP note |
 | [x] ICD-10 codes included | Done | Up to 5 codes |
 | [x] CPT codes included | Done | Up to 5 codes |
-| [ ] Patient instructions | Pending | Discharge summary |
-| [ ] Follow-up scheduling | Pending | Appointment link |
-| [ ] Prescription summary | Pending | Med list |
+| [x] Patient instructions | Done | `generateDischargeSummary()` |
+| [x] Follow-up scheduling | Done | Care plans + pending orders in discharge |
+| [x] Prescription summary | Done | Meds + new prescriptions in discharge |
+| [x] Return precautions | Done | ER warning signs in discharge |
+| [x] Spoken instructions | Done | `speakDischargeInstructions()` TTS |
 
 ---
 
@@ -213,6 +215,10 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Generate note" / "Looks good" | Done | Generate from preview |
 | [x] "Re-record" / "Try again" | Done | Restart transcription |
 | [x] "Speech feedback" / "Toggle feedback" | Done | Toggle voice confirmations |
+| [x] "Handoff report" / "SBAR" | Done | Generate SBAR handoff report |
+| [x] "Read handoff" / "Speak handoff" | Done | TTS speaks handoff aloud |
+| [x] "Discharge summary" / "Discharge instructions" | Done | Generate discharge summary |
+| [x] "Read discharge" / "Patient education" | Done | TTS speaks instructions to patient |
 
 ### Session & History Commands
 | Command | Status | Function |

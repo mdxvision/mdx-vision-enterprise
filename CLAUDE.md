@@ -297,13 +297,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 48. **Custom Voice Commands** - Create user-defined command macros; "create command [name] that does [actions]", "when I say [phrase] do [action]", "teach [name] to [actions]"; chain multiple actions with "then"/"and"; "my commands" to list, "delete command" to remove; persistent storage
 49. **Medical Calculator** - Voice-activated clinical calculations; auto-pull values from patient chart; BMI, eGFR (CKD-EPI 2021), corrected calcium, anion gap, A1c↔glucose, MAP, CrCl (Cockcroft-Gault), CHADS₂-VASc; interpretations and clinical ranges included
 50. **SBAR Handoff Report** - Structured shift handoff reports; SBAR format (Situation, Background, Assessment, Recommendation); visual display + TTS spoken report; includes critical vitals, allergies, meds, pending orders, care plans; voice commands ("handoff report", "speak handoff", "SBAR")
+51. **Discharge Summary** - Patient discharge instructions with diagnoses, medications (current + new prescriptions), allergy warnings, follow-up instructions (care plans, pending labs/imaging), return precautions, activity/diet guidance; TTS spoken instructions for patient education; voice commands ("discharge summary", "read discharge", "patient education")
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 50 features implemented |
+| All medium effort items completed! | 51 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

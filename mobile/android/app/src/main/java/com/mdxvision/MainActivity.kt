@@ -6279,6 +6279,12 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Read handoff" - Speak handoff aloud
             |• "Give handoff" - Verbal SBAR report
             |
+            |📄 DISCHARGE SUMMARY
+            |• "Discharge summary" - Generate summary
+            |• "Discharge instructions" - Patient instructions
+            |• "Read discharge" - Speak to patient
+            |• "Patient education" - Verbal instructions
+            |
             |📝 DOCUMENTATION
             |• "Start note" - Begin documentation
             |• "Live transcribe" - Real-time transcription
@@ -6934,6 +6940,195 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
 
         // Show visual report too
         generateHandoffReport()
+
+        // Speak
+        speak(speech.toString())
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DISCHARGE SUMMARY - Patient discharge instructions
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Generate and display discharge summary with instructions
+     */
+    private fun generateDischargeSummary() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speakFeedback("No patient loaded. Load a patient first for discharge summary.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val dob = patient.optString("date_of_birth", "")
+        val patientId = patient.optString("patient_id", "")
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("📄 DISCHARGE SUMMARY\n")
+        content.append("═══════════════════════════════════\n\n")
+
+        // Header
+        content.append("👤 $name")
+        if (dob.isNotEmpty()) content.append(" | DOB: $dob")
+        content.append("\n")
+        if (patientId.isNotEmpty()) content.append("MRN: $patientId\n")
+        content.append("Date: ${java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).format(java.util.Date())}\n")
+        content.append("\n")
+
+        // DIAGNOSIS
+        content.append("▸ DIAGNOSIS\n")
+        content.append("───────────────────────────────────\n")
+        val conditions = patient.optJSONArray("conditions")
+        if (conditions != null && conditions.length() > 0) {
+            for (i in 0 until minOf(conditions.length(), 5)) {
+                val cond = conditions.getJSONObject(i)
+                content.append("• ${cond.optString("name", "")}\n")
+            }
+        } else {
+            content.append("• See provider notes\n")
+        }
+        content.append("\n")
+
+        // MEDICATIONS
+        content.append("▸ MEDICATIONS TO TAKE\n")
+        content.append("───────────────────────────────────\n")
+        val meds = patient.optJSONArray("medications")
+        if (meds != null && meds.length() > 0) {
+            for (i in 0 until meds.length()) {
+                content.append("💊 ${meds.getString(i)}\n")
+            }
+        } else {
+            content.append("• No medications prescribed\n")
+        }
+
+        // Include pending orders as new prescriptions
+        val newMeds = pendingOrders.filter { it.category == "medication" }
+        if (newMeds.isNotEmpty()) {
+            content.append("\n📋 NEW PRESCRIPTIONS:\n")
+            for (med in newMeds) {
+                content.append("💊 ${med.displayName}\n")
+            }
+        }
+        content.append("\n")
+
+        // ALLERGIES WARNING
+        val allergies = patient.optJSONArray("allergies")
+        if (allergies != null && allergies.length() > 0) {
+            content.append("▸ ⚠️ ALLERGIES\n")
+            content.append("───────────────────────────────────\n")
+            for (i in 0 until allergies.length()) {
+                content.append("🚫 ${allergies.getString(i)}\n")
+            }
+            content.append("\n")
+        }
+
+        // FOLLOW-UP INSTRUCTIONS
+        content.append("▸ FOLLOW-UP\n")
+        content.append("───────────────────────────────────\n")
+        val carePlans = patient.optJSONArray("care_plans")
+        if (carePlans != null && carePlans.length() > 0) {
+            for (i in 0 until minOf(carePlans.length(), 3)) {
+                val plan = carePlans.getJSONObject(i)
+                content.append("• ${plan.optString("title", "Follow care plan")}\n")
+            }
+        }
+
+        // Pending labs/imaging as follow-up
+        val pendingLabs = pendingOrders.filter { it.category == "lab" }
+        val pendingImaging = pendingOrders.filter { it.category == "imaging" }
+        if (pendingLabs.isNotEmpty()) {
+            content.append("• Complete lab work: ${pendingLabs.joinToString(", ") { it.displayName }}\n")
+        }
+        if (pendingImaging.isNotEmpty()) {
+            content.append("• Complete imaging: ${pendingImaging.joinToString(", ") { it.displayName }}\n")
+        }
+
+        // Default follow-up
+        content.append("• Follow up with your provider as directed\n")
+        content.append("• Call if symptoms worsen\n")
+        content.append("\n")
+
+        // RETURN PRECAUTIONS
+        content.append("▸ WHEN TO SEEK CARE\n")
+        content.append("───────────────────────────────────\n")
+        content.append("Return to ER or call 911 if:\n")
+        content.append("• Difficulty breathing\n")
+        content.append("• Chest pain\n")
+        content.append("• Severe pain not relieved by medication\n")
+        content.append("• High fever (>101.5°F)\n")
+        content.append("• Confusion or altered mental status\n")
+        content.append("• Signs of infection (redness, swelling, pus)\n")
+        content.append("\n")
+
+        // ACTIVITY & DIET
+        content.append("▸ ACTIVITY & DIET\n")
+        content.append("───────────────────────────────────\n")
+        content.append("• Resume normal activities as tolerated\n")
+        content.append("• Stay hydrated\n")
+        content.append("• Follow dietary restrictions if prescribed\n")
+        content.append("\n")
+
+        content.append("───────────────────────────────────\n")
+        content.append("Questions? Call your provider's office\n")
+        content.append("Generated: ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}")
+
+        showDataOverlay("Discharge Summary", content.toString())
+        speakFeedback("Discharge summary ready for $name")
+    }
+
+    /**
+     * Speak discharge instructions aloud for patient education
+     */
+    private fun speakDischargeInstructions() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speak("No patient loaded for discharge instructions.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val speech = StringBuilder()
+
+        speech.append("Discharge instructions for $name. ")
+
+        // Diagnosis
+        val conditions = patient.optJSONArray("conditions")
+        if (conditions != null && conditions.length() > 0) {
+            val primary = conditions.getJSONObject(0).optString("name", "")
+            speech.append("You were seen for $primary. ")
+        }
+
+        // Medications
+        val meds = patient.optJSONArray("medications")
+        if (meds != null && meds.length() > 0) {
+            speech.append("Continue taking your ${meds.length()} medications as prescribed. ")
+        }
+
+        // New prescriptions
+        val newMeds = pendingOrders.filter { it.category == "medication" }
+        if (newMeds.isNotEmpty()) {
+            speech.append("You have ${newMeds.size} new prescriptions. ")
+        }
+
+        // Allergies reminder
+        val allergies = patient.optJSONArray("allergies")
+        if (allergies != null && allergies.length() > 0) {
+            speech.append("Remember, you are allergic to ${allergies.getString(0)}. ")
+        }
+
+        // Follow-up
+        val pendingLabs = pendingOrders.filter { it.category == "lab" }
+        if (pendingLabs.isNotEmpty()) {
+            speech.append("You need to complete lab work. ")
+        }
+
+        speech.append("Follow up with your provider as directed. ")
+        speech.append("Return to the emergency room if you have difficulty breathing, chest pain, or your symptoms get worse. ")
+        speech.append("End of discharge instructions.")
+
+        // Show visual too
+        generateDischargeSummary()
 
         // Speak
         speak(speech.toString())
@@ -9021,6 +9216,17 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             lower.contains("verbal handoff") || lower.contains("give handoff") -> {
                 // Speak SBAR handoff report aloud
                 speakHandoffReport()
+            }
+            // Discharge summary commands
+            lower.contains("discharge summary") || lower.contains("discharge instructions") ||
+            lower.contains("discharge") || lower.contains("patient instructions") -> {
+                // Generate visual discharge summary
+                generateDischargeSummary()
+            }
+            lower.contains("read discharge") || lower.contains("speak discharge") || lower.contains("explain discharge") ||
+            lower.contains("tell patient") || lower.contains("patient education") -> {
+                // Speak discharge instructions aloud
+                speakDischargeInstructions()
             }
             lower.contains("stop talking") || lower.contains("stop speaking") || lower.contains("be quiet") || lower.contains("quiet") -> {
                 // Stop any ongoing TTS

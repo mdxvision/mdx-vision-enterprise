@@ -238,6 +238,16 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Comprehensive**: Includes critical vitals, allergies, meds, pending orders, care plans
 - **Voice Commands**: "Handoff report", "Speak handoff", "SBAR"
 
+### Discharge Summary (NEW)
+- **Patient Instructions**: Complete discharge documentation with diagnoses and medications
+- **Medication List**: Current medications + new prescriptions from pending orders
+- **Allergy Warnings**: Prominent display of patient allergies for safety
+- **Follow-Up**: Care plans, pending labs/imaging, provider follow-up reminders
+- **Return Precautions**: When to seek emergency care (breathing, chest pain, fever, etc.)
+- **Activity & Diet**: Standard guidance for post-encounter care
+- **Spoken Instructions**: TTS reads discharge instructions aloud for patient education
+- **Voice Commands**: "Discharge summary", "Read discharge", "Patient education"
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

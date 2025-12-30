@@ -238,6 +238,8 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Calculators" / "Show calculators" | Done |
 | [x] "Handoff report" / "SBAR" | Done |
 | [x] "Speak handoff" | Done |
+| [x] "Discharge summary" / "Discharge instructions" | Done |
+| [x] "Read discharge" / "Patient education" | Done |
 
 ---
 
@@ -301,6 +303,7 @@ Based on US Patent 15/237,980 and product requirements.
 41. ~~**Custom Voice Commands**~~ - Done (Create user-defined command macros, chain actions with "then"/"and", "create command", "teach", "when I say", "my commands", "delete command")
 42. ~~**Medical Calculator**~~ - Done (Voice-activated clinical calcs: BMI, eGFR, corrected calcium, anion gap, A1c↔glucose, MAP, CrCl, CHADS₂-VASc; auto-pulls from patient chart)
 43. ~~**SBAR Handoff Report**~~ - Done (Structured shift handoff, SBAR format, visual + TTS spoken report, includes critical vitals/allergies/meds/orders/care plans)
+44. ~~**Discharge Summary**~~ - Done (Patient instructions: diagnoses, medications, allergy warnings, follow-up, return precautions, activity/diet; TTS spoken for patient education)
 
 ### Upcoming
 1. **Epic/Veradigm Integration** - Needs live credentials
