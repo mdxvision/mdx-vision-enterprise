@@ -6285,6 +6285,33 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Read discharge" - Speak to patient
             |• "Patient education" - Verbal instructions
             |
+            |✅ PROCEDURE CHECKLISTS
+            |• "Show checklists" - List available checklists
+            |• "Start timeout checklist" - Begin timeout
+            |• "Start central line checklist" - CL insertion
+            |• "Check [number]" - Check off item
+            |• "Check all" - Mark all complete
+            |• "Read checklist" - Speak items aloud
+            |
+            |🔔 CLINICAL REMINDERS
+            |• "Clinical reminders" - Show care reminders
+            |• "Preventive care" - Age/condition-based alerts
+            |• "Health reminders" - Screening prompts
+            |
+            |⚖️ MED RECONCILIATION
+            |• "Med reconciliation" - Start med rec
+            |• "Add home med [name]" - Add medication
+            |• "Remove home med [#]" - Remove by number
+            |• "Compare meds" - Show discrepancies
+            |• "Clear home meds" - Start over
+            |
+            |📤 REFERRAL TRACKING
+            |• "Show referrals" - View all referrals
+            |• "Refer to [specialty] for [reason]"
+            |• "Urgent referral to [specialty]"
+            |• "Mark referral [#] scheduled"
+            |• "Mark referral [#] complete"
+            |
             |📝 DOCUMENTATION
             |• "Start note" - Begin documentation
             |• "Live transcribe" - Real-time transcription
@@ -7132,6 +7159,840 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
 
         // Speak
         speak(speech.toString())
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PROCEDURE CHECKLISTS - Safety workflows for common procedures
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private data class ProcedureChecklist(
+        val name: String,
+        val category: String,
+        val items: List<String>,
+        val timeoutItems: List<String> = emptyList(),
+        val signOutItems: List<String> = emptyList()
+    )
+
+    private val procedureChecklists = mapOf(
+        "timeout" to ProcedureChecklist(
+            name = "Universal Protocol Timeout",
+            category = "surgical",
+            items = listOf(
+                "Correct patient identity confirmed",
+                "Correct procedure confirmed",
+                "Correct site marked and visible",
+                "Patient consent signed",
+                "Relevant images displayed",
+                "Allergies reviewed",
+                "Antibiotics given (if applicable)",
+                "VTE prophylaxis addressed",
+                "All team members introduced"
+            )
+        ),
+        "central line" to ProcedureChecklist(
+            name = "Central Line Insertion",
+            category = "procedure",
+            items = listOf(
+                "Hand hygiene performed",
+                "Sterile gown and gloves",
+                "Full barrier precautions",
+                "Chlorhexidine skin prep",
+                "Sterile drape placement",
+                "Ultrasound guidance available",
+                "Lidocaine for local anesthesia",
+                "Confirm catheter type and size",
+                "Flush all lumens"
+            ),
+            signOutItems = listOf(
+                "Placement confirmed by aspiration",
+                "Catheter secured",
+                "Sterile dressing applied",
+                "Chest X-ray ordered (if applicable)",
+                "Document insertion site and attempts"
+            )
+        ),
+        "intubation" to ProcedureChecklist(
+            name = "Intubation Checklist",
+            category = "airway",
+            items = listOf(
+                "Equipment check: laryngoscope, ETT, stylet",
+                "Suction available and working",
+                "Bag-valve-mask ready",
+                "Capnography available",
+                "IV access confirmed",
+                "Medications drawn: sedation, paralytic",
+                "Backup airway available (LMA, cric kit)",
+                "Patient positioned (sniffing position)",
+                "Pre-oxygenation complete"
+            ),
+            signOutItems = listOf(
+                "ETT placement confirmed by capnography",
+                "Bilateral breath sounds confirmed",
+                "ETT secured at appropriate depth",
+                "Ventilator settings ordered",
+                "Chest X-ray ordered",
+                "Sedation drip started"
+            )
+        ),
+        "lumbar puncture" to ProcedureChecklist(
+            name = "Lumbar Puncture",
+            category = "procedure",
+            items = listOf(
+                "Consent obtained",
+                "Coagulation status checked",
+                "Platelet count adequate (>50k)",
+                "No anticoagulants or held appropriately",
+                "Sterile field prepared",
+                "Local anesthesia ready",
+                "Spinal needle and manometer available",
+                "Collection tubes labeled",
+                "Patient positioned (lateral or sitting)"
+            ),
+            signOutItems = listOf(
+                "Opening pressure documented",
+                "Appropriate tubes collected",
+                "Closing pressure documented",
+                "Site dressed",
+                "Patient instructed to lie flat"
+            )
+        ),
+        "blood transfusion" to ProcedureChecklist(
+            name = "Blood Transfusion Safety",
+            category = "transfusion",
+            items = listOf(
+                "Consent for transfusion obtained",
+                "Type and screen on file",
+                "Two-nurse verification at bedside",
+                "Patient ID band matches blood product",
+                "Blood product type matches order",
+                "Expiration date checked",
+                "IV access adequate (18g or larger)",
+                "Baseline vital signs documented",
+                "Emergency medications available"
+            ),
+            signOutItems = listOf(
+                "Transfusion start time documented",
+                "Vital signs at 15 minutes",
+                "Monitor for transfusion reaction",
+                "Vital signs at completion",
+                "Total volume and duration documented"
+            )
+        ),
+        "sedation" to ProcedureChecklist(
+            name = "Procedural Sedation",
+            category = "sedation",
+            items = listOf(
+                "NPO status confirmed",
+                "Airway assessment completed",
+                "ASA classification documented",
+                "Consent obtained",
+                "IV access confirmed",
+                "Monitoring equipment ready",
+                "Oxygen and suction available",
+                "Reversal agents available",
+                "Crash cart nearby",
+                "Recovery plan in place"
+            )
+        )
+    )
+
+    private val activeChecklistItems = mutableMapOf<String, MutableSet<Int>>()
+    private var currentChecklist: String? = null
+
+    /**
+     * Show available procedure checklists
+     */
+    private fun showProcedureChecklists() {
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("📋 PROCEDURE CHECKLISTS\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("Say \"start [checklist] checklist\" to begin:\n\n")
+
+        procedureChecklists.forEach { (key, checklist) ->
+            val emoji = when (checklist.category) {
+                "surgical" -> "🔪"
+                "airway" -> "🫁"
+                "transfusion" -> "🩸"
+                "sedation" -> "💉"
+                else -> "📋"
+            }
+            content.append("$emoji $key - ${checklist.name}\n")
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("Examples:\n")
+        content.append("• \"Start timeout checklist\"\n")
+        content.append("• \"Start central line checklist\"\n")
+        content.append("• \"Start intubation checklist\"")
+
+        showDataOverlay("Procedure Checklists", content.toString())
+        speakFeedback("${procedureChecklists.size} procedure checklists available")
+    }
+
+    /**
+     * Start a specific procedure checklist
+     */
+    private fun startProcedureChecklist(checklistName: String) {
+        val key = checklistName.lowercase().trim()
+        val checklist = procedureChecklists[key]
+            ?: procedureChecklists.entries.find { it.value.name.lowercase().contains(key) }?.value
+
+        if (checklist == null) {
+            speakFeedback("Checklist not found. Say 'show checklists' to see available options.")
+            return
+        }
+
+        currentChecklist = procedureChecklists.entries.find { it.value == checklist }?.key
+        activeChecklistItems[currentChecklist!!] = mutableSetOf()
+
+        displayChecklist(checklist)
+        speakFeedback("${checklist.name} checklist started. ${checklist.items.size} items to verify.")
+    }
+
+    /**
+     * Display current checklist state
+     */
+    private fun displayChecklist(checklist: ProcedureChecklist) {
+        val content = StringBuilder()
+        val key = currentChecklist ?: return
+        val checked = activeChecklistItems[key] ?: mutableSetOf()
+
+        content.append("═══════════════════════════════════\n")
+        content.append("📋 ${checklist.name.uppercase()}\n")
+        content.append("═══════════════════════════════════\n\n")
+
+        content.append("▸ PRE-PROCEDURE\n")
+        content.append("───────────────────────────────────\n")
+        checklist.items.forEachIndexed { index, item ->
+            val checkMark = if (checked.contains(index)) "✅" else "⬜"
+            content.append("$checkMark ${index + 1}. $item\n")
+        }
+
+        if (checklist.signOutItems.isNotEmpty()) {
+            content.append("\n▸ POST-PROCEDURE\n")
+            content.append("───────────────────────────────────\n")
+            val offset = checklist.items.size
+            checklist.signOutItems.forEachIndexed { index, item ->
+                val checkMark = if (checked.contains(offset + index)) "✅" else "⬜"
+                content.append("$checkMark ${offset + index + 1}. $item\n")
+            }
+        }
+
+        val totalItems = checklist.items.size + checklist.signOutItems.size
+        val completedCount = checked.size
+        val progress = (completedCount * 100) / totalItems
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("Progress: $completedCount/$totalItems ($progress%)\n")
+        content.append("Say \"check [number]\" or \"check all\"")
+
+        showDataOverlay("Checklist", content.toString())
+    }
+
+    /**
+     * Check off an item in the current checklist
+     */
+    private fun checkChecklistItem(itemNumber: Int) {
+        val key = currentChecklist
+        if (key == null) {
+            speakFeedback("No active checklist. Say 'start timeout checklist' to begin.")
+            return
+        }
+
+        val checklist = procedureChecklists[key] ?: return
+        val totalItems = checklist.items.size + checklist.signOutItems.size
+        val index = itemNumber - 1
+
+        if (index < 0 || index >= totalItems) {
+            speakFeedback("Invalid item number. Valid range is 1 to $totalItems.")
+            return
+        }
+
+        val checked = activeChecklistItems.getOrPut(key) { mutableSetOf() }
+
+        if (checked.contains(index)) {
+            checked.remove(index)
+            speakFeedback("Item $itemNumber unchecked")
+        } else {
+            checked.add(index)
+            val remaining = totalItems - checked.size
+            if (remaining == 0) {
+                speakFeedback("All items complete! Checklist verified.")
+            } else {
+                speakFeedback("Item $itemNumber checked. $remaining remaining.")
+            }
+        }
+
+        displayChecklist(checklist)
+    }
+
+    /**
+     * Check all items in current checklist
+     */
+    private fun checkAllChecklistItems() {
+        val key = currentChecklist
+        if (key == null) {
+            speakFeedback("No active checklist.")
+            return
+        }
+
+        val checklist = procedureChecklists[key] ?: return
+        val totalItems = checklist.items.size + checklist.signOutItems.size
+        val checked = activeChecklistItems.getOrPut(key) { mutableSetOf() }
+
+        for (i in 0 until totalItems) {
+            checked.add(i)
+        }
+
+        displayChecklist(checklist)
+        speakFeedback("All ${totalItems} items checked. Checklist complete.")
+    }
+
+    /**
+     * Read the current checklist aloud
+     */
+    private fun readChecklist() {
+        val key = currentChecklist
+        if (key == null) {
+            speakFeedback("No active checklist.")
+            return
+        }
+
+        val checklist = procedureChecklists[key] ?: return
+        val checked = activeChecklistItems[key] ?: mutableSetOf()
+        val speech = StringBuilder()
+
+        speech.append("${checklist.name}. ")
+        checklist.items.forEachIndexed { index, item ->
+            val status = if (checked.contains(index)) "checked" else "not checked"
+            speech.append("Item ${index + 1}: $item. $status. ")
+        }
+
+        val remaining = checklist.items.size - checked.count { it < checklist.items.size }
+        speech.append("$remaining items remaining in pre-procedure.")
+
+        speak(speech.toString())
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CLINICAL REMINDERS - Preventive care prompts based on patient data
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private data class ClinicalReminder(
+        val category: String,
+        val reminder: String,
+        val priority: String, // high, medium, low
+        val source: String
+    )
+
+    /**
+     * Generate clinical reminders based on patient data
+     */
+    private fun generateClinicalReminders() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speakFeedback("No patient loaded. Load a patient first.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val dob = patient.optString("date_of_birth", "")
+        val gender = patient.optString("gender", "").lowercase()
+        val conditions = patient.optJSONArray("conditions")
+        val meds = patient.optJSONArray("medications")
+        val immunizations = patient.optJSONArray("immunizations")
+        val labs = patient.optJSONArray("labs")
+
+        val reminders = mutableListOf<ClinicalReminder>()
+
+        // Calculate age
+        val age = calculateAgeFromDob(dob)
+
+        // Age-based screening reminders
+        if (age >= 50) {
+            reminders.add(ClinicalReminder("screening", "Colonoscopy due if not done in 10 years", "medium", "USPSTF"))
+        }
+        if (age >= 45) {
+            reminders.add(ClinicalReminder("screening", "Diabetes screening (A1c or FPG) if not done", "medium", "ADA"))
+        }
+        if (age >= 40) {
+            reminders.add(ClinicalReminder("screening", "Lipid panel due if not done in 5 years", "low", "ACC/AHA"))
+        }
+        if (gender == "female" && age >= 40) {
+            reminders.add(ClinicalReminder("screening", "Mammogram due if not done in 1-2 years", "medium", "USPSTF"))
+        }
+        if (gender == "female" && age in 21..65) {
+            reminders.add(ClinicalReminder("screening", "Pap smear due if not done in 3 years", "medium", "USPSTF"))
+        }
+        if (age >= 65) {
+            reminders.add(ClinicalReminder("screening", "DEXA scan for osteoporosis screening", "low", "USPSTF"))
+            reminders.add(ClinicalReminder("vaccine", "Pneumococcal vaccine (PCV20 or PPSV23)", "medium", "CDC"))
+            reminders.add(ClinicalReminder("vaccine", "Shingrix (2-dose series) if not received", "medium", "CDC"))
+        }
+
+        // Condition-based reminders
+        if (conditions != null) {
+            for (i in 0 until conditions.length()) {
+                val condition = conditions.getJSONObject(i).optString("name", "").lowercase()
+
+                if (condition.contains("diabetes") || condition.contains("a1c")) {
+                    reminders.add(ClinicalReminder("monitoring", "A1c check due if >3 months", "high", "ADA"))
+                    reminders.add(ClinicalReminder("monitoring", "Annual eye exam for diabetic retinopathy", "medium", "ADA"))
+                    reminders.add(ClinicalReminder("monitoring", "Annual foot exam", "medium", "ADA"))
+                    reminders.add(ClinicalReminder("monitoring", "Annual urine microalbumin", "medium", "ADA"))
+                }
+                if (condition.contains("hypertension") || condition.contains("htn")) {
+                    reminders.add(ClinicalReminder("monitoring", "Blood pressure goal <130/80", "high", "ACC/AHA"))
+                    reminders.add(ClinicalReminder("monitoring", "Annual BMP for electrolytes/kidney function", "medium", "JNC"))
+                }
+                if (condition.contains("heart failure") || condition.contains("chf")) {
+                    reminders.add(ClinicalReminder("monitoring", "Daily weight monitoring", "high", "ACC/AHA"))
+                    reminders.add(ClinicalReminder("monitoring", "BNP/proBNP if symptoms change", "medium", "ACC/AHA"))
+                    reminders.add(ClinicalReminder("medication", "Verify on GDMT (BB, ACEi/ARB/ARNI, MRA, SGLT2i)", "high", "ACC/AHA"))
+                }
+                if (condition.contains("copd")) {
+                    reminders.add(ClinicalReminder("vaccine", "Annual influenza vaccine", "high", "CDC"))
+                    reminders.add(ClinicalReminder("vaccine", "Pneumococcal vaccine", "high", "CDC"))
+                    reminders.add(ClinicalReminder("monitoring", "Pulmonary function test annually", "medium", "GOLD"))
+                }
+                if (condition.contains("afib") || condition.contains("atrial fibrillation")) {
+                    reminders.add(ClinicalReminder("monitoring", "CHADS2-VASc score for anticoagulation", "high", "ACC/AHA"))
+                    reminders.add(ClinicalReminder("monitoring", "Rate control goal HR <110", "medium", "ACC/AHA"))
+                }
+                if (condition.contains("ckd") || condition.contains("kidney")) {
+                    reminders.add(ClinicalReminder("monitoring", "GFR and urine albumin every 3-6 months", "high", "KDIGO"))
+                    reminders.add(ClinicalReminder("medication", "Review nephrotoxic medications", "high", "KDIGO"))
+                }
+            }
+        }
+
+        // Medication-based reminders
+        if (meds != null) {
+            for (i in 0 until meds.length()) {
+                val med = meds.getString(i).lowercase()
+
+                if (med.contains("warfarin") || med.contains("coumadin")) {
+                    reminders.add(ClinicalReminder("monitoring", "INR check due if >4 weeks", "high", "Pharmacy"))
+                }
+                if (med.contains("metformin")) {
+                    reminders.add(ClinicalReminder("monitoring", "Annual B12 level", "low", "ADA"))
+                }
+                if (med.contains("statin")) {
+                    reminders.add(ClinicalReminder("monitoring", "Lipid panel in 4-12 weeks if new", "medium", "ACC/AHA"))
+                }
+                if (med.contains("lithium")) {
+                    reminders.add(ClinicalReminder("monitoring", "Lithium level, TSH, creatinine every 6 months", "high", "APA"))
+                }
+                if (med.contains("amiodarone")) {
+                    reminders.add(ClinicalReminder("monitoring", "TSH, LFTs, PFTs every 6 months", "high", "ACC/AHA"))
+                }
+            }
+        }
+
+        // Universal reminders
+        reminders.add(ClinicalReminder("vaccine", "Annual influenza vaccine", "medium", "CDC"))
+
+        // Display reminders
+        displayClinicalReminders(name, age, reminders)
+    }
+
+    private fun calculateAgeFromDob(dob: String): Int {
+        return try {
+            val parts = dob.split("-")
+            if (parts.size >= 1) {
+                val birthYear = parts[0].toInt()
+                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                currentYear - birthYear
+            } else 0
+        } catch (e: Exception) { 0 }
+    }
+
+    private fun displayClinicalReminders(patientName: String, age: Int, reminders: List<ClinicalReminder>) {
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("🔔 CLINICAL REMINDERS\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("👤 $patientName")
+        if (age > 0) content.append(" (${age}yo)")
+        content.append("\n\n")
+
+        val highPriority = reminders.filter { it.priority == "high" }
+        val mediumPriority = reminders.filter { it.priority == "medium" }
+        val lowPriority = reminders.filter { it.priority == "low" }
+
+        if (highPriority.isNotEmpty()) {
+            content.append("▸ ⚠️ HIGH PRIORITY\n")
+            content.append("───────────────────────────────────\n")
+            highPriority.forEach { r ->
+                val icon = when (r.category) {
+                    "vaccine" -> "💉"
+                    "screening" -> "🔍"
+                    "monitoring" -> "📊"
+                    "medication" -> "💊"
+                    else -> "•"
+                }
+                content.append("$icon ${r.reminder}\n")
+                content.append("   [${r.source}]\n")
+            }
+            content.append("\n")
+        }
+
+        if (mediumPriority.isNotEmpty()) {
+            content.append("▸ 📋 RECOMMENDED\n")
+            content.append("───────────────────────────────────\n")
+            mediumPriority.forEach { r ->
+                val icon = when (r.category) {
+                    "vaccine" -> "💉"
+                    "screening" -> "🔍"
+                    "monitoring" -> "📊"
+                    "medication" -> "💊"
+                    else -> "•"
+                }
+                content.append("$icon ${r.reminder}\n")
+            }
+            content.append("\n")
+        }
+
+        if (lowPriority.isNotEmpty()) {
+            content.append("▸ 📝 CONSIDER\n")
+            content.append("───────────────────────────────────\n")
+            lowPriority.forEach { r ->
+                content.append("• ${r.reminder}\n")
+            }
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("${reminders.size} reminders generated")
+
+        showDataOverlay("Clinical Reminders", content.toString())
+
+        val highCount = highPriority.size
+        if (highCount > 0) {
+            speakFeedback("$highCount high priority reminders for $patientName")
+        } else {
+            speakFeedback("${reminders.size} clinical reminders generated")
+        }
+    }
+
+    /**
+     * Speak high-priority reminders aloud
+     */
+    private fun speakClinicalReminders() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speak("No patient loaded.")
+            return
+        }
+
+        // Regenerate and speak
+        generateClinicalReminders()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MEDICATION RECONCILIATION - Compare home meds vs current meds
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private var homeMedications = mutableListOf<String>()
+
+    /**
+     * Start medication reconciliation process
+     */
+    private fun startMedReconciliation() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speakFeedback("No patient loaded. Load a patient first.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val currentMeds = patient.optJSONArray("medications")
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("💊 MEDICATION RECONCILIATION\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("👤 $name\n\n")
+
+        content.append("▸ CURRENT MEDICATIONS (EHR)\n")
+        content.append("───────────────────────────────────\n")
+        if (currentMeds != null && currentMeds.length() > 0) {
+            for (i in 0 until currentMeds.length()) {
+                content.append("💊 ${currentMeds.getString(i)}\n")
+            }
+        } else {
+            content.append("• No medications on file\n")
+        }
+        content.append("\n")
+
+        content.append("▸ HOME MEDICATIONS (Patient Report)\n")
+        content.append("───────────────────────────────────\n")
+        if (homeMedications.isNotEmpty()) {
+            homeMedications.forEachIndexed { index, med ->
+                content.append("${index + 1}. $med\n")
+            }
+        } else {
+            content.append("• None recorded yet\n")
+            content.append("\nSay \"add home med [medication]\" to add\n")
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("Commands:\n")
+        content.append("• \"Add home med [name]\" - Add medication\n")
+        content.append("• \"Remove home med [#]\" - Remove by number\n")
+        content.append("• \"Compare meds\" - Show discrepancies\n")
+        content.append("• \"Clear home meds\" - Start over")
+
+        showDataOverlay("Med Reconciliation", content.toString())
+        speakFeedback("Medication reconciliation started for $name")
+    }
+
+    /**
+     * Add a home medication
+     */
+    private fun addHomeMedication(medication: String) {
+        homeMedications.add(medication.trim())
+        speakFeedback("Added ${medication.trim()}. ${homeMedications.size} home medications.")
+        startMedReconciliation() // Refresh display
+    }
+
+    /**
+     * Remove a home medication by index
+     */
+    private fun removeHomeMedication(index: Int) {
+        if (index in 1..homeMedications.size) {
+            val removed = homeMedications.removeAt(index - 1)
+            speakFeedback("Removed $removed")
+            startMedReconciliation() // Refresh display
+        } else {
+            speakFeedback("Invalid medication number")
+        }
+    }
+
+    /**
+     * Compare home meds vs EHR meds and show discrepancies
+     */
+    private fun compareMedications() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speakFeedback("No patient loaded.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val currentMeds = patient.optJSONArray("medications")
+        val ehrMedList = mutableListOf<String>()
+
+        if (currentMeds != null) {
+            for (i in 0 until currentMeds.length()) {
+                ehrMedList.add(currentMeds.getString(i).lowercase())
+            }
+        }
+
+        val homeMedLower = homeMedications.map { it.lowercase() }
+
+        // Find discrepancies
+        val onlyInEhr = ehrMedList.filter { ehrMed ->
+            homeMedLower.none { home -> ehrMed.contains(home) || home.contains(ehrMed) }
+        }
+        val onlyAtHome = homeMedications.filter { homeMed ->
+            ehrMedList.none { ehr -> ehr.contains(homeMed.lowercase()) || homeMed.lowercase().contains(ehr) }
+        }
+        val matched = homeMedications.filter { homeMed ->
+            ehrMedList.any { ehr -> ehr.contains(homeMed.lowercase()) || homeMed.lowercase().contains(ehr) }
+        }
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("⚖️ MED RECONCILIATION RESULTS\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("👤 $name\n\n")
+
+        if (matched.isNotEmpty()) {
+            content.append("▸ ✅ CONFIRMED (Match)\n")
+            content.append("───────────────────────────────────\n")
+            matched.forEach { content.append("• $it\n") }
+            content.append("\n")
+        }
+
+        if (onlyInEhr.isNotEmpty()) {
+            content.append("▸ ⚠️ IN EHR ONLY (Verify with patient)\n")
+            content.append("───────────────────────────────────\n")
+            onlyInEhr.forEach { content.append("• $it\n") }
+            content.append("\n")
+        }
+
+        if (onlyAtHome.isNotEmpty()) {
+            content.append("▸ 🆕 HOME ONLY (Add to EHR?)\n")
+            content.append("───────────────────────────────────\n")
+            onlyAtHome.forEach { content.append("• $it\n") }
+            content.append("\n")
+        }
+
+        val discrepancies = onlyInEhr.size + onlyAtHome.size
+        content.append("───────────────────────────────────\n")
+        if (discrepancies == 0) {
+            content.append("✅ No discrepancies found!")
+        } else {
+            content.append("⚠️ $discrepancies discrepancies to reconcile")
+        }
+
+        showDataOverlay("Med Comparison", content.toString())
+
+        if (discrepancies > 0) {
+            speakFeedback("$discrepancies medication discrepancies found")
+        } else {
+            speakFeedback("Medications reconciled. No discrepancies.")
+        }
+    }
+
+    /**
+     * Clear home medications list
+     */
+    private fun clearHomeMedications() {
+        homeMedications.clear()
+        speakFeedback("Home medications cleared")
+        startMedReconciliation()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // REFERRAL TRACKING - Track specialist referrals
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private data class Referral(
+        val specialty: String,
+        val reason: String,
+        val urgency: String, // routine, urgent, stat
+        val status: String, // pending, scheduled, completed
+        val date: String,
+        val notes: String = ""
+    )
+
+    private val patientReferrals = mutableListOf<Referral>()
+
+    private val commonSpecialties = listOf(
+        "cardiology", "pulmonology", "gastroenterology", "neurology",
+        "orthopedics", "dermatology", "endocrinology", "nephrology",
+        "rheumatology", "oncology", "urology", "psychiatry",
+        "ophthalmology", "ENT", "physical therapy", "pain management"
+    )
+
+    /**
+     * Show referral tracking panel
+     */
+    private fun showReferrals() {
+        val patient = currentPatientData
+        val name = patient?.optString("name", "Unknown") ?: "Unknown"
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("📤 REFERRAL TRACKING\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("👤 $name\n\n")
+
+        if (patientReferrals.isEmpty()) {
+            content.append("No active referrals.\n\n")
+            content.append("Say \"refer to [specialty] for [reason]\"\n")
+            content.append("Example: \"Refer to cardiology for chest pain\"\n")
+        } else {
+            val pending = patientReferrals.filter { it.status == "pending" }
+            val scheduled = patientReferrals.filter { it.status == "scheduled" }
+            val completed = patientReferrals.filter { it.status == "completed" }
+
+            if (pending.isNotEmpty()) {
+                content.append("▸ ⏳ PENDING (${pending.size})\n")
+                content.append("───────────────────────────────────\n")
+                pending.forEachIndexed { i, ref ->
+                    val urgencyIcon = when (ref.urgency) {
+                        "stat" -> "🔴"
+                        "urgent" -> "🟡"
+                        else -> "🟢"
+                    }
+                    content.append("${i + 1}. $urgencyIcon ${ref.specialty.uppercase()}\n")
+                    content.append("   Reason: ${ref.reason}\n")
+                    content.append("   Created: ${ref.date}\n")
+                }
+                content.append("\n")
+            }
+
+            if (scheduled.isNotEmpty()) {
+                content.append("▸ 📅 SCHEDULED (${scheduled.size})\n")
+                content.append("───────────────────────────────────\n")
+                scheduled.forEach { ref ->
+                    content.append("• ${ref.specialty}: ${ref.reason}\n")
+                }
+                content.append("\n")
+            }
+
+            if (completed.isNotEmpty()) {
+                content.append("▸ ✅ COMPLETED (${completed.size})\n")
+                content.append("───────────────────────────────────\n")
+                completed.forEach { ref ->
+                    content.append("• ${ref.specialty}: ${ref.reason}\n")
+                }
+            }
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("Commands:\n")
+        content.append("• \"Refer to [specialty] for [reason]\"\n")
+        content.append("• \"Urgent referral to [specialty]\"\n")
+        content.append("• \"Mark referral [#] scheduled\"\n")
+        content.append("• \"Mark referral [#] complete\"")
+
+        showDataOverlay("Referrals", content.toString())
+
+        val pendingCount = patientReferrals.count { it.status == "pending" }
+        if (pendingCount > 0) {
+            speakFeedback("$pendingCount pending referrals")
+        }
+    }
+
+    /**
+     * Create a new referral
+     */
+    private fun createReferral(specialty: String, reason: String, urgency: String = "routine") {
+        val matchedSpecialty = commonSpecialties.find { it.contains(specialty.lowercase()) }
+            ?: specialty.lowercase().replaceFirstChar { it.uppercase() }
+
+        val today = java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).format(java.util.Date())
+
+        val referral = Referral(
+            specialty = matchedSpecialty,
+            reason = reason,
+            urgency = urgency,
+            status = "pending",
+            date = today
+        )
+
+        patientReferrals.add(referral)
+
+        val urgencyText = if (urgency != "routine") " ($urgency)" else ""
+        speakFeedback("Referral to $matchedSpecialty created$urgencyText")
+        showReferrals()
+    }
+
+    /**
+     * Update referral status
+     */
+    private fun updateReferralStatus(index: Int, newStatus: String) {
+        if (index in 1..patientReferrals.size) {
+            val referral = patientReferrals[index - 1]
+            patientReferrals[index - 1] = referral.copy(status = newStatus)
+            speakFeedback("Referral to ${referral.specialty} marked as $newStatus")
+            showReferrals()
+        } else {
+            speakFeedback("Invalid referral number")
+        }
+    }
+
+    /**
+     * Clear all referrals
+     */
+    private fun clearReferrals() {
+        patientReferrals.clear()
+        speakFeedback("All referrals cleared")
+        showReferrals()
     }
 
     private fun saveCurrentNote() {
@@ -9227,6 +10088,78 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             lower.contains("tell patient") || lower.contains("patient education") -> {
                 // Speak discharge instructions aloud
                 speakDischargeInstructions()
+            }
+            // Procedure Checklist commands
+            lower.contains("show checklists") || lower.contains("procedure checklists") || lower.contains("safety checklists") -> {
+                showProcedureChecklists()
+            }
+            lower.contains("start") && lower.contains("checklist") -> {
+                val checklistName = lower.replace("start", "").replace("checklist", "").trim()
+                startProcedureChecklist(checklistName)
+            }
+            lower.contains("check all") -> {
+                checkAllChecklistItems()
+            }
+            lower.contains("check ") && lower.matches(Regex(".*check\\s+\\d+.*")) -> {
+                val num = lower.replace(Regex(".*check\\s+(\\d+).*"), "$1").toIntOrNull() ?: 0
+                checkChecklistItem(num)
+            }
+            lower.contains("read checklist") || lower.contains("speak checklist") -> {
+                readChecklist()
+            }
+            // Clinical Reminders commands
+            lower.contains("clinical reminders") || lower.contains("reminders") || lower.contains("preventive care") ||
+            lower.contains("care reminders") || lower.contains("health reminders") -> {
+                generateClinicalReminders()
+            }
+            // Medication Reconciliation commands
+            lower.contains("med reconciliation") || lower.contains("medication reconciliation") ||
+            lower.contains("reconcile meds") || lower.contains("med rec") -> {
+                startMedReconciliation()
+            }
+            lower.contains("add home med") -> {
+                val med = lower.replace("add home med", "").replace("add home medication", "").trim()
+                if (med.isNotEmpty()) addHomeMedication(med)
+            }
+            lower.contains("remove home med") -> {
+                val num = lower.replace(Regex(".*remove home med\\w*\\s*(\\d+).*"), "$1").toIntOrNull() ?: 0
+                if (num > 0) removeHomeMedication(num)
+            }
+            lower.contains("compare meds") || lower.contains("compare medications") || lower.contains("med comparison") -> {
+                compareMedications()
+            }
+            lower.contains("clear home meds") || lower.contains("clear home medications") -> {
+                clearHomeMedications()
+            }
+            // Referral Tracking commands
+            lower.contains("show referrals") || lower.contains("referrals") || lower.contains("pending referrals") -> {
+                showReferrals()
+            }
+            lower.contains("urgent referral to") || lower.contains("stat referral to") -> {
+                val urgency = if (lower.contains("stat")) "stat" else "urgent"
+                val afterTo = lower.substringAfter("referral to").trim()
+                val parts = afterTo.split(" for ", limit = 2)
+                val specialty = parts[0].trim()
+                val reason = if (parts.size > 1) parts[1].trim() else "evaluation"
+                createReferral(specialty, reason, urgency)
+            }
+            lower.contains("refer to") -> {
+                val afterTo = lower.substringAfter("refer to").trim()
+                val parts = afterTo.split(" for ", limit = 2)
+                val specialty = parts[0].trim()
+                val reason = if (parts.size > 1) parts[1].trim() else "evaluation"
+                createReferral(specialty, reason)
+            }
+            lower.contains("mark referral") && lower.contains("scheduled") -> {
+                val num = lower.replace(Regex(".*referral\\s*(\\d+).*"), "$1").toIntOrNull() ?: 0
+                if (num > 0) updateReferralStatus(num, "scheduled")
+            }
+            lower.contains("mark referral") && (lower.contains("complete") || lower.contains("completed")) -> {
+                val num = lower.replace(Regex(".*referral\\s*(\\d+).*"), "$1").toIntOrNull() ?: 0
+                if (num > 0) updateReferralStatus(num, "completed")
+            }
+            lower.contains("clear referrals") -> {
+                clearReferrals()
             }
             lower.contains("stop talking") || lower.contains("stop speaking") || lower.contains("be quiet") || lower.contains("quiet") -> {
                 // Stop any ongoing TTS

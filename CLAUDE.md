@@ -298,13 +298,17 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 49. **Medical Calculator** - Voice-activated clinical calculations; auto-pull values from patient chart; BMI, eGFR (CKD-EPI 2021), corrected calcium, anion gap, A1c↔glucose, MAP, CrCl (Cockcroft-Gault), CHADS₂-VASc; interpretations and clinical ranges included
 50. **SBAR Handoff Report** - Structured shift handoff reports; SBAR format (Situation, Background, Assessment, Recommendation); visual display + TTS spoken report; includes critical vitals, allergies, meds, pending orders, care plans; voice commands ("handoff report", "speak handoff", "SBAR")
 51. **Discharge Summary** - Patient discharge instructions with diagnoses, medications (current + new prescriptions), allergy warnings, follow-up instructions (care plans, pending labs/imaging), return precautions, activity/diet guidance; TTS spoken instructions for patient education; voice commands ("discharge summary", "read discharge", "patient education")
+52. **Procedure Checklists** - Safety workflows for common procedures; 6 built-in checklists (timeout, central line, intubation, lumbar puncture, blood transfusion, sedation); pre/post-procedure items; voice commands ("show checklists", "start timeout checklist", "check 1", "check all", "read checklist")
+53. **Clinical Reminders** - Preventive care prompts based on patient data; age-based screening (colonoscopy, mammogram, DEXA); condition-based monitoring (diabetes A1c, CHF weight, CKD labs); medication monitoring (warfarin INR, lithium levels); USPSTF/CDC/ADA guideline sources
+54. **Medication Reconciliation** - Compare home meds vs EHR meds; add/remove home medications by voice; highlight discrepancies (EHR-only, home-only, matched); voice commands ("med reconciliation", "add home med [name]", "compare meds", "clear home meds")
+55. **Referral Tracking** - Track specialist referrals; 16 common specialties; urgency levels (routine, urgent, stat); status tracking (pending, scheduled, completed); voice commands ("refer to cardiology for chest pain", "urgent referral to neurology", "mark referral 1 scheduled")
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 51 features implemented |
+| All medium effort items completed! | 55 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

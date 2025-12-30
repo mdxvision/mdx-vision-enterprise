@@ -248,6 +248,37 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Spoken Instructions**: TTS reads discharge instructions aloud for patient education
 - **Voice Commands**: "Discharge summary", "Read discharge", "Patient education"
 
+### Procedure Checklists (NEW)
+- **Safety Workflows**: 6 built-in procedure checklists for patient safety
+- **Checklists**: Universal timeout, central line insertion, intubation, lumbar puncture, blood transfusion, procedural sedation
+- **Pre/Post Items**: Pre-procedure and post-procedure verification steps
+- **Interactive**: Check items by voice ("check 1", "check all")
+- **TTS Read-back**: "Read checklist" speaks items aloud for verification
+- **Voice Commands**: "Show checklists", "Start timeout checklist", "Check 3"
+
+### Clinical Reminders (NEW)
+- **Preventive Care**: Age-based screening prompts (colonoscopy, mammogram, DEXA)
+- **Condition Monitoring**: Diabetes (A1c), CHF (weight), HTN (BP goals), CKD (GFR)
+- **Medication Monitoring**: Warfarin INR, lithium levels, statin lipids
+- **Guideline Sources**: USPSTF, CDC, ADA, ACC/AHA references
+- **Priority Levels**: High, medium, low with visual indicators
+- **Voice Commands**: "Clinical reminders", "Preventive care", "Health reminders"
+
+### Medication Reconciliation (NEW)
+- **Home vs EHR**: Compare patient-reported home meds with EHR medications
+- **Add by Voice**: "Add home med metformin 500mg twice daily"
+- **Discrepancy Detection**: Highlights meds only in EHR, only at home, or matched
+- **Reconciliation Results**: Visual summary of discrepancies to address
+- **Voice Commands**: "Med reconciliation", "Add home med [name]", "Compare meds"
+
+### Referral Tracking (NEW)
+- **Specialist Referrals**: Track referrals to 16 common specialties
+- **Urgency Levels**: Routine (green), urgent (yellow), stat (red)
+- **Status Tracking**: Pending, scheduled, completed with dates
+- **Create by Voice**: "Refer to cardiology for chest pain evaluation"
+- **Update Status**: "Mark referral 1 scheduled", "Mark referral 2 complete"
+- **Voice Commands**: "Show referrals", "Urgent referral to neurology for headache"
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

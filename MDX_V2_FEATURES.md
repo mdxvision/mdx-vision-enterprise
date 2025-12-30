@@ -340,6 +340,40 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Handoff report" / "SBAR" | Done | Generate visual handoff report |
 | [x] "Speak handoff" | Done | TTS reads handoff aloud |
 
+### Procedure Checklist Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Show checklists" / "Procedure checklists" | Done | List available checklists |
+| [x] "Start [name] checklist" | Done | Begin specific checklist |
+| [x] "Check [number]" | Done | Check/uncheck item |
+| [x] "Check all" | Done | Mark all items complete |
+| [x] "Read checklist" | Done | TTS reads checklist aloud |
+
+### Clinical Reminder Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Clinical reminders" / "Reminders" | Done | Generate patient reminders |
+| [x] "Preventive care" / "Health reminders" | Done | Show screening/monitoring prompts |
+
+### Medication Reconciliation Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Med reconciliation" / "Reconcile meds" | Done | Start med rec workflow |
+| [x] "Add home med [name]" | Done | Add home medication |
+| [x] "Remove home med [#]" | Done | Remove by number |
+| [x] "Compare meds" / "Med comparison" | Done | Show discrepancies |
+| [x] "Clear home meds" | Done | Reset home med list |
+
+### Referral Tracking Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Show referrals" / "Referrals" | Done | View all referrals |
+| [x] "Refer to [specialty] for [reason]" | Done | Create routine referral |
+| [x] "Urgent referral to [specialty]" | Done | Create urgent referral |
+| [x] "Mark referral [#] scheduled" | Done | Update status to scheduled |
+| [x] "Mark referral [#] complete" | Done | Update status to completed |
+| [x] "Clear referrals" | Done | Remove all referrals |
+
 ---
 
 ## Transcript Preview Features

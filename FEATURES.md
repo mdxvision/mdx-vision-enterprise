@@ -240,6 +240,13 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Speak handoff" | Done |
 | [x] "Discharge summary" / "Discharge instructions" | Done |
 | [x] "Read discharge" / "Patient education" | Done |
+| [x] "Show checklists" / "Procedure checklists" | Done |
+| [x] "Start [name] checklist" / "Check [#]" / "Check all" | Done |
+| [x] "Clinical reminders" / "Preventive care" | Done |
+| [x] "Med reconciliation" / "Reconcile meds" | Done |
+| [x] "Add home med [name]" / "Compare meds" | Done |
+| [x] "Refer to [specialty] for [reason]" | Done |
+| [x] "Show referrals" / "Mark referral [#] complete" | Done |
 
 ---
 
@@ -304,6 +311,10 @@ Based on US Patent 15/237,980 and product requirements.
 42. ~~**Medical Calculator**~~ - Done (Voice-activated clinical calcs: BMI, eGFR, corrected calcium, anion gap, A1c↔glucose, MAP, CrCl, CHADS₂-VASc; auto-pulls from patient chart)
 43. ~~**SBAR Handoff Report**~~ - Done (Structured shift handoff, SBAR format, visual + TTS spoken report, includes critical vitals/allergies/meds/orders/care plans)
 44. ~~**Discharge Summary**~~ - Done (Patient instructions: diagnoses, medications, allergy warnings, follow-up, return precautions, activity/diet; TTS spoken for patient education)
+45. ~~**Procedure Checklists**~~ - Done (6 safety checklists: timeout, central line, intubation, lumbar puncture, blood transfusion, sedation; check items by voice; pre/post-procedure)
+46. ~~**Clinical Reminders**~~ - Done (Age-based screening, condition-based monitoring, medication monitoring; USPSTF/CDC/ADA guidelines; priority levels)
+47. ~~**Medication Reconciliation**~~ - Done (Compare home vs EHR meds; add/remove home meds by voice; highlight discrepancies)
+48. ~~**Referral Tracking**~~ - Done (16 specialties; urgency levels; status tracking; create/update referrals by voice)
 
 ### Upcoming
 1. **Epic/Veradigm Integration** - Needs live credentials
