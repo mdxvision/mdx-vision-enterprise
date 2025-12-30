@@ -3784,6 +3784,820 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // MEDICAL CALCULATOR - Voice-activated clinical calculations
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Available medical calculators
+     */
+    enum class MedCalcType(val displayName: String, val description: String) {
+        BMI("BMI", "Body Mass Index"),
+        EGFR("eGFR", "Estimated Glomerular Filtration Rate"),
+        CHADS_VASC("CHADS₂-VASc", "Stroke Risk in AFib"),
+        CORRECTED_CALCIUM("Corrected Calcium", "Calcium adjusted for albumin"),
+        ANION_GAP("Anion Gap", "From BMP values"),
+        A1C_TO_GLUCOSE("A1c to Glucose", "HbA1c to average glucose"),
+        GLUCOSE_TO_A1C("Glucose to A1c", "Average glucose to HbA1c"),
+        CREATININE_CLEARANCE("CrCl", "Cockcroft-Gault Creatinine Clearance"),
+        WELLS_DVT("Wells DVT", "DVT Probability Score"),
+        MELD("MELD", "Model for End-Stage Liver Disease"),
+        MAP("MAP", "Mean Arterial Pressure"),
+        BMI_PEDIATRIC("Pediatric BMI", "BMI percentile for children")
+    }
+
+    /**
+     * Calculate BMI from weight (kg or lbs) and height (cm or ft/in)
+     */
+    private fun calculateBMI(weightKg: Double, heightCm: Double): Double {
+        val heightM = heightCm / 100.0
+        return weightKg / (heightM * heightM)
+    }
+
+    /**
+     * Interpret BMI category
+     */
+    private fun interpretBMI(bmi: Double): String {
+        return when {
+            bmi < 18.5 -> "Underweight"
+            bmi < 25.0 -> "Normal"
+            bmi < 30.0 -> "Overweight"
+            bmi < 35.0 -> "Obese Class I"
+            bmi < 40.0 -> "Obese Class II"
+            else -> "Obese Class III"
+        }
+    }
+
+    /**
+     * Calculate eGFR using CKD-EPI 2021 formula (race-free)
+     * Returns mL/min/1.73m²
+     */
+    private fun calculateEGFR(creatinine: Double, age: Int, isFemale: Boolean): Double {
+        // CKD-EPI 2021 (race-free) formula
+        val kappa = if (isFemale) 0.7 else 0.9
+        val alpha = if (isFemale) -0.241 else -0.302
+        val multiplier = if (isFemale) 1.012 else 1.0
+
+        val scrKappa = creatinine / kappa
+        val minTerm = minOf(scrKappa, 1.0)
+        val maxTerm = maxOf(scrKappa, 1.0)
+
+        return 142 * Math.pow(minTerm, alpha) * Math.pow(maxTerm, -1.200) *
+               Math.pow(0.9938, age.toDouble()) * multiplier
+    }
+
+    /**
+     * Interpret eGFR stage
+     */
+    private fun interpretEGFR(egfr: Double): String {
+        return when {
+            egfr >= 90 -> "G1 - Normal"
+            egfr >= 60 -> "G2 - Mild decrease"
+            egfr >= 45 -> "G3a - Mild-moderate"
+            egfr >= 30 -> "G3b - Moderate-severe"
+            egfr >= 15 -> "G4 - Severe"
+            else -> "G5 - Kidney failure"
+        }
+    }
+
+    /**
+     * Calculate corrected calcium for albumin
+     */
+    private fun calculateCorrectedCalcium(calcium: Double, albumin: Double): Double {
+        return calcium + 0.8 * (4.0 - albumin)
+    }
+
+    /**
+     * Calculate anion gap
+     */
+    private fun calculateAnionGap(sodium: Double, chloride: Double, bicarb: Double): Double {
+        return sodium - (chloride + bicarb)
+    }
+
+    /**
+     * Interpret anion gap
+     */
+    private fun interpretAnionGap(ag: Double): String {
+        return when {
+            ag < 3 -> "Low (lab error?)"
+            ag <= 12 -> "Normal (3-12)"
+            ag <= 20 -> "Elevated - consider MUDPILES"
+            else -> "High - metabolic acidosis likely"
+        }
+    }
+
+    /**
+     * Convert A1c to estimated average glucose (mg/dL)
+     */
+    private fun a1cToGlucose(a1c: Double): Double {
+        return 28.7 * a1c - 46.7
+    }
+
+    /**
+     * Convert average glucose to estimated A1c
+     */
+    private fun glucoseToA1c(glucose: Double): Double {
+        return (glucose + 46.7) / 28.7
+    }
+
+    /**
+     * Calculate Mean Arterial Pressure
+     */
+    private fun calculateMAP(systolic: Double, diastolic: Double): Double {
+        return diastolic + (systolic - diastolic) / 3.0
+    }
+
+    /**
+     * Calculate Creatinine Clearance (Cockcroft-Gault)
+     */
+    private fun calculateCrCl(creatinine: Double, age: Int, weightKg: Double, isFemale: Boolean): Double {
+        val result = ((140 - age) * weightKg) / (72 * creatinine)
+        return if (isFemale) result * 0.85 else result
+    }
+
+    /**
+     * Show list of available calculators
+     */
+    private fun showCalculatorList() {
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("🧮 MEDICAL CALCULATORS\n")
+        content.append("═══════════════════════════════════\n\n")
+
+        content.append("📊 BODY MEASUREMENTS\n")
+        content.append("• \"Calculate BMI\" - Body Mass Index\n")
+        content.append("• \"Calculate MAP\" - Mean Arterial Pressure\n\n")
+
+        content.append("🩺 KIDNEY FUNCTION\n")
+        content.append("• \"Calculate GFR\" - eGFR (CKD-EPI 2021)\n")
+        content.append("• \"Calculate creatinine clearance\"\n\n")
+
+        content.append("🧪 LAB CORRECTIONS\n")
+        content.append("• \"Corrected calcium\" - Adjust for albumin\n")
+        content.append("• \"Anion gap\" - From BMP\n\n")
+
+        content.append("🩸 DIABETES\n")
+        content.append("• \"A1c to glucose\" - Convert HbA1c\n")
+        content.append("• \"Glucose to A1c\" - Reverse conversion\n\n")
+
+        content.append("❤️ CARDIAC\n")
+        content.append("• \"CHADS VASc\" - Stroke risk in AFib\n\n")
+
+        content.append("───────────────────────────────────\n")
+        content.append("Values auto-pulled from patient chart\n")
+        content.append("when available")
+
+        showDataOverlay("Calculators", content.toString())
+        speakFeedback("12 medical calculators available. Say the calculation you need.")
+    }
+
+    /**
+     * Process calculator voice command
+     */
+    private fun processCalculatorCommand(command: String) {
+        val lower = command.lowercase()
+
+        when {
+            // BMI
+            lower.contains("bmi") || lower.contains("body mass") -> {
+                calculateAndShowBMI()
+            }
+            // eGFR
+            lower.contains("gfr") || lower.contains("glomerular") ||
+            lower.contains("kidney function") -> {
+                calculateAndShowEGFR()
+            }
+            // Corrected Calcium
+            lower.contains("corrected calcium") || lower.contains("calcium correct") -> {
+                calculateAndShowCorrectedCalcium()
+            }
+            // Anion Gap
+            lower.contains("anion gap") || lower.contains("anion") -> {
+                calculateAndShowAnionGap()
+            }
+            // A1c conversions
+            lower.contains("a1c to glucose") || lower.contains("a1c glucose") ||
+            (lower.contains("convert") && lower.contains("a1c")) -> {
+                calculateAndShowA1cToGlucose()
+            }
+            lower.contains("glucose to a1c") -> {
+                calculateAndShowGlucoseToA1c()
+            }
+            // MAP
+            lower.contains("map") || lower.contains("mean arterial") -> {
+                calculateAndShowMAP()
+            }
+            // Creatinine Clearance
+            lower.contains("creatinine clearance") || lower.contains("crcl") ||
+            lower.contains("cockcroft") -> {
+                calculateAndShowCrCl()
+            }
+            // CHADS-VASc
+            lower.contains("chads") || lower.contains("stroke risk") -> {
+                calculateAndShowCHADSVASc()
+            }
+            else -> {
+                showCalculatorList()
+            }
+        }
+    }
+
+    /**
+     * Calculate and show BMI using patient data or captured vitals
+     */
+    private fun calculateAndShowBMI() {
+        // Try to get weight and height from captured vitals or patient data
+        var weightKg: Double? = null
+        var heightCm: Double? = null
+
+        // Check captured vitals first
+        for (vital in capturedVitals) {
+            when (vital.type) {
+                VitalType.WEIGHT -> {
+                    val value = vital.value.replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                    if (value != null) {
+                        weightKg = if (vital.unit.contains("lb", ignoreCase = true)) value * 0.453592 else value
+                    }
+                }
+                VitalType.HEIGHT -> {
+                    val value = vital.value.replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                    if (value != null) {
+                        heightCm = if (vital.unit.contains("in", ignoreCase = true)) value * 2.54 else value
+                    }
+                }
+                else -> {}
+            }
+        }
+
+        // Try patient data if not in captured vitals
+        if (weightKg == null || heightCm == null) {
+            currentPatientData?.optJSONArray("vitals")?.let { vitals ->
+                for (i in 0 until vitals.length()) {
+                    val v = vitals.getJSONObject(i)
+                    val name = v.optString("name", "").lowercase()
+                    val value = v.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                    val unit = v.optString("unit", "").lowercase()
+
+                    if (value != null) {
+                        when {
+                            name.contains("weight") && weightKg == null -> {
+                                weightKg = if (unit.contains("lb")) value * 0.453592 else value
+                            }
+                            name.contains("height") && heightCm == null -> {
+                                heightCm = if (unit.contains("in")) value * 2.54 else value
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val weight = weightKg
+        val height = heightCm
+        if (weight != null && height != null) {
+            val bmi = calculateBMI(weight, height)
+            val category = interpretBMI(bmi)
+            val result = String.format("%.1f", bmi)
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 BMI CALCULATION
+                |═══════════════════════════════════
+                |
+                |Weight: ${String.format("%.1f", weight)} kg
+                |Height: ${String.format("%.1f", height)} cm
+                |
+                |📊 BMI = $result
+                |
+                |Category: $category
+                |
+                |───────────────────────────────────
+                |Normal range: 18.5 - 24.9
+            """.trimMargin()
+
+            showDataOverlay("BMI Result", content)
+            speakFeedback("BMI is $result. Category: $category")
+        } else {
+            speakFeedback("Need weight and height. Say: weight 180 pounds, height 5 foot 10")
+            showDataOverlay("BMI Calculator",
+                "Missing data:\n\n" +
+                "• Weight: ${if (weightKg != null) "✓" else "❌ needed"}\n" +
+                "• Height: ${if (heightCm != null) "✓" else "❌ needed"}\n\n" +
+                "Say vitals to capture:\n" +
+                "\"Weight 180 pounds\"\n" +
+                "\"Height 5 foot 10\"")
+        }
+    }
+
+    /**
+     * Calculate and show eGFR
+     */
+    private fun calculateAndShowEGFR() {
+        var creatinine: Double? = null
+        var age: Int? = null
+        var isFemale: Boolean? = null
+
+        // Get from patient data
+        currentPatientData?.let { patient ->
+            // Age from DOB
+            patient.optString("date_of_birth", "")?.let { dob ->
+                if (dob.isNotEmpty()) {
+                    try {
+                        val birthYear = dob.substring(0, 4).toInt()
+                        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                        age = currentYear - birthYear
+                    } catch (e: Exception) {}
+                }
+            }
+
+            // Gender
+            val gender = patient.optString("gender", "").lowercase()
+            isFemale = gender == "female" || gender == "f"
+
+            // Creatinine from labs
+            patient.optJSONArray("labs")?.let { labs ->
+                for (i in 0 until labs.length()) {
+                    val lab = labs.getJSONObject(i)
+                    val name = lab.optString("name", "").lowercase()
+                    if (name.contains("creatinine") && !name.contains("clearance")) {
+                        creatinine = lab.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                        break
+                    }
+                }
+            }
+        }
+
+        if (creatinine != null && age != null && isFemale != null) {
+            val egfr = calculateEGFR(creatinine!!, age!!, isFemale!!)
+            val stage = interpretEGFR(egfr)
+            val result = String.format("%.0f", egfr)
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 eGFR CALCULATION (CKD-EPI 2021)
+                |═══════════════════════════════════
+                |
+                |Creatinine: $creatinine mg/dL
+                |Age: $age years
+                |Sex: ${if (isFemale!!) "Female" else "Male"}
+                |
+                |📊 eGFR = $result mL/min/1.73m²
+                |
+                |Stage: $stage
+                |
+                |───────────────────────────────────
+                |Normal: ≥90 mL/min/1.73m²
+            """.trimMargin()
+
+            showDataOverlay("eGFR Result", content)
+            speakFeedback("eGFR is $result. Stage: $stage")
+        } else {
+            speakFeedback("Need creatinine, age, and sex for GFR calculation")
+            showDataOverlay("eGFR Calculator",
+                "Missing data:\n\n" +
+                "• Creatinine: ${if (creatinine != null) "$creatinine mg/dL ✓" else "❌ needed"}\n" +
+                "• Age: ${if (age != null) "$age years ✓" else "❌ needed"}\n" +
+                "• Sex: ${if (isFemale != null) (if (isFemale!!) "Female" else "Male") + " ✓" else "❌ needed"}\n\n" +
+                "Load patient with labs to calculate")
+        }
+    }
+
+    /**
+     * Calculate and show corrected calcium
+     */
+    private fun calculateAndShowCorrectedCalcium() {
+        var calcium: Double? = null
+        var albumin: Double? = null
+
+        currentPatientData?.optJSONArray("labs")?.let { labs ->
+            for (i in 0 until labs.length()) {
+                val lab = labs.getJSONObject(i)
+                val name = lab.optString("name", "").lowercase()
+                val value = lab.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+
+                when {
+                    name.contains("calcium") && !name.contains("corrected") && calcium == null -> calcium = value
+                    name.contains("albumin") && albumin == null -> albumin = value
+                }
+            }
+        }
+
+        if (calcium != null && albumin != null) {
+            val corrected = calculateCorrectedCalcium(calcium!!, albumin!!)
+            val result = String.format("%.1f", corrected)
+
+            val interpretation = when {
+                corrected < 8.5 -> "Low (hypocalcemia)"
+                corrected > 10.5 -> "High (hypercalcemia)"
+                else -> "Normal (8.5-10.5)"
+            }
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 CORRECTED CALCIUM
+                |═══════════════════════════════════
+                |
+                |Measured Ca: $calcium mg/dL
+                |Albumin: $albumin g/dL
+                |
+                |📊 Corrected Ca = $result mg/dL
+                |
+                |$interpretation
+                |
+                |───────────────────────────────────
+                |Formula: Ca + 0.8 × (4.0 - Albumin)
+            """.trimMargin()
+
+            showDataOverlay("Corrected Calcium", content)
+            speakFeedback("Corrected calcium is $result. $interpretation")
+        } else {
+            speakFeedback("Need calcium and albumin from labs")
+            showDataOverlay("Corrected Calcium",
+                "Missing data:\n\n" +
+                "• Calcium: ${if (calcium != null) "$calcium mg/dL ✓" else "❌ needed"}\n" +
+                "• Albumin: ${if (albumin != null) "$albumin g/dL ✓" else "❌ needed"}\n\n" +
+                "Load patient with labs to calculate")
+        }
+    }
+
+    /**
+     * Calculate and show anion gap
+     */
+    private fun calculateAndShowAnionGap() {
+        var sodium: Double? = null
+        var chloride: Double? = null
+        var bicarb: Double? = null
+
+        currentPatientData?.optJSONArray("labs")?.let { labs ->
+            for (i in 0 until labs.length()) {
+                val lab = labs.getJSONObject(i)
+                val name = lab.optString("name", "").lowercase()
+                val value = lab.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+
+                when {
+                    name.contains("sodium") && sodium == null -> sodium = value
+                    name.contains("chloride") && chloride == null -> chloride = value
+                    (name.contains("bicarb") || name.contains("co2") || name.contains("hco3")) && bicarb == null -> bicarb = value
+                }
+            }
+        }
+
+        if (sodium != null && chloride != null && bicarb != null) {
+            val ag = calculateAnionGap(sodium!!, chloride!!, bicarb!!)
+            val result = String.format("%.0f", ag)
+            val interpretation = interpretAnionGap(ag)
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 ANION GAP
+                |═══════════════════════════════════
+                |
+                |Sodium: $sodium mEq/L
+                |Chloride: $chloride mEq/L
+                |Bicarb: $bicarb mEq/L
+                |
+                |📊 Anion Gap = $result mEq/L
+                |
+                |$interpretation
+                |
+                |───────────────────────────────────
+                |Formula: Na - (Cl + HCO₃)
+                |MUDPILES: Methanol, Uremia, DKA,
+                |Propylene glycol, INH, Lactic acid,
+                |Ethylene glycol, Salicylates
+            """.trimMargin()
+
+            showDataOverlay("Anion Gap", content)
+            speakFeedback("Anion gap is $result. $interpretation")
+        } else {
+            speakFeedback("Need sodium, chloride, and bicarbonate from BMP")
+            showDataOverlay("Anion Gap Calculator",
+                "Missing data:\n\n" +
+                "• Sodium: ${if (sodium != null) "$sodium mEq/L ✓" else "❌ needed"}\n" +
+                "• Chloride: ${if (chloride != null) "$chloride mEq/L ✓" else "❌ needed"}\n" +
+                "• Bicarb: ${if (bicarb != null) "$bicarb mEq/L ✓" else "❌ needed"}\n\n" +
+                "Load patient with BMP to calculate")
+        }
+    }
+
+    /**
+     * Calculate and show A1c to glucose conversion
+     */
+    private fun calculateAndShowA1cToGlucose() {
+        var a1c: Double? = null
+
+        currentPatientData?.optJSONArray("labs")?.let { labs ->
+            for (i in 0 until labs.length()) {
+                val lab = labs.getJSONObject(i)
+                val name = lab.optString("name", "").lowercase()
+                if (name.contains("a1c") || name.contains("hemoglobin a1c") || name.contains("hba1c")) {
+                    a1c = lab.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                    break
+                }
+            }
+        }
+
+        if (a1c != null) {
+            val glucose = a1cToGlucose(a1c!!)
+            val result = String.format("%.0f", glucose)
+
+            val control = when {
+                a1c!! < 5.7 -> "Normal"
+                a1c!! < 6.5 -> "Prediabetes"
+                a1c!! < 7.0 -> "Good control"
+                a1c!! < 8.0 -> "Fair control"
+                a1c!! < 9.0 -> "Poor control"
+                else -> "Very poor control"
+            }
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 A1c TO GLUCOSE
+                |═══════════════════════════════════
+                |
+                |HbA1c: ${String.format("%.1f", a1c)}%
+                |
+                |📊 Est. Avg Glucose = $result mg/dL
+                |
+                |Control: $control
+                |
+                |───────────────────────────────────
+                |Target A1c: <7% for most adults
+                |Formula: eAG = 28.7 × A1c - 46.7
+            """.trimMargin()
+
+            showDataOverlay("A1c Conversion", content)
+            speakFeedback("A1c of ${String.format("%.1f", a1c)} percent equals average glucose of $result. $control")
+        } else {
+            speakFeedback("No A1c found in labs. Load patient with A1c result.")
+            showDataOverlay("A1c Conversion", "No HbA1c found in patient labs.\n\nLoad a patient with A1c result to convert.")
+        }
+    }
+
+    /**
+     * Calculate and show glucose to A1c conversion
+     */
+    private fun calculateAndShowGlucoseToA1c() {
+        var glucose: Double? = null
+
+        currentPatientData?.optJSONArray("labs")?.let { labs ->
+            for (i in 0 until labs.length()) {
+                val lab = labs.getJSONObject(i)
+                val name = lab.optString("name", "").lowercase()
+                if (name.contains("glucose") && !name.contains("a1c")) {
+                    glucose = lab.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                    break
+                }
+            }
+        }
+
+        if (glucose != null) {
+            val a1c = glucoseToA1c(glucose!!)
+            val result = String.format("%.1f", a1c)
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 GLUCOSE TO A1c
+                |═══════════════════════════════════
+                |
+                |Avg Glucose: ${String.format("%.0f", glucose)} mg/dL
+                |
+                |📊 Est. A1c = $result%
+                |
+                |───────────────────────────────────
+                |Formula: A1c = (Glucose + 46.7) / 28.7
+            """.trimMargin()
+
+            showDataOverlay("Glucose to A1c", content)
+            speakFeedback("Average glucose of ${String.format("%.0f", glucose)} equals estimated A1c of $result percent")
+        } else {
+            speakFeedback("No glucose found in labs")
+            showDataOverlay("Glucose to A1c", "No glucose found in patient labs.\n\nLoad a patient with glucose result.")
+        }
+    }
+
+    /**
+     * Calculate and show MAP
+     */
+    private fun calculateAndShowMAP() {
+        var systolic: Double? = null
+        var diastolic: Double? = null
+
+        // Check captured vitals first
+        for (vital in capturedVitals) {
+            if (vital.type == VitalType.BLOOD_PRESSURE) {
+                val parts = vital.value.split("/")
+                if (parts.size == 2) {
+                    systolic = parts[0].replace(Regex("[^0-9]"), "").toDoubleOrNull()
+                    diastolic = parts[1].replace(Regex("[^0-9]"), "").toDoubleOrNull()
+                }
+            }
+        }
+
+        // Try patient vitals if not captured
+        if (systolic == null || diastolic == null) {
+            currentPatientData?.optJSONArray("vitals")?.let { vitals ->
+                for (i in 0 until vitals.length()) {
+                    val v = vitals.getJSONObject(i)
+                    val name = v.optString("name", "").lowercase()
+                    val value = v.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+
+                    when {
+                        name.contains("systolic") && systolic == null -> systolic = value
+                        name.contains("diastolic") && diastolic == null -> diastolic = value
+                    }
+                }
+            }
+        }
+
+        if (systolic != null && diastolic != null) {
+            val map = calculateMAP(systolic!!, diastolic!!)
+            val result = String.format("%.0f", map)
+
+            val interpretation = when {
+                map < 60 -> "Low - risk of organ hypoperfusion"
+                map < 70 -> "Low-normal"
+                map <= 100 -> "Normal (70-100)"
+                map <= 110 -> "High-normal"
+                else -> "High"
+            }
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 MEAN ARTERIAL PRESSURE
+                |═══════════════════════════════════
+                |
+                |BP: ${systolic!!.toInt()}/${diastolic!!.toInt()} mmHg
+                |
+                |📊 MAP = $result mmHg
+                |
+                |$interpretation
+                |
+                |───────────────────────────────────
+                |Formula: DBP + (SBP - DBP) / 3
+                |Target: ≥65 mmHg for organ perfusion
+            """.trimMargin()
+
+            showDataOverlay("MAP Result", content)
+            speakFeedback("Mean arterial pressure is $result. $interpretation")
+        } else {
+            speakFeedback("Need blood pressure. Say: BP 120 over 80")
+            showDataOverlay("MAP Calculator",
+                "Missing blood pressure.\n\n" +
+                "Say: \"BP 120 over 80\"\n\n" +
+                "Or load a patient with vitals.")
+        }
+    }
+
+    /**
+     * Calculate and show Creatinine Clearance
+     */
+    private fun calculateAndShowCrCl() {
+        var creatinine: Double? = null
+        var age: Int? = null
+        var weightKg: Double? = null
+        var isFemale: Boolean? = null
+
+        currentPatientData?.let { patient ->
+            // Age
+            patient.optString("date_of_birth", "")?.let { dob ->
+                if (dob.isNotEmpty()) {
+                    try {
+                        val birthYear = dob.substring(0, 4).toInt()
+                        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                        age = currentYear - birthYear
+                    } catch (e: Exception) {}
+                }
+            }
+
+            // Gender
+            val gender = patient.optString("gender", "").lowercase()
+            isFemale = gender == "female" || gender == "f"
+
+            // Creatinine
+            patient.optJSONArray("labs")?.let { labs ->
+                for (i in 0 until labs.length()) {
+                    val lab = labs.getJSONObject(i)
+                    val name = lab.optString("name", "").lowercase()
+                    if (name.contains("creatinine") && !name.contains("clearance")) {
+                        creatinine = lab.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                        break
+                    }
+                }
+            }
+
+            // Weight
+            patient.optJSONArray("vitals")?.let { vitals ->
+                for (i in 0 until vitals.length()) {
+                    val v = vitals.getJSONObject(i)
+                    val name = v.optString("name", "").lowercase()
+                    if (name.contains("weight")) {
+                        val value = v.optString("value", "").replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                        val unit = v.optString("unit", "").lowercase()
+                        if (value != null) {
+                            weightKg = if (unit.contains("lb")) value * 0.453592 else value
+                        }
+                        break
+                    }
+                }
+            }
+        }
+
+        // Check captured vitals for weight
+        if (weightKg == null) {
+            for (vital in capturedVitals) {
+                if (vital.type == VitalType.WEIGHT) {
+                    val value = vital.value.replace(Regex("[^0-9.]"), "").toDoubleOrNull()
+                    if (value != null) {
+                        weightKg = if (vital.unit.contains("lb", ignoreCase = true)) value * 0.453592 else value
+                    }
+                }
+            }
+        }
+
+        if (creatinine != null && age != null && weightKg != null && isFemale != null) {
+            val crcl = calculateCrCl(creatinine!!, age!!, weightKg!!, isFemale!!)
+            val result = String.format("%.0f", crcl)
+
+            val interpretation = when {
+                crcl >= 90 -> "Normal"
+                crcl >= 60 -> "Mild impairment"
+                crcl >= 30 -> "Moderate impairment"
+                crcl >= 15 -> "Severe impairment"
+                else -> "Kidney failure"
+            }
+
+            val content = """
+                |═══════════════════════════════════
+                |🧮 CREATININE CLEARANCE
+                |═══════════════════════════════════
+                |
+                |Creatinine: $creatinine mg/dL
+                |Age: $age years
+                |Weight: ${String.format("%.1f", weightKg)} kg
+                |Sex: ${if (isFemale!!) "Female" else "Male"}
+                |
+                |📊 CrCl = $result mL/min
+                |
+                |$interpretation
+                |
+                |───────────────────────────────────
+                |Cockcroft-Gault formula
+                |Use for drug dosing adjustments
+            """.trimMargin()
+
+            showDataOverlay("CrCl Result", content)
+            speakFeedback("Creatinine clearance is $result mL per minute. $interpretation")
+        } else {
+            speakFeedback("Need creatinine, age, weight, and sex for creatinine clearance")
+            showDataOverlay("CrCl Calculator",
+                "Missing data:\n\n" +
+                "• Creatinine: ${if (creatinine != null) "$creatinine mg/dL ✓" else "❌ needed"}\n" +
+                "• Age: ${if (age != null) "$age years ✓" else "❌ needed"}\n" +
+                "• Weight: ${if (weightKg != null) "${String.format("%.1f", weightKg)} kg ✓" else "❌ needed"}\n" +
+                "• Sex: ${if (isFemale != null) (if (isFemale!!) "Female" else "Male") + " ✓" else "❌ needed"}\n\n" +
+                "Load patient and capture weight if needed")
+        }
+    }
+
+    /**
+     * Calculate and show CHADS₂-VASc score
+     */
+    private fun calculateAndShowCHADSVASc() {
+        // This would need more patient history data
+        // For now, show the criteria
+        val content = """
+            |═══════════════════════════════════
+            |🧮 CHADS₂-VASc SCORE
+            |═══════════════════════════════════
+            |
+            |Score criteria (1 point each):
+            |• CHF / LV dysfunction
+            |• Hypertension
+            |• Age 65-74
+            |• Diabetes
+            |• Vascular disease (MI, PAD, aortic plaque)
+            |• Female sex
+            |
+            |2 points each:
+            |• Age ≥75
+            |• Prior Stroke/TIA/thromboembolism
+            |
+            |───────────────────────────────────
+            |ANTICOAGULATION:
+            |0 = Low risk (no anticoag)
+            |1 = Low-moderate (consider anticoag)
+            |≥2 = Anticoagulation recommended
+            |
+            |───────────────────────────────────
+            |Say conditions to calculate:
+            |"Patient has CHF and hypertension"
+        """.trimMargin()
+
+        showDataOverlay("CHADS₂-VASc", content)
+        speakFeedback("CHADS VASc score requires patient history. See criteria on screen.")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // VOICE ORDERS - Order Processing Functions
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -5580,6 +6394,17 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Vital history" - View past readings
             |• "Add vitals to note" - Insert into note
             |• "Clear vitals" - Remove all captured
+            |
+            |🧮 MEDICAL CALCULATORS
+            |• "Calculate BMI" - Body mass index
+            |• "Calculate GFR" - Kidney function
+            |• "Corrected calcium" - Adjust for albumin
+            |• "Anion gap" - From BMP labs
+            |• "A1c to glucose" - Convert HbA1c
+            |• "Calculate MAP" - Mean arterial pressure
+            |• "Creatinine clearance" - CrCl
+            |• "CHADS VASc" - Stroke risk
+            |• "Calculators" - Show all
             |
             |🎤 CUSTOM COMMANDS
             |• "Create command [name] that does [actions]"
@@ -8342,6 +9167,64 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
                     transcriptText.text = "Say: My name is Dr. [Name]"
                 }
             }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // MEDICAL CALCULATOR - Voice-activated clinical calculations
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Calculator list: "calculators", "show calculators", "medical calculators"
+            lower.contains("calculator") || lower.contains("calculations") -> {
+                if (lower.contains("bmi") || lower.contains("gfr") || lower.contains("calcium") ||
+                    lower.contains("anion") || lower.contains("a1c") || lower.contains("map") ||
+                    lower.contains("creatinine") || lower.contains("chads")) {
+                    processCalculatorCommand(lower)
+                } else {
+                    showCalculatorList()
+                }
+            }
+            // Calculate BMI: "calculate BMI", "what's the BMI", "BMI"
+            lower.contains("calculate bmi") || lower.contains("what's the bmi") ||
+            lower.contains("whats the bmi") || lower.contains("body mass index") ||
+            (lower.contains("bmi") && !lower.contains("calculator")) -> {
+                calculateAndShowBMI()
+            }
+            // Calculate eGFR: "calculate GFR", "what's the GFR", "kidney function"
+            lower.contains("calculate gfr") || lower.contains("egfr") ||
+            lower.contains("what's the gfr") || lower.contains("whats the gfr") ||
+            lower.contains("kidney function") || lower.contains("glomerular") -> {
+                calculateAndShowEGFR()
+            }
+            // Corrected Calcium: "corrected calcium", "calcium corrected"
+            lower.contains("corrected calcium") || lower.contains("correct calcium") ||
+            lower.contains("calcium correct") -> {
+                calculateAndShowCorrectedCalcium()
+            }
+            // Anion Gap: "anion gap", "calculate anion"
+            lower.contains("anion gap") || lower.contains("calculate anion") -> {
+                calculateAndShowAnionGap()
+            }
+            // A1c conversions: "A1c to glucose", "convert A1c"
+            lower.contains("a1c to glucose") || lower.contains("convert a1c") ||
+            lower.contains("a1c conversion") -> {
+                calculateAndShowA1cToGlucose()
+            }
+            lower.contains("glucose to a1c") -> {
+                calculateAndShowGlucoseToA1c()
+            }
+            // MAP: "calculate MAP", "mean arterial pressure"
+            lower.contains("calculate map") || lower.contains("mean arterial") ||
+            (lower == "map" || lower.contains("what's the map") || lower.contains("whats the map")) -> {
+                calculateAndShowMAP()
+            }
+            // Creatinine Clearance: "creatinine clearance", "CrCl", "cockcroft"
+            lower.contains("creatinine clearance") || lower.contains("crcl") ||
+            lower.contains("cockcroft") || lower.contains("calculate clearance") -> {
+                calculateAndShowCrCl()
+            }
+            // CHADS-VASc: "CHADS VASc", "stroke risk"
+            lower.contains("chads") || lower.contains("stroke risk") -> {
+                calculateAndShowCHADSVASc()
+            }
+
             // ═══════════════════════════════════════════════════════════════════════════
             // CUSTOM VOICE COMMANDS - User-defined macros and aliases
             // ═══════════════════════════════════════════════════════════════════════════

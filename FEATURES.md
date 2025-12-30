@@ -227,6 +227,15 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Teach [name] to [actions]" | Done |
 | [x] "My commands" / "List commands" | Done |
 | [x] "Delete command [name]" | Done |
+| [x] "Calculate BMI" / "Body mass index" | Done |
+| [x] "Calculate GFR" / "Kidney function" | Done |
+| [x] "Corrected calcium" | Done |
+| [x] "Anion gap" | Done |
+| [x] "A1c to glucose" / "Convert A1c" | Done |
+| [x] "Calculate MAP" / "Mean arterial pressure" | Done |
+| [x] "Creatinine clearance" / "CrCl" | Done |
+| [x] "CHADS VASc" / "Stroke risk" | Done |
+| [x] "Calculators" / "Show calculators" | Done |
 
 ---
 
@@ -288,6 +297,7 @@ Based on US Patent 15/237,980 and product requirements.
 39. ~~**Voice Vitals Entry**~~ - Done (Capture vitals by voice: BP, HR, Temp, O2, RR, Weight, Height, Pain; range validation; critical value warnings; add to notes)
 40. ~~**Vital History Display**~~ - Done (View historical vital readings timeline, "vital history" voice command, last 10 readings per vital type with trend icons and dates)
 41. ~~**Custom Voice Commands**~~ - Done (Create user-defined command macros, chain actions with "then"/"and", "create command", "teach", "when I say", "my commands", "delete command")
+42. ~~**Medical Calculator**~~ - Done (Voice-activated clinical calcs: BMI, eGFR, corrected calcium, anion gap, A1c↔glucose, MAP, CrCl, CHADS₂-VASc; auto-pulls from patient chart)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
