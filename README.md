@@ -166,6 +166,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Cancel Option**: "Cancel dictation" to discard without inserting
 - **Undo Support**: Dictated text can be undone with "undo" command
 
+### Voice Templates (NEW)
+- **Built-in Templates**: 8 specialty templates (diabetes, hypertension, URI, physical, back pain, UTI, well child, chest pain)
+- **Auto-Fill**: Patient data automatically fills template variables (name, age, meds, allergies, vitals, conditions)
+- **Voice Commands**: "Use diabetes template", "Use URI template" to apply templates
+- **User Templates**: Save current notes as templates ("save as template my followup")
+- **Template List**: "List templates" shows all available built-in and user templates
+- **Variable Substitution**: {{patient_name}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{age}}, {{gender}}
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

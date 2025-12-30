@@ -202,6 +202,10 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Dictate to [section]" - Start dictation | Done |
 | [x] "Stop dictating" - End and insert | Done |
 | [x] "Cancel dictation" - Discard | Done |
+| [x] "Use [template] template" - Apply template | Done |
+| [x] "List templates" - Show all templates | Done |
+| [x] "Save as template [name]" - Save user template | Done |
+| [x] "Delete template [name]" - Remove user template | Done |
 
 ---
 
@@ -256,6 +260,7 @@ Based on US Patent 15/237,980 and product requirements.
 32. ~~**Voice Note Editing**~~ - Done (Voice commands to edit notes: change/add to sections, delete, insert macros, undo with 10-level history)
 33. ~~**Voice Navigation**~~ - Done (Scroll up/down, go to top/bottom, jump to sections, show section only, read sections/note aloud via TTS)
 34. ~~**Voice Dictation Mode**~~ - Done (Dictate directly into sections, "dictate to plan", accumulates speech, "stop dictating" to insert)
+35. ~~**Voice Templates**~~ - Done (8 built-in templates with auto-fill patient data, user-created templates, "use diabetes template", variable substitution)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

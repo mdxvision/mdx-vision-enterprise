@@ -181,6 +181,327 @@ Neuro: Grossly intact""",
     private var dictationTargetSection: String? = null  // Which section to dictate into
     private var dictationBuffer: StringBuilder = StringBuilder()  // Accumulates dictated text
 
+    // Voice templates - built-in note templates with auto-fill variables
+    // Variables: {{patient_name}}, {{dob}}, {{age}}, {{gender}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{date}}
+    private val USER_TEMPLATES_KEY = "user_note_templates"
+
+    private val builtInTemplates = mapOf(
+        "diabetes" to NoteTemplate(
+            name = "Diabetes Follow-up",
+            category = "Primary Care",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for diabetes follow-up.
+Reports compliance with medications and diet.
+No hypoglycemic episodes. No polyuria/polydipsia.
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+General: Alert, well-appearing
+Foot exam: Skin intact, sensation normal, pulses palpable
+Eyes: No retinopathy noted
+
+▸ A:
+Type 2 Diabetes Mellitus - management ongoing
+{{conditions}}
+
+▸ P:
+• Continue current diabetes regimen
+• A1C recheck in 3 months
+• Annual eye exam reminder given
+• Foot care education reinforced
+• Diet and exercise counseling provided
+• Follow up in 3 months"""
+        ),
+        "hypertension" to NoteTemplate(
+            name = "Hypertension Follow-up",
+            category = "Primary Care",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for hypertension follow-up.
+Reports taking medications as prescribed.
+Denies headaches, chest pain, or shortness of breath.
+Home BP readings: [patient to report]
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+General: Alert, no acute distress
+CV: Regular rate and rhythm, no murmurs
+Lungs: Clear bilaterally
+
+▸ A:
+Essential Hypertension - {{controlled/uncontrolled}}
+{{conditions}}
+
+▸ P:
+• Continue current antihypertensive regimen
+• Low sodium diet reinforced
+• Continue home BP monitoring
+• Labs: BMP, lipid panel if due
+• Follow up in 1-3 months"""
+        ),
+        "uri" to NoteTemplate(
+            name = "Upper Respiratory Infection",
+            category = "Urgent Care",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents with upper respiratory symptoms.
+Duration: [X] days
+Symptoms: Nasal congestion, rhinorrhea, sore throat, cough
+Denies fever, shortness of breath, ear pain.
+No known sick contacts. Allergies: {{allergies}}
+
+▸ O:
+Vitals: {{vitals}}
+General: Mild distress, appears fatigued
+HEENT: TMs clear, oropharynx mildly erythematous, no exudates
+Neck: No lymphadenopathy
+Lungs: Clear to auscultation bilaterally
+
+▸ A:
+Acute Upper Respiratory Infection (viral)
+
+▸ P:
+• Supportive care: rest, fluids, OTC decongestants
+• Honey for cough (if >1 year old)
+• Acetaminophen or ibuprofen for discomfort
+• Return if: fever >101, symptoms >10 days, difficulty breathing
+• No antibiotics indicated at this time"""
+        ),
+        "annual_physical" to NoteTemplate(
+            name = "Annual Physical",
+            category = "Primary Care",
+            noteType = "HP",
+            content = """▸ CHIEF COMPLAINT:
+Annual wellness examination
+
+▸ HPI:
+{{patient_name}}, {{age}} year old {{gender}}, presents for annual physical.
+No acute complaints today.
+Medications: {{medications}}
+Allergies: {{allergies}}
+
+▸ PMH:
+{{conditions}}
+
+▸ SOCIAL HISTORY:
+Tobacco: [Never/Former/Current]
+Alcohol: [None/Social/Daily]
+Exercise: [Frequency]
+Diet: [Description]
+
+▸ FAMILY HISTORY:
+[To be documented]
+
+▸ ROS:
+Constitutional: No fever, weight changes
+Eyes: No vision changes
+ENT: No hearing loss, sore throat
+CV: No chest pain, palpitations
+Respiratory: No cough, shortness of breath
+GI: No abdominal pain, changes in bowel habits
+GU: No dysuria, frequency
+MSK: No joint pain
+Neuro: No headaches, weakness
+Psych: No depression, anxiety
+
+▸ PHYSICAL EXAM:
+Vitals: {{vitals}}
+General: Well-appearing, no acute distress
+HEENT: Normocephalic, PERRL, TMs clear, oropharynx normal
+Neck: Supple, no lymphadenopathy, thyroid normal
+Lungs: Clear to auscultation bilaterally
+Heart: Regular rate and rhythm, no murmurs
+Abdomen: Soft, non-tender, no masses
+Extremities: No edema, pulses intact
+Skin: No suspicious lesions
+Neuro: Alert, oriented, cranial nerves intact
+
+▸ ASSESSMENT:
+Annual wellness examination - {{age}} year old {{gender}}
+{{conditions}}
+
+▸ PLAN:
+• Health maintenance counseling provided
+• Age-appropriate cancer screenings discussed
+• Immunizations: [Updated/Due]
+• Labs ordered: CBC, CMP, Lipid panel, A1C
+• Follow up in 1 year or as needed"""
+        ),
+        "back_pain" to NoteTemplate(
+            name = "Low Back Pain",
+            category = "Urgent Care",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents with low back pain.
+Onset: [Acute/Gradual]
+Duration: [X] days/weeks
+Location: [Lumbar/Sacral], [Unilateral/Bilateral]
+Radiation: [None/To legs]
+Severity: [X]/10
+Aggravating factors: [Bending/Lifting/Sitting]
+Relieving factors: [Rest/Ice/Heat/Medication]
+Red flags: Denies bowel/bladder dysfunction, saddle anesthesia, fever
+No trauma reported. Allergies: {{allergies}}
+
+▸ O:
+Vitals: {{vitals}}
+General: Mild distress due to pain
+Back: Tenderness at [location], no spinal step-off
+ROM: Limited [flexion/extension] due to pain
+Neuro: Strength 5/5 bilateral lower extremities
+Sensation intact, DTRs 2+ symmetric
+Straight leg raise: [Negative/Positive]
+Gait: [Antalgic/Normal]
+
+▸ A:
+Acute Low Back Pain - Musculoskeletal/Mechanical
+No red flag symptoms
+
+▸ P:
+• NSAIDs: Ibuprofen 600mg TID with food x 7 days
+• Muscle relaxant: [If appropriate]
+• Ice/heat as needed
+• Gentle stretching, avoid heavy lifting
+• Activity as tolerated, avoid bed rest
+• Return if: weakness, numbness, bowel/bladder changes
+• Follow up in 1-2 weeks if not improving"""
+        ),
+        "uti" to NoteTemplate(
+            name = "Urinary Tract Infection",
+            category = "Urgent Care",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents with urinary symptoms.
+Duration: [X] days
+Symptoms: Dysuria, frequency, urgency
+[Hematuria: Yes/No]
+Denies fever, flank pain, nausea/vomiting.
+No vaginal discharge. LMP: [Date]
+Allergies: {{allergies}}
+
+▸ O:
+Vitals: {{vitals}}
+General: No acute distress
+Abdomen: Soft, mild suprapubic tenderness, no CVA tenderness
+UA: [Results - typically positive LE, nitrites]
+
+▸ A:
+Acute Uncomplicated Urinary Tract Infection (Cystitis)
+
+▸ P:
+• Nitrofurantoin 100mg BID x 5 days
+  OR Trimethoprim-sulfamethoxazole DS BID x 3 days
+• Increase fluid intake
+• Urinate frequently, especially after intercourse
+• Return if: fever, flank pain, symptoms not improving in 48h
+• Follow up if recurrent UTIs"""
+        ),
+        "well_child" to NoteTemplate(
+            name = "Well Child Visit",
+            category = "Pediatrics",
+            noteType = "HP",
+            content = """▸ CHIEF COMPLAINT:
+Well child visit - [Age] month/year check
+
+▸ HPI:
+{{patient_name}}, {{age}}, presents for routine well child examination.
+Parent reports child is doing well.
+Feeding: [Breast/Formula/Table foods]
+Sleep: [Hours, pattern]
+Development: Meeting milestones appropriately
+
+▸ BIRTH HISTORY:
+[Term/Preterm], [Vaginal/C-section]
+Birth weight: [X] lbs
+No NICU stay
+
+▸ MEDICATIONS:
+{{medications}}
+
+▸ ALLERGIES:
+{{allergies}}
+
+▸ DEVELOPMENT:
+Gross Motor: [Age appropriate]
+Fine Motor: [Age appropriate]
+Language: [Age appropriate]
+Social: [Age appropriate]
+
+▸ PHYSICAL EXAM:
+Vitals: {{vitals}}
+Growth: Weight [X]%, Height [X]%, HC [X]%
+General: Alert, active, well-appearing
+HEENT: Normocephalic, fontanelle [if applicable], TMs clear, red reflex present
+Neck: Supple
+Heart: Regular rhythm, no murmurs
+Lungs: Clear
+Abdomen: Soft, no hepatosplenomegaly
+GU: [Normal male/female]
+Hips: Stable, no click
+Skin: No rashes
+Neuro: Age-appropriate tone and reflexes
+
+▸ ASSESSMENT:
+Well child - {{age}} - healthy, developing appropriately
+
+▸ PLAN:
+• Immunizations: [Given today]
+• Anticipatory guidance provided
+• Safety counseling: [Age appropriate]
+• Nutrition counseling provided
+• Next visit: [Age] check"""
+        ),
+        "chest_pain" to NoteTemplate(
+            name = "Chest Pain Evaluation",
+            category = "Urgent Care",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents with chest pain.
+Onset: [Sudden/Gradual]
+Duration: [Minutes/Hours/Days]
+Location: [Substernal/Left/Right chest]
+Quality: [Sharp/Pressure/Burning]
+Radiation: [None/Arm/Jaw/Back]
+Severity: [X]/10
+Associated symptoms: [SOB/Diaphoresis/Nausea/Palpitations]
+Aggravating factors: [Exertion/Breathing/Position/Food]
+Relieving factors: [Rest/Antacids/Position change]
+Risk factors: [HTN/DM/Smoking/Family hx CAD/Hyperlipidemia]
+Medications: {{medications}}
+Allergies: {{allergies}}
+
+▸ O:
+Vitals: {{vitals}}
+General: [Distress level]
+CV: Regular rate and rhythm, no murmurs, no JVD
+Lungs: Clear bilaterally, no wheezes
+Chest wall: [Reproducible tenderness: Yes/No]
+Extremities: No edema, pulses equal
+EKG: [Normal sinus rhythm/Findings]
+
+▸ A:
+Chest Pain - [Etiology]
+Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
+
+▸ P:
+• [Based on presentation]
+• Return immediately if: worsening pain, shortness of breath, diaphoresis
+• Follow up with PCP in [X] days
+• Consider cardiology referral if indicated"""
+        )
+    )
+
+    // Data class for note templates
+    data class NoteTemplate(
+        val name: String,
+        val category: String,
+        val noteType: String,  // SOAP, HP, PROGRESS, CONSULT
+        val content: String
+    )
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -2192,6 +2513,510 @@ Neuro: Grossly intact""",
      */
     private fun isInDictationMode(): Boolean = isDictationMode
 
+    // ============ Voice Template Functions ============
+
+    /**
+     * Apply a template to the current note, replacing variables with patient data.
+     */
+    private fun applyTemplate(templateKey: String) {
+        val template = builtInTemplates[templateKey] ?: getUserTemplate(templateKey)
+        if (template == null) {
+            Toast.makeText(this, "Template not found: $templateKey", Toast.LENGTH_SHORT).show()
+            speakFeedback("Template not found")
+            return
+        }
+
+        // Need a patient loaded for auto-fill
+        val patient = currentPatientData
+        if (patient == null) {
+            Toast.makeText(this, "Load a patient first", Toast.LENGTH_SHORT).show()
+            speakFeedback("Load a patient first to use templates")
+            return
+        }
+
+        // Replace variables with patient data
+        val filledContent = fillTemplateVariables(template.content, patient)
+
+        // Set note type based on template
+        currentNoteType = template.noteType
+
+        // Show the note in edit overlay
+        showNoteForEditing(filledContent, template.noteType)
+
+        speakFeedback("${template.name} template applied")
+        transcriptText.text = "Template: ${template.name}"
+        Log.d(TAG, "Applied template: ${template.name}")
+    }
+
+    /**
+     * Fill template variables with patient data.
+     * Variables: {{patient_name}}, {{dob}}, {{age}}, {{gender}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{date}}
+     */
+    private fun fillTemplateVariables(content: String, patient: JSONObject): String {
+        var result = content
+
+        // Patient name
+        val name = patient.optString("name", "Patient")
+        result = result.replace("{{patient_name}}", name)
+
+        // Date of birth
+        val dob = patient.optString("date_of_birth", "Unknown")
+        result = result.replace("{{dob}}", dob)
+
+        // Calculate age from DOB
+        val age = calculateAge(dob)
+        result = result.replace("{{age}}", age)
+
+        // Gender
+        val gender = patient.optString("gender", "").lowercase()
+        val genderText = when (gender) {
+            "male" -> "male"
+            "female" -> "female"
+            else -> gender
+        }
+        result = result.replace("{{gender}}", genderText)
+
+        // Current date
+        val dateFormat = java.text.SimpleDateFormat("MMMM d, yyyy", Locale.US)
+        val currentDate = dateFormat.format(java.util.Date())
+        result = result.replace("{{date}}", currentDate)
+
+        // Medications
+        val medications = patient.optJSONArray("medications")
+        val medsText = if (medications != null && medications.length() > 0) {
+            val medList = mutableListOf<String>()
+            for (i in 0 until minOf(medications.length(), 5)) {
+                val med = medications.optJSONObject(i)
+                val medName = med?.optString("name", "") ?: ""
+                if (medName.isNotEmpty()) medList.add(medName)
+            }
+            if (medList.isEmpty()) "None documented" else medList.joinToString(", ")
+        } else {
+            "None documented"
+        }
+        result = result.replace("{{medications}}", medsText)
+
+        // Allergies
+        val allergies = patient.optJSONArray("allergies")
+        val allergiesText = if (allergies != null && allergies.length() > 0) {
+            val allergyList = mutableListOf<String>()
+            for (i in 0 until allergies.length()) {
+                val allergy = allergies.optJSONObject(i)
+                val allergyName = allergy?.optString("substance", "") ?: ""
+                if (allergyName.isNotEmpty()) allergyList.add(allergyName)
+            }
+            if (allergyList.isEmpty()) "NKDA" else allergyList.joinToString(", ")
+        } else {
+            "NKDA"
+        }
+        result = result.replace("{{allergies}}", allergiesText)
+
+        // Vitals
+        val vitals = patient.optJSONArray("vitals")
+        val vitalsText = if (vitals != null && vitals.length() > 0) {
+            val vitalList = mutableListOf<String>()
+            for (i in 0 until minOf(vitals.length(), 5)) {
+                val vital = vitals.optJSONObject(i)
+                val vitalName = vital?.optString("type", "") ?: ""
+                val vitalValue = vital?.optString("value", "") ?: ""
+                val vitalUnit = vital?.optString("unit", "") ?: ""
+                if (vitalName.isNotEmpty() && vitalValue.isNotEmpty()) {
+                    vitalList.add("$vitalName: $vitalValue $vitalUnit".trim())
+                }
+            }
+            if (vitalList.isEmpty()) "Not available" else vitalList.joinToString(", ")
+        } else {
+            "Not available"
+        }
+        result = result.replace("{{vitals}}", vitalsText)
+
+        // Conditions
+        val conditions = patient.optJSONArray("conditions")
+        val conditionsText = if (conditions != null && conditions.length() > 0) {
+            val condList = mutableListOf<String>()
+            for (i in 0 until minOf(conditions.length(), 5)) {
+                val condition = conditions.optJSONObject(i)
+                val condName = condition?.optString("name", "") ?: ""
+                if (condName.isNotEmpty()) condList.add("• $condName")
+            }
+            if (condList.isEmpty()) "None documented" else condList.joinToString("\n")
+        } else {
+            "None documented"
+        }
+        result = result.replace("{{conditions}}", conditionsText)
+
+        return result
+    }
+
+    /**
+     * Calculate age from date of birth string.
+     */
+    private fun calculateAge(dob: String): String {
+        try {
+            val formats = listOf(
+                java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US),
+                java.text.SimpleDateFormat("MM/dd/yyyy", Locale.US)
+            )
+            for (format in formats) {
+                try {
+                    val birthDate = format.parse(dob) ?: continue
+                    val today = java.util.Calendar.getInstance()
+                    val birth = java.util.Calendar.getInstance().apply { time = birthDate }
+
+                    var age = today.get(java.util.Calendar.YEAR) - birth.get(java.util.Calendar.YEAR)
+                    if (today.get(java.util.Calendar.DAY_OF_YEAR) < birth.get(java.util.Calendar.DAY_OF_YEAR)) {
+                        age--
+                    }
+                    return age.toString()
+                } catch (e: Exception) {
+                    continue
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error calculating age: ${e.message}")
+        }
+        return "Unknown"
+    }
+
+    /**
+     * Show the template list overlay.
+     */
+    private fun showTemplateListOverlay() {
+        val sb = StringBuilder()
+        sb.append("📋 AVAILABLE TEMPLATES\n")
+        sb.append("${"═".repeat(30)}\n\n")
+
+        // Group by category
+        val categories = builtInTemplates.values.groupBy { it.category }
+
+        for ((category, templates) in categories) {
+            sb.append("▸ $category\n")
+            for (template in templates) {
+                val key = builtInTemplates.entries.find { it.value == template }?.key ?: ""
+                sb.append("  • ${template.name} (\"use $key template\")\n")
+            }
+            sb.append("\n")
+        }
+
+        // User templates
+        val userTemplates = getUserTemplates()
+        if (userTemplates.isNotEmpty()) {
+            sb.append("▸ My Templates\n")
+            for ((key, template) in userTemplates) {
+                sb.append("  • ${template.name} (\"use $key template\")\n")
+            }
+            sb.append("\n")
+        }
+
+        sb.append("${"─".repeat(30)}\n")
+        sb.append("Say \"use [name] template\" to apply")
+
+        showDataOverlay("Note Templates", sb.toString())
+        speakFeedback("${builtInTemplates.size} templates available")
+        Log.d(TAG, "Showing template list")
+    }
+
+    /**
+     * Show note content for editing (used by templates).
+     */
+    private fun showNoteForEditing(content: String, noteType: String) {
+        // Store the note for editing
+        editableNoteContent = content
+        isNoteEditing = true
+        editHistory.clear()
+
+        // Create a mock note object for the existing edit overlay
+        val noteJson = JSONObject().apply {
+            put("content", content)
+            put("note_type", noteType)
+        }
+        lastGeneratedNote = noteJson
+
+        // Show the edit overlay
+        showNoteEditOverlay(content)
+    }
+
+    /**
+     * Show note edit overlay (extracted for reuse with templates).
+     */
+    private fun showNoteEditOverlay(content: String) {
+        // Remove existing overlay if any
+        dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dataOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            // Title row with note type
+            val titleRow = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, 0, 0, 8)
+            }
+
+            val titleText = TextView(context).apply {
+                text = "📝 Edit Note"
+                textSize = getTitleFontSize()
+                setTextColor(0xFF10B981.toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            titleRow.addView(titleText)
+            innerLayout.addView(titleRow)
+
+            // Hint text
+            val hintText = TextView(context).apply {
+                text = "Edit the note below, then tap SAVE or say 'save note'"
+                textSize = 12f
+                setTextColor(0xFF94A3B8.toInt())
+                setPadding(0, 0, 0, 8)
+            }
+            innerLayout.addView(hintText)
+
+            // Scrollable editable content
+            val scrollView = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+                setBackgroundColor(0xFF1E293B.toInt())
+            }
+
+            // EditText for editable note content
+            noteEditText = android.widget.EditText(context).apply {
+                setText(content)
+                textSize = getContentFontSize()
+                setTextColor(0xFFF8FAFC.toInt())
+                setHintTextColor(0xFF64748B.toInt())
+                setLineSpacing(4f, 1.2f)
+                setBackgroundColor(0x00000000)
+                setPadding(16, 16, 16, 16)
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                        android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                        android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                isSingleLine = false
+                minLines = 10
+
+                addTextChangedListener(object : android.text.TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                        isNoteEditing = true
+                        editableNoteContent = s?.toString()
+                    }
+                    override fun afterTextChanged(s: android.text.Editable?) {}
+                })
+            }
+            scrollView.addView(noteEditText)
+            innerLayout.addView(scrollView)
+
+            // Track for voice navigation
+            currentScrollView = scrollView
+
+            // Button row
+            val buttonRow = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 16, 0, 0)
+            }
+
+            // Reset button
+            val resetButton = android.widget.Button(context).apply {
+                text = "↩ RESET"
+                setBackgroundColor(0xFF6366F1.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.8f).apply {
+                    marginEnd = 4
+                }
+                setOnClickListener {
+                    noteEditText?.setText(content)
+                    editableNoteContent = content
+                    isNoteEditing = false
+                    editHistory.clear()
+                    Toast.makeText(context, "Note reset", Toast.LENGTH_SHORT).show()
+                }
+            }
+            buttonRow.addView(resetButton)
+
+            // Save button
+            val saveButton = android.widget.Button(context).apply {
+                text = "💾 SAVE"
+                setBackgroundColor(0xFF10B981.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = 4
+                    marginEnd = 4
+                }
+                setOnClickListener {
+                    saveCurrentNote()
+                }
+            }
+            buttonRow.addView(saveButton)
+
+            // Close button
+            val closeButton = android.widget.Button(context).apply {
+                text = "✕"
+                setBackgroundColor(0xFF475569.toInt())
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 14f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 0.5f).apply {
+                    marginStart = 4
+                }
+                setOnClickListener {
+                    hideDataOverlay()
+                    noteEditText = null
+                    editableNoteContent = null
+                    isNoteEditing = false
+                }
+            }
+            buttonRow.addView(closeButton)
+
+            innerLayout.addView(buttonRow)
+            addView(innerLayout)
+        }
+
+        rootView.addView(dataOverlay)
+        statusText.text = "Edit Note"
+        transcriptText.text = "Edit note or say 'save note'"
+    }
+
+    /**
+     * Get user-created templates from SharedPreferences.
+     */
+    private fun getUserTemplates(): Map<String, NoteTemplate> {
+        val templatesJson = cachePrefs.getString(USER_TEMPLATES_KEY, null) ?: return emptyMap()
+        return try {
+            val result = mutableMapOf<String, NoteTemplate>()
+            val json = JSONObject(templatesJson)
+            for (key in json.keys()) {
+                val templateJson = json.getJSONObject(key)
+                result[key] = NoteTemplate(
+                    name = templateJson.optString("name", key),
+                    category = templateJson.optString("category", "My Templates"),
+                    noteType = templateJson.optString("noteType", "SOAP"),
+                    content = templateJson.optString("content", "")
+                )
+            }
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading user templates: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    /**
+     * Get a specific user template.
+     */
+    private fun getUserTemplate(key: String): NoteTemplate? {
+        return getUserTemplates()[key]
+    }
+
+    /**
+     * Save the current note as a user template.
+     */
+    private fun saveAsTemplate(templateName: String) {
+        val content = editableNoteContent
+        if (content.isNullOrEmpty()) {
+            Toast.makeText(this, "No note content to save as template", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Create template key from name
+        val key = templateName.lowercase().replace(Regex("[^a-z0-9]"), "_")
+
+        // Load existing templates
+        val existingJson = cachePrefs.getString(USER_TEMPLATES_KEY, null)
+        val templates = if (existingJson != null) JSONObject(existingJson) else JSONObject()
+
+        // Add new template
+        val templateJson = JSONObject().apply {
+            put("name", templateName)
+            put("category", "My Templates")
+            put("noteType", currentNoteType)
+            put("content", content)
+        }
+        templates.put(key, templateJson)
+
+        // Save
+        cachePrefs.edit().putString(USER_TEMPLATES_KEY, templates.toString()).apply()
+
+        Toast.makeText(this, "Saved template: $templateName", Toast.LENGTH_SHORT).show()
+        speakFeedback("Template saved as $templateName")
+        Log.d(TAG, "Saved user template: $key")
+    }
+
+    /**
+     * Delete a user template.
+     */
+    private fun deleteUserTemplate(templateName: String) {
+        val key = templateName.lowercase().replace(Regex("[^a-z0-9]"), "_")
+
+        val existingJson = cachePrefs.getString(USER_TEMPLATES_KEY, null) ?: return
+        val templates = JSONObject(existingJson)
+
+        if (templates.has(key)) {
+            templates.remove(key)
+            cachePrefs.edit().putString(USER_TEMPLATES_KEY, templates.toString()).apply()
+            Toast.makeText(this, "Deleted template: $templateName", Toast.LENGTH_SHORT).show()
+            speakFeedback("Template deleted")
+            Log.d(TAG, "Deleted user template: $key")
+        } else {
+            Toast.makeText(this, "Template not found: $templateName", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Find template by name (searches both built-in and user templates).
+     */
+    private fun findTemplateByName(name: String): String? {
+        val lowerName = name.lowercase().trim()
+
+        // Check built-in templates
+        for ((key, template) in builtInTemplates) {
+            if (key == lowerName || template.name.lowercase().contains(lowerName)) {
+                return key
+            }
+        }
+
+        // Check user templates
+        for ((key, template) in getUserTemplates()) {
+            if (key == lowerName || template.name.lowercase().contains(lowerName)) {
+                return key
+            }
+        }
+
+        // Check common aliases
+        val aliases = mapOf(
+            "dm" to "diabetes",
+            "dm2" to "diabetes",
+            "htn" to "hypertension",
+            "bp" to "hypertension",
+            "cold" to "uri",
+            "physical" to "annual_physical",
+            "wellness" to "annual_physical",
+            "annual" to "annual_physical",
+            "lbp" to "back_pain",
+            "backache" to "back_pain",
+            "chest" to "chest_pain",
+            "cp" to "chest_pain",
+            "peds" to "well_child",
+            "child" to "well_child",
+            "pediatric" to "well_child"
+        )
+
+        return aliases[lowerName]
+    }
+
     private fun showVoiceCommandHelp() {
         val helpText = """
             |🎤 VOICE COMMANDS
@@ -2287,6 +3112,14 @@ Neuro: Grossly intact""",
             |• "Lock session" - Lock for HIPAA
             |• "Unlock" - Unlock session
             |• "Timeout [N] min" - Set timeout
+            |
+            |📄 VOICE TEMPLATES
+            |• "Use [template] template" - Apply template
+            |• "List templates" - Show all templates
+            |• "Save as template [name]" - Save current note
+            |• "Delete template [name]" - Remove user template
+            |  (diabetes, hypertension, URI, physical,
+            |   back pain, UTI, well child, chest pain)
             |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
@@ -4753,6 +5586,67 @@ Neuro: Grossly intact""",
                 // Start dictation to default section (plan is most common for orders)
                 Toast.makeText(this, "Say 'dictate to [section]' (e.g., 'dictate to plan')", Toast.LENGTH_LONG).show()
                 speakFeedback("Say dictate to and the section name. For example, dictate to plan.")
+            }
+            // Voice Template Commands
+            lower.contains("use") && lower.contains("template") -> {
+                // "Use diabetes template", "Use URI template", "Use my headache template"
+                val templateName = lower
+                    .replace("use", "")
+                    .replace("template", "")
+                    .replace("the", "")
+                    .replace("my", "")
+                    .trim()
+                if (templateName.isNotEmpty()) {
+                    val templateKey = findTemplateByName(templateName)
+                    if (templateKey != null) {
+                        applyTemplate(templateKey)
+                    } else {
+                        Toast.makeText(this, "Template not found: $templateName", Toast.LENGTH_SHORT).show()
+                        speakFeedback("Template not found. Say list templates to see available options.")
+                    }
+                } else {
+                    showTemplateListOverlay()
+                }
+            }
+            lower.contains("list template") || lower.contains("show template") || lower.contains("available template") ||
+            lower == "templates" || lower.contains("what template") -> {
+                // List available templates
+                showTemplateListOverlay()
+            }
+            lower.contains("my template") || lower.contains("custom template") || lower.contains("saved template") -> {
+                // Show user templates
+                val userTemplates = getUserTemplates()
+                if (userTemplates.isEmpty()) {
+                    Toast.makeText(this, "No custom templates saved", Toast.LENGTH_SHORT).show()
+                    speakFeedback("No custom templates. Say save as template to create one.")
+                } else {
+                    showTemplateListOverlay()
+                }
+            }
+            lower.contains("save as template") || lower.contains("save template") -> {
+                // "Save as template headache", "Save template diabetes followup"
+                val templateName = lower
+                    .replace("save as template", "")
+                    .replace("save template", "")
+                    .trim()
+                if (templateName.isNotEmpty()) {
+                    saveAsTemplate(templateName)
+                } else {
+                    Toast.makeText(this, "Say 'save as template [name]'", Toast.LENGTH_SHORT).show()
+                    speakFeedback("Say save as template followed by a name")
+                }
+            }
+            lower.contains("delete template") || lower.contains("remove template") -> {
+                // "Delete template headache"
+                val templateName = lower
+                    .replace("delete template", "")
+                    .replace("remove template", "")
+                    .trim()
+                if (templateName.isNotEmpty()) {
+                    deleteUserTemplate(templateName)
+                } else {
+                    Toast.makeText(this, "Say 'delete template [name]'", Toast.LENGTH_SHORT).show()
+                }
             }
             // Offline note drafts voice commands
             lower.contains("sync notes") || lower.contains("sync drafts") || lower.contains("upload drafts") -> {
