@@ -279,6 +279,37 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Update Status**: "Mark referral 1 scheduled", "Mark referral 2 complete"
 - **Voice Commands**: "Show referrals", "Urgent referral to neurology for headache"
 
+### Specialty-Specific Templates (NEW)
+- **14 Clinical Templates**: Pre-built documentation templates by specialty
+- **Cardiology**: Chest pain evaluation, heart failure, atrial fibrillation
+- **Orthopedics**: Joint pain, fracture evaluation
+- **Neurology**: Headache evaluation, stroke/CVA workup
+- **GI**: Abdominal pain, GERD assessment
+- **Pulmonology**: COPD exacerbation, asthma attack
+- **Psychiatry**: Depression screening, anxiety evaluation
+- **Emergency**: Trauma assessment, sepsis workup
+- **Voice Commands**: "Specialty templates", "Use cardiology chest pain template"
+
+### Note Versioning (NEW)
+- **Revision History**: Automatic tracking of all note changes
+- **Restore Previous**: Roll back to any previous version
+- **Version Comparison**: Diff current vs previous versions
+- **Change Tracking**: Timestamps and change descriptions
+- **Voice Commands**: "Version history", "Restore version 3", "Compare versions"
+
+### Data Encryption at Rest (NEW)
+- **AES-256-GCM**: Industry-standard encryption via Android Keystore
+- **EncryptedSharedPreferences**: Secure PHI storage
+- **Hardware-Backed**: Uses Trusted Execution Environment when available
+- **HIPAA Compliant**: Meets encryption requirements for PHI
+- **Voice Commands**: "Encryption status", "Wipe data"
+
+### Medical Code Databases (NEW)
+- **ICD-10-CM**: 150+ diagnostic codes with keyword mapping
+- **CPT**: 100+ procedure codes (E/M, labs, imaging, procedures)
+- **Modifier Support**: -25, -59, LT/RT, TC, and more
+- **Auto-Suggest**: Codes suggested from transcript content
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

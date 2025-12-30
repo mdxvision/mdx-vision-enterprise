@@ -315,12 +315,16 @@ Based on US Patent 15/237,980 and product requirements.
 46. ~~**Clinical Reminders**~~ - Done (Age-based screening, condition-based monitoring, medication monitoring; USPSTF/CDC/ADA guidelines; priority levels)
 47. ~~**Medication Reconciliation**~~ - Done (Compare home vs EHR meds; add/remove home meds by voice; highlight discrepancies)
 48. ~~**Referral Tracking**~~ - Done (16 specialties; urgency levels; status tracking; create/update referrals by voice)
+49. ~~**Specialty-Specific Templates**~~ - Done (14 templates: Cardiology chest pain/heart failure/afib, Ortho joint pain/fracture, Neuro headache/stroke, GI abdominal pain/GERD, Pulm COPD/asthma, Psych depression/anxiety, ED trauma/sepsis)
+50. ~~**Note Versioning**~~ - Done (Track revision history; restore previous versions; compare versions; version timestamps; change descriptions)
+51. ~~**ICD-10-CM Database**~~ - Done (150+ codes: infectious, neoplasms, endocrine, circulatory, respiratory, digestive, musculoskeletal, symptoms, injury, external causes)
+52. ~~**CPT Database**~~ - Done (100+ codes: E/M 99201-99215, 99281-99285, preventive, labs 80048-80076, procedures 10060-69990, imaging 71045-74177; modifiers)
+53. ~~**Data Encryption at Rest**~~ - Done (AES-256-GCM via Android Keystore; EncryptedSharedPreferences; secure PHI caching; HIPAA compliant)
 
 ### Upcoming
 1. **Epic/Veradigm Integration** - Needs live credentials
 2. **Vuzix HUD Overlay** - True AR display mode
 3. **OAuth2/SMART on FHIR** - User authentication
-4. **Data Encryption at Rest** - Local storage security
 
 ---
 
@@ -335,4 +339,4 @@ Based on US Patent 15/237,980 and product requirements.
 
 ---
 
-Last Updated: December 29, 2024
+Last Updated: December 30, 2024

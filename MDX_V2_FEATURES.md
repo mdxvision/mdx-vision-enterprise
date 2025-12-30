@@ -374,6 +374,40 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Mark referral [#] complete" | Done | Update status to completed |
 | [x] "Clear referrals" | Done | Remove all referrals |
 
+### Specialty Template Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Specialty templates" | Done | List all 14 templates |
+| [x] "Use [template] template" | Done | Apply specialty template |
+| [x] "Use cardiology chest pain template" | Done | Apply cardio CP template |
+| [x] "Use heart failure template" | Done | Apply CHF template |
+| [x] "Use afib template" | Done | Apply AFib template |
+| [x] "Use joint pain template" | Done | Apply ortho template |
+| [x] "Use headache template" | Done | Apply neuro template |
+| [x] "Use stroke template" | Done | Apply CVA template |
+| [x] "Use abdominal pain template" | Done | Apply GI template |
+| [x] "Use copd template" | Done | Apply pulm template |
+| [x] "Use depression template" | Done | Apply psych template |
+| [x] "Use trauma template" | Done | Apply ED template |
+| [x] "Use sepsis template" | Done | Apply sepsis template |
+
+### Note Versioning Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Version history" | Done | Show all note versions |
+| [x] "Note versions" / "Show versions" | Done | View version list |
+| [x] "Restore version [N]" | Done | Restore older version |
+| [x] "Compare versions" | Done | Diff current vs previous |
+| [x] "Clear version history" | Done | Clear all versions |
+
+### Data Encryption Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Encryption status" | Done | Show security info |
+| [x] "Security status" | Done | Show encryption state |
+| [x] "Wipe data" | Done | Securely erase PHI |
+| [x] "Secure wipe" / "Erase data" | Done | Delete all local data |
+
 ---
 
 ## Transcript Preview Features

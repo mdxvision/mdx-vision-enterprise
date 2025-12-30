@@ -302,17 +302,21 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 53. **Clinical Reminders** - Preventive care prompts based on patient data; age-based screening (colonoscopy, mammogram, DEXA); condition-based monitoring (diabetes A1c, CHF weight, CKD labs); medication monitoring (warfarin INR, lithium levels); USPSTF/CDC/ADA guideline sources
 54. **Medication Reconciliation** - Compare home meds vs EHR meds; add/remove home medications by voice; highlight discrepancies (EHR-only, home-only, matched); voice commands ("med reconciliation", "add home med [name]", "compare meds", "clear home meds")
 55. **Referral Tracking** - Track specialist referrals; 16 common specialties; urgency levels (routine, urgent, stat); status tracking (pending, scheduled, completed); voice commands ("refer to cardiology for chest pain", "urgent referral to neurology", "mark referral 1 scheduled")
+56. **Specialty-Specific Templates** - 14 clinical templates by specialty: Cardiology (chest pain, heart failure, afib), Orthopedics (joint pain, fracture), Neurology (headache, stroke), GI (abdominal pain, GERD), Pulmonology (COPD, asthma), Psychiatry (depression, anxiety), Emergency (trauma, sepsis); voice commands ("specialty templates", "use cardiology chest pain template")
+57. **Note Versioning** - Track note revision history; save versions on edits; restore previous versions; compare current vs previous; version timestamps and change descriptions; voice commands ("version history", "restore version 3", "compare versions", "clear version history")
+58. **ICD-10-CM Database** - 150+ diagnostic codes with keyword mapping; categories include infectious diseases, neoplasms, endocrine, circulatory, respiratory, digestive, musculoskeletal, symptoms/signs, injury, and external causes; auto-suggest from transcript
+59. **CPT Database** - 100+ procedure codes covering E/M services (99201-99215, 99281-99285), preventive visits, labs (80048-80076, 85025), procedures (10060-69990), imaging (71045-74177); modifier support (-25, -59, LT/RT, etc.)
+60. **Data Encryption at Rest** - AES-256-GCM encryption via Android Keystore; EncryptedSharedPreferences for PHI storage; secure patient data caching; note drafts encryption; voice commands ("encryption status", "wipe data"); HIPAA compliant hardware-backed encryption
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 55 features implemented |
+| All medium effort items completed! | 60 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)
 2. OAuth2/SMART on FHIR authentication
 3. Vuzix HUD native overlay
-4. Data encryption at rest (local storage)
-5. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog
+4. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog

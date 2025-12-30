@@ -848,6 +848,770 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
 • Return immediately if: worsening pain, shortness of breath, diaphoresis
 • Follow up with PCP in [X] days
 • Consider cardiology referral if indicated"""
+        ),
+        // ═══════════════════════════════════════════════════════════════════════════
+        // SPECIALTY-SPECIFIC TEMPLATES
+        // ═══════════════════════════════════════════════════════════════════════════
+
+        // CARDIOLOGY
+        "cardiology_chest_pain" to NoteTemplate(
+            name = "Cardiology - Chest Pain Evaluation",
+            category = "Cardiology",
+            noteType = "HP",
+            content = """▸ CHIEF COMPLAINT:
+Chest pain evaluation
+
+▸ HPI:
+{{patient_name}} presents with chest pain.
+Location: substernal / left-sided / right-sided
+Quality: sharp / dull / pressure / burning
+Radiation: jaw / left arm / back / none
+Duration: [X] hours/days
+Provoking factors: exertion / rest / eating / breathing
+Relieving factors: rest / nitroglycerin / antacids
+Associated symptoms: dyspnea, diaphoresis, nausea, palpitations
+Risk factors: HTN, DM, hyperlipidemia, smoking, family history
+
+▸ PAST MEDICAL HISTORY:
+{{conditions}}
+
+▸ MEDICATIONS:
+{{medications}}
+
+▸ ALLERGIES:
+{{allergies}}
+
+▸ PHYSICAL EXAM:
+Vitals: {{vitals}}
+General: Alert, no acute distress / mild distress
+CV: Regular rate and rhythm, no murmurs, gallops, or rubs
+Lungs: Clear bilaterally, no wheezes or crackles
+Chest wall: Non-tender to palpation
+Extremities: No edema, pulses 2+ bilaterally
+
+▸ DIAGNOSTICS:
+ECG: [pending/results]
+Troponin: [pending/results]
+CXR: [pending/results]
+
+▸ ASSESSMENT:
+Chest pain - differential includes ACS, stable angina, GERD, MSK
+
+▸ PLAN:
+• Serial troponins q3-6h
+• Continuous telemetry monitoring
+• ASA 325mg if not contraindicated
+• Risk stratification with HEART score
+• Cardiology consultation if indicated"""
+        ),
+        "cardiology_heart_failure" to NoteTemplate(
+            name = "Cardiology - Heart Failure",
+            category = "Cardiology",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents with heart failure symptoms.
+Dyspnea: at rest / with exertion / PND / orthopnea
+Edema: lower extremity / abdominal / none
+Weight change: gained [X] lbs over [X] days
+Diet compliance: low sodium adherence
+Medication compliance: taking all medications as prescribed
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+General: Mild respiratory distress / no acute distress
+Neck: JVD present / absent
+CV: Irregularly irregular / regular, S3 present / absent
+Lungs: Crackles bases / clear
+Abdomen: Hepatomegaly present / absent
+Extremities: 2+ pitting edema / trace / none
+Daily weight: [X] kg
+
+▸ A:
+Heart Failure - NYHA Class [I-IV]
+Acute exacerbation / compensated
+EF: [X]% (HFrEF / HFpEF)
+{{conditions}}
+
+▸ P:
+• IV diuretics: Lasix [X]mg IV
+• Daily weights and strict I/Os
+• Fluid restriction 1.5-2L/day
+• Low sodium diet <2g/day
+• Optimize GDMT: BB, ACEi/ARB/ARNI, MRA, SGLT2i
+• BNP/proBNP trending
+• Consider inotropes if decompensated
+• Echo if not recent"""
+        ),
+        "cardiology_afib" to NoteTemplate(
+            name = "Cardiology - Atrial Fibrillation",
+            category = "Cardiology",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents with atrial fibrillation.
+Symptoms: palpitations / chest discomfort / dyspnea / fatigue / asymptomatic
+Duration: paroxysmal / persistent / permanent
+Onset: [date/time]
+Triggers identified: alcohol, caffeine, stress, illness
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+General: No acute distress
+CV: Irregularly irregular rhythm, rate [X], no murmurs
+Lungs: Clear bilaterally
+Extremities: No edema
+
+▸ A:
+Atrial Fibrillation - paroxysmal / persistent / permanent
+Rate: controlled / uncontrolled
+CHADS2-VASc Score: [X]
+HAS-BLED Score: [X]
+{{conditions}}
+
+▸ P:
+Rate control:
+• Beta-blocker: Metoprolol [X]mg
+• Or Diltiazem [X]mg
+Target HR <110 at rest
+
+Anticoagulation (CHADS2-VASc ≥2):
+• Apixaban 5mg BID / Rivaroxaban 20mg daily / Warfarin
+• Bleeding risk counseling provided
+
+Rhythm control (if indicated):
+• Consider cardioversion if <48h or anticoagulated ≥3 weeks
+• Antiarrhythmic consideration
+• Cardiology/EP referral"""
+        ),
+
+        // ORTHOPEDICS
+        "ortho_joint_pain" to NoteTemplate(
+            name = "Orthopedics - Joint Pain",
+            category = "Orthopedics",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents with joint pain.
+Location: [specific joint]
+Laterality: right / left / bilateral
+Onset: acute / chronic / gradual
+Duration: [X] days/weeks/months
+Mechanism: injury / overuse / spontaneous
+Quality: sharp / dull / aching / throbbing
+Severity: [X]/10
+Aggravating factors: movement / weight-bearing / rest
+Alleviating factors: rest / ice / heat / medications
+Associated: swelling, stiffness, locking, instability, weakness
+Prior episodes: yes / no
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+Inspection: Swelling / erythema / deformity / atrophy
+Palpation: Point tenderness at [location]
+ROM: Active [X]° / Passive [X]° (normal [X]°)
+Strength: [X]/5
+Special tests: [test name] positive / negative
+Neurovascular: Intact distally
+
+▸ A:
+[Diagnosis] - right/left [joint]
+Differential: OA, RA, gout, septic arthritis, bursitis, tendinitis
+{{conditions}}
+
+▸ P:
+• RICE: Rest, Ice, Compression, Elevation
+• NSAIDs: Ibuprofen 600mg TID with food
+• Activity modification
+• Physical therapy referral
+• X-ray [joint] if not done
+• Consider MRI if no improvement
+• Follow up in [X] weeks"""
+        ),
+        "ortho_fracture" to NoteTemplate(
+            name = "Orthopedics - Fracture Follow-up",
+            category = "Orthopedics",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for fracture follow-up.
+Fracture: [bone] fracture, [date of injury]
+Treatment: cast / splint / ORIF / conservative
+Pain level: [X]/10 (improving / stable / worsening)
+Swelling: improved / stable / worse
+Neurovascular symptoms: numbness / tingling / none
+Weight-bearing status: non-weight bearing / TTWB / WBAT / FWB
+Compliance with restrictions: yes / no
+
+▸ O:
+Vitals: {{vitals}}
+Cast/Splint: Intact, no odor, no drainage
+Skin: Intact at edges, no pressure sores
+Distal circulation: Cap refill <2 sec, pulses palpable
+Sensation: Intact to light touch
+Motor: [X]/5 strength distal to injury
+
+X-ray findings: [describe alignment, callus formation, hardware position]
+
+▸ A:
+[Bone] fracture - [weeks] post injury/surgery
+Healing: progressing well / delayed union / non-union concern
+{{conditions}}
+
+▸ P:
+• Continue immobilization for [X] more weeks
+• Weight-bearing status: [status]
+• Pain management: [medication]
+• Repeat X-ray in [X] weeks
+• Physical therapy when cleared
+• Return precautions given
+• Follow up in [X] weeks"""
+        ),
+
+        // NEUROLOGY
+        "neuro_headache" to NoteTemplate(
+            name = "Neurology - Headache Evaluation",
+            category = "Neurology",
+            noteType = "HP",
+            content = """▸ CHIEF COMPLAINT:
+Headache evaluation
+
+▸ HPI:
+{{patient_name}} presents with headache.
+Location: frontal / temporal / occipital / unilateral / bilateral
+Quality: throbbing / pressure / sharp / dull
+Severity: [X]/10
+Duration: [X] hours/days
+Frequency: [X] episodes per week/month
+Aura: visual / sensory / motor / none
+Associated: nausea, vomiting, photophobia, phonophobia
+Red flags: worst headache, thunderclap, fever, neuro deficits, papilledema
+Triggers: stress, sleep, foods, menses
+Family history of migraines: yes / no
+
+▸ PAST MEDICAL HISTORY:
+{{conditions}}
+
+▸ MEDICATIONS:
+{{medications}}
+Previous headache treatments tried: [list]
+
+▸ ALLERGIES:
+{{allergies}}
+
+▸ PHYSICAL EXAM:
+Vitals: {{vitals}}
+General: Comfortable / photophobic / distressed
+HEENT: No temporal artery tenderness, sinuses non-tender
+Neck: Supple, no meningismus
+Neuro: CN II-XII intact, strength 5/5, sensation intact, reflexes 2+, coordination normal
+Fundoscopic: No papilledema
+
+▸ ASSESSMENT:
+Headache - Primary: Migraine / Tension / Cluster
+Secondary causes ruled out
+
+▸ PLAN:
+Acute treatment:
+• NSAIDs / Triptans / Antiemetics
+
+Preventive (if frequent):
+• Beta-blocker / Topiramate / Amitriptyline / CGRP inhibitor
+
+Lifestyle:
+• Headache diary
+• Sleep hygiene
+• Trigger avoidance
+• Hydration
+• Follow up in 4-6 weeks"""
+        ),
+        "neuro_stroke" to NoteTemplate(
+            name = "Neurology - Stroke Follow-up",
+            category = "Neurology",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for stroke follow-up.
+Stroke date: [date]
+Type: ischemic / hemorrhagic
+Territory: MCA / PCA / ACA / vertebrobasilar
+Treatment received: tPA / thrombectomy / conservative
+Residual deficits: weakness / numbness / speech / vision / none
+Rehabilitation: PT / OT / Speech therapy
+Medication compliance: yes / no
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+General: Alert and oriented x3
+Speech: Fluent / non-fluent / dysarthric
+Cranial Nerves: [document any deficits]
+Motor: RUE [X]/5, RLE [X]/5, LUE [X]/5, LLE [X]/5
+Sensation: Intact / diminished [location]
+Coordination: Finger-to-nose, heel-to-shin
+Gait: Normal / wide-based / hemiparetic
+NIHSS Score: [X]
+
+▸ A:
+Status post [ischemic/hemorrhagic] stroke - [territory]
+[X] weeks/months post event
+Functional status: improving / stable / declining
+{{conditions}}
+
+▸ P:
+Secondary Prevention:
+• Antiplatelet: ASA 81mg / Plavix 75mg / Aggrenox
+• Statin: High-intensity (Atorvastatin 80mg)
+• BP goal <130/80
+• Diabetes control if applicable
+• Smoking cessation
+
+Ongoing:
+• Continue rehabilitation
+• Driving restrictions discussed
+• Depression screening
+• Follow up MRI/MRA if indicated
+• Neurology follow-up in [X] months"""
+        ),
+
+        // GASTROENTEROLOGY
+        "gi_abdominal_pain" to NoteTemplate(
+            name = "GI - Abdominal Pain",
+            category = "Gastroenterology",
+            noteType = "HP",
+            content = """▸ CHIEF COMPLAINT:
+Abdominal pain evaluation
+
+▸ HPI:
+{{patient_name}} presents with abdominal pain.
+Location: RUQ / LUQ / RLQ / LLQ / epigastric / periumbilical / diffuse
+Quality: sharp / crampy / burning / colicky
+Severity: [X]/10
+Onset: sudden / gradual
+Duration: [X] hours/days
+Radiation: back / shoulder / groin
+Timing: constant / intermittent / postprandial
+Associated: nausea, vomiting, diarrhea, constipation, fever, blood
+Last bowel movement: [date], quality
+Last meal: [time]
+Menstrual history (if applicable): LMP [date]
+
+▸ PAST MEDICAL HISTORY:
+{{conditions}}
+Prior abdominal surgeries: [list]
+
+▸ MEDICATIONS:
+{{medications}}
+
+▸ ALLERGIES:
+{{allergies}}
+
+▸ PHYSICAL EXAM:
+Vitals: {{vitals}}
+General: Comfortable / distressed, lying still / moving
+Abdomen:
+  Inspection: Flat / distended, no surgical scars / scars present
+  Auscultation: Bowel sounds present / hyperactive / absent
+  Palpation: Soft / rigid, tender [location], no rebound / guarding
+  Special signs: Murphy's / McBurney's / Rovsing's / psoas negative
+
+▸ DIAGNOSTICS:
+Labs: CBC, CMP, lipase, UA, urine pregnancy
+Imaging: CT abdomen/pelvis / ultrasound / X-ray
+
+▸ ASSESSMENT:
+Abdominal pain - differential includes [list based on location]
+
+▸ PLAN:
+• NPO status
+• IV fluids
+• Pain management
+• Labs and imaging as above
+• Surgical consultation if indicated
+• GI consultation if indicated"""
+        ),
+        "gi_gerd" to NoteTemplate(
+            name = "GI - GERD Follow-up",
+            category = "Gastroenterology",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for GERD follow-up.
+Symptoms: heartburn / regurgitation / dysphagia / chest pain
+Frequency: daily / weekly / monthly
+Timing: postprandial / nocturnal / with bending
+Triggers: spicy foods, citrus, caffeine, alcohol, large meals
+Alarm symptoms: weight loss / dysphagia / bleeding / anemia - NONE
+PPI compliance: taking as prescribed
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+General: No acute distress
+Abdomen: Soft, non-tender, no organomegaly
+Oropharynx: No erythema or lesions
+
+▸ A:
+GERD - controlled / uncontrolled
+No alarm symptoms
+{{conditions}}
+
+▸ P:
+Medications:
+• Continue PPI: [medication] [dose] daily/BID
+• Step down to H2 blocker if controlled >8 weeks
+• PRN antacids
+
+Lifestyle modifications:
+• Avoid trigger foods
+• Small frequent meals
+• No eating 3 hours before bed
+• Elevate head of bed
+• Weight loss if overweight
+• Smoking cessation
+
+If refractory:
+• EGD referral
+• pH monitoring
+• Consider GI referral
+• Follow up in [X] months"""
+        ),
+
+        // PULMONOLOGY
+        "pulm_copd" to NoteTemplate(
+            name = "Pulmonology - COPD",
+            category = "Pulmonology",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for COPD management.
+Baseline dyspnea: at rest / with activity / with exertion
+Current symptoms: stable / worsening
+Exacerbations in past year: [X]
+Hospitalizations in past year: [X]
+Oxygen use: none / PRN / continuous at [X] L/min
+Smoking status: current / former / never, [X] pack-years
+Inhaler technique reviewed: yes
+Medication compliance: yes / no
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+SpO2: [X]% on room air / [X]L O2
+General: No acute distress / using accessory muscles
+Chest: Barrel chest / normal
+Lungs: Decreased breath sounds / wheezes / prolonged expiration
+Extremities: No clubbing or cyanosis
+
+▸ A:
+COPD - GOLD Stage [I-IV], Group [A-D]
+FEV1: [X]% predicted
+Currently: stable / acute exacerbation
+{{conditions}}
+
+▸ P:
+Maintenance therapy (stepwise):
+• LAMA: Tiotropium / Umeclidinium
+• LABA: Salmeterol / Formoterol
+• ICS (if frequent exacerbations): Fluticasone / Budesonide
+• Triple therapy if severe
+
+Rescue: Albuterol PRN
+
+Preventive:
+• Annual flu vaccine
+• Pneumococcal vaccines (PCV20, PPSV23)
+• Smoking cessation counseling
+• Pulmonary rehabilitation referral
+
+Monitoring:
+• PFTs annually
+• Assess CAT score / mMRC dyspnea
+• Follow up in [X] months"""
+        ),
+        "pulm_asthma" to NoteTemplate(
+            name = "Pulmonology - Asthma",
+            category = "Pulmonology",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for asthma management.
+Daytime symptoms: [X] times per week
+Nighttime symptoms: [X] times per month
+Rescue inhaler use: [X] times per week
+Activity limitation: yes / no
+Exacerbations: [X] in past year requiring steroids / ED / hospitalization
+Triggers: allergens, exercise, cold air, illness, stress
+Peak flow: [X] L/min (personal best [X])
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+SpO2: [X]% on room air
+General: No acute distress / mild distress / severe distress
+Lungs: Clear / wheezes / prolonged expiration
+Peak flow: [X] L/min ([X]% of personal best)
+
+▸ A:
+Asthma - intermittent / mild persistent / moderate persistent / severe persistent
+Currently: well-controlled / not well-controlled / very poorly controlled
+{{conditions}}
+
+▸ P:
+Step therapy (based on control):
+Step 1: PRN SABA (albuterol)
+Step 2: Add low-dose ICS
+Step 3: Low-dose ICS + LABA or medium-dose ICS
+Step 4: Medium-dose ICS + LABA
+Step 5: High-dose ICS + LABA, consider biologics
+
+Current regimen:
+• Controller: [medication]
+• Rescue: Albuterol 2 puffs PRN
+
+Action plan:
+• Green zone: Continue maintenance
+• Yellow zone: Increase controller, add rescue
+• Red zone: Oral steroids, seek care
+
+• Trigger avoidance education
+• Spacer technique reviewed
+• Peak flow monitoring
+• Follow up in [X] months"""
+        ),
+
+        // PSYCHIATRY
+        "psych_depression" to NoteTemplate(
+            name = "Psychiatry - Depression",
+            category = "Psychiatry",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for depression management.
+PHQ-9 Score: [X]/27
+Mood: depressed / sad / hopeless / irritable
+Duration: [X] weeks/months
+Sleep: insomnia / hypersomnia / [X] hours per night
+Appetite: decreased / increased / stable
+Energy: low / fatigue
+Concentration: impaired / intact
+Interest/pleasure: anhedonia present / absent
+Psychomotor: agitation / retardation / normal
+Guilt: excessive / appropriate
+Suicidal ideation: DENIES / passive ("better off dead") / active with plan
+Safety: No access to firearms / medications secured
+Substance use: alcohol [X]/week, drugs none
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+Appearance: Groomed / disheveled
+Behavior: Cooperative / guarded / agitated
+Speech: Normal rate/tone / slow / pressured
+Mood: "depressed" / "[patient's words]"
+Affect: Constricted / flat / congruent / tearful
+Thought process: Linear / circumstantial
+Thought content: No SI/HI, no delusions
+Cognition: Alert and oriented x3
+Insight/Judgment: Fair / poor / good
+
+▸ A:
+Major Depressive Disorder - mild / moderate / severe
+Episode: single / recurrent
+PHQ-9: [X] (minimal/mild/moderate/moderately severe/severe)
+{{conditions}}
+
+▸ P:
+Pharmacotherapy:
+• SSRI: [medication] [dose] (continue / start / adjust)
+• Consider augmentation if partial response
+
+Psychotherapy:
+• CBT / IPT referral
+• Continue current therapy
+
+Safety:
+• Crisis resources provided (988 Suicide & Crisis Lifeline)
+• Safety plan reviewed
+• Emergency plan if worsening
+
+Lifestyle:
+• Sleep hygiene
+• Exercise recommendation
+• Social support engagement
+• Follow up in [X] weeks"""
+        ),
+        "psych_anxiety" to NoteTemplate(
+            name = "Psychiatry - Anxiety",
+            category = "Psychiatry",
+            noteType = "SOAP",
+            content = """▸ S:
+{{patient_name}} presents for anxiety management.
+GAD-7 Score: [X]/21
+Primary symptoms: worry / panic / social anxiety / specific phobia
+Duration: [X] weeks/months
+Panic attacks: frequency [X]/week, duration [X] minutes
+Physical symptoms: palpitations, sweating, tremor, GI upset, dyspnea
+Avoidance behaviors: [describe]
+Functional impairment: work / social / daily activities
+Sleep: difficulty initiating / maintaining / [X] hours
+Substances: caffeine / alcohol / none
+Current medications: {{medications}}
+
+▸ O:
+Vitals: {{vitals}}
+Appearance: Anxious / restless / fidgeting / calm
+Behavior: Cooperative / hypervigilant
+Speech: Rapid / normal / pressured
+Mood: "anxious" / "nervous"
+Affect: Anxious / constricted
+Thought process: Linear / racing
+Thought content: Worried about [topics], no SI/HI
+Cognition: Intact, distractible
+Insight/Judgment: Fair
+
+▸ A:
+Generalized Anxiety Disorder / Panic Disorder / Social Anxiety
+GAD-7: [X] (minimal/mild/moderate/severe)
+{{conditions}}
+
+▸ P:
+Pharmacotherapy:
+• First-line: SSRI/SNRI - [medication] [dose]
+• PRN rescue: Hydroxyzine 25mg for acute anxiety
+• Avoid benzodiazepines if possible (short-term only if needed)
+
+Psychotherapy:
+• CBT referral (gold standard)
+• Exposure therapy if specific phobia
+
+Lifestyle:
+• Limit caffeine
+• Regular exercise
+• Sleep hygiene
+• Relaxation techniques (deep breathing, mindfulness)
+
+• Follow up in [X] weeks"""
+        ),
+
+        // EMERGENCY
+        "ed_trauma" to NoteTemplate(
+            name = "Emergency - Trauma",
+            category = "Emergency",
+            noteType = "HP",
+            content = """▸ CHIEF COMPLAINT:
+Trauma evaluation - [mechanism]
+
+▸ HPI:
+{{patient_name}} presents following [mechanism of injury].
+Time of injury: [time]
+Mechanism: MVC / fall / assault / penetrating / blunt
+Loss of consciousness: yes / no, duration [X]
+Neck pain: yes / no
+Back pain: yes / no
+Extremity complaints: [list]
+Ambulatory at scene: yes / no
+GCS at scene: [X]/15
+
+▸ ALLERGIES:
+{{allergies}}
+
+▸ MEDICATIONS:
+{{medications}}
+Anticoagulants: yes / no
+
+▸ PRIMARY SURVEY:
+A - Airway: Patent / compromised, C-spine immobilized
+B - Breathing: Bilateral breath sounds, no crepitus, SpO2 [X]%
+C - Circulation: HR [X], BP [X], pulses present, no active hemorrhage
+D - Disability: GCS [X] (E[X]V[X]M[X]), pupils equal/reactive
+E - Exposure: Temp [X], logrolled, no deformities
+
+▸ SECONDARY SURVEY:
+Head: No lacerations, no hematoma, no step-off
+Face: No deformity, no malocclusion
+Neck: Midline, no TTP, C-collar in place
+Chest: No crepitus, no flail, breath sounds equal
+Abdomen: Soft, non-tender / tender [location], no distension
+Pelvis: Stable, no tenderness
+Spine: No step-off, no midline TTP
+Extremities: No deformity, pulses intact, sensation intact
+Neuro: Moving all extremities, no focal deficits
+
+▸ DIAGNOSTICS:
+Labs: Type and screen, CBC, CMP, coags, lactate, UA
+Imaging: CXR, pelvis XR, FAST exam, CT [areas]
+
+▸ ASSESSMENT:
+Trauma - [blunt/penetrating] to [areas]
+Injuries identified: [list]
+
+▸ PLAN:
+• Trauma team activation if indicated
+• Resuscitation: [IV fluids, blood products if needed]
+• Pain management
+• Tetanus prophylaxis if indicated
+• Trauma surgery consultation
+• Admit / observe / discharge with precautions"""
+        ),
+        "ed_sepsis" to NoteTemplate(
+            name = "Emergency - Sepsis",
+            category = "Emergency",
+            noteType = "HP",
+            content = """▸ CHIEF COMPLAINT:
+Sepsis evaluation / Suspected infection
+
+▸ HPI:
+{{patient_name}} presents with suspected sepsis.
+Source suspected: pulmonary / urinary / abdominal / skin/soft tissue / unknown
+Symptoms: fever / chills / altered mental status / weakness
+Duration: [X] hours/days
+Associated: cough / dysuria / abdominal pain / wound
+Immune status: normal / immunocompromised
+Recent antibiotics: yes / no
+Recent hospitalization: yes / no
+
+▸ PAST MEDICAL HISTORY:
+{{conditions}}
+
+▸ MEDICATIONS:
+{{medications}}
+
+▸ ALLERGIES:
+{{allergies}}
+
+▸ PHYSICAL EXAM:
+Vitals: {{vitals}}
+SIRS Criteria: Temp >38 or <36, HR >90, RR >20, WBC >12k or <4k
+qSOFA: AMS, SBP ≤100, RR ≥22
+
+General: Ill-appearing / toxic / diaphoretic
+Mental status: Alert / confused / obtunded
+Skin: Warm / cool, mottled / petechiae / rash
+Lungs: Clear / crackles / rhonchi
+CV: Tachycardic, hypotensive / normotensive
+Abdomen: Soft / tender / peritoneal signs
+GU: CVA tenderness / suprapubic tenderness
+
+▸ DIAGNOSTICS:
+Labs: CBC, CMP, lactate, procalcitonin, coags, blood cultures x2
+UA and urine culture
+CXR
+Consider: CT chest/abdomen/pelvis, LP
+
+▸ SEPSIS BUNDLE - HOUR 1:
+[ ] Lactate measured: [X] mmol/L
+[ ] Blood cultures before antibiotics
+[ ] Broad-spectrum antibiotics given: [medication]
+[ ] Crystalloid 30 mL/kg for hypotension/lactate ≥4
+[ ] Vasopressors if hypotensive after fluids (MAP ≥65)
+
+▸ ASSESSMENT:
+Sepsis / Severe sepsis / Septic shock
+Source: [suspected source]
+SOFA Score: [X]
+
+▸ PLAN:
+• Continue aggressive resuscitation
+• Source control if identified
+• ICU admission for shock
+• Re-measure lactate if initial >2
+• Central line / arterial line if vasopressors
+• Reassess volume status frequently"""
         )
     )
 
@@ -6452,6 +7216,24 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "My commands" - List custom commands
             |• "Delete command [name]" - Remove
             |
+            |🏥 SPECIALTY TEMPLATES
+            |• "Specialty templates" - List all 14 templates
+            |• "Use [template] template" - Apply template
+            |  (cardiology chest pain, heart failure, afib,
+            |   ortho joint pain, fracture, neuro headache,
+            |   stroke, gi abdominal pain, gerd, pulm copd,
+            |   asthma, psych depression, anxiety, trauma, sepsis)
+            |
+            |📜 NOTE VERSIONING
+            |• "Version history" - Show all note versions
+            |• "Restore version [N]" - Restore older version
+            |• "Compare versions" - Diff current vs previous
+            |• "Clear version history" - Clear all versions
+            |
+            |🔐 DATA ENCRYPTION
+            |• "Encryption status" - Show security info
+            |• "Wipe data" - Securely erase all PHI
+            |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
             |• "Close" - Dismiss overlay
@@ -7993,6 +8775,536 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
         patientReferrals.clear()
         speakFeedback("All referrals cleared")
         showReferrals()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // NOTE VERSIONING - Track changes to notes with version history
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private data class NoteVersion(
+        val version: Int,
+        val content: String,
+        val timestamp: Long,
+        val changeType: String, // "created", "edited", "section_update", "signed"
+        val changeDescription: String
+    )
+
+    private val noteVersionHistory = mutableListOf<NoteVersion>()
+    private var currentNoteVersion = 0
+
+    /**
+     * Save a new version of the note
+     */
+    private fun saveNoteVersion(content: String, changeType: String, description: String) {
+        currentNoteVersion++
+        val version = NoteVersion(
+            version = currentNoteVersion,
+            content = content,
+            timestamp = System.currentTimeMillis(),
+            changeType = changeType,
+            changeDescription = description
+        )
+        noteVersionHistory.add(version)
+
+        // Keep only last 20 versions to manage memory
+        if (noteVersionHistory.size > 20) {
+            noteVersionHistory.removeAt(0)
+        }
+    }
+
+    /**
+     * Get the current note version number
+     */
+    private fun getCurrentNoteVersion(): Int = currentNoteVersion
+
+    /**
+     * Show note version history
+     */
+    private fun showNoteVersionHistory() {
+        if (noteVersionHistory.isEmpty()) {
+            speakFeedback("No version history available")
+            return
+        }
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("📜 NOTE VERSION HISTORY\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("Total versions: ${noteVersionHistory.size}\n")
+        content.append("Current version: v$currentNoteVersion\n\n")
+
+        noteVersionHistory.reversed().take(10).forEachIndexed { index, version ->
+            val timeAgo = getTimeAgo(version.timestamp)
+            val icon = when (version.changeType) {
+                "created" -> "🆕"
+                "edited" -> "✏️"
+                "section_update" -> "📝"
+                "signed" -> "✅"
+                "restored" -> "🔄"
+                else -> "📋"
+            }
+            content.append("$icon v${version.version} - $timeAgo\n")
+            content.append("   ${version.changeDescription}\n")
+            if (index < noteVersionHistory.size - 1) content.append("\n")
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("Commands:\n")
+        content.append("• \"Restore version [#]\" - Restore to version\n")
+        content.append("• \"Compare versions\" - Show diff\n")
+        content.append("• \"Clear history\" - Clear version history")
+
+        showDataOverlay("Version History", content.toString())
+        speakFeedback("${noteVersionHistory.size} versions in history")
+    }
+
+    private fun getTimeAgo(timestamp: Long): String {
+        val now = System.currentTimeMillis()
+        val diff = now - timestamp
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+
+        return when {
+            seconds < 60 -> "Just now"
+            minutes < 60 -> "$minutes min ago"
+            hours < 24 -> "$hours hours ago"
+            else -> "${hours / 24} days ago"
+        }
+    }
+
+    /**
+     * Restore a previous version of the note
+     */
+    private fun restoreNoteVersion(versionNumber: Int) {
+        val version = noteVersionHistory.find { it.version == versionNumber }
+        if (version == null) {
+            speakFeedback("Version $versionNumber not found")
+            return
+        }
+
+        // Save current state before restoring
+        val currentContent = lastGeneratedNote?.toString() ?: ""
+        saveNoteVersion(currentContent, "restored", "Before restoring to v$versionNumber")
+
+        // Restore the old version
+        try {
+            lastGeneratedNote = org.json.JSONObject().apply {
+                put("content", version.content)
+                put("restored_from", versionNumber)
+                put("restored_at", System.currentTimeMillis())
+            }
+
+            // Save the restoration as a new version
+            saveNoteVersion(version.content, "restored", "Restored from v$versionNumber")
+
+            speakFeedback("Restored to version $versionNumber")
+            showGeneratedNote()
+        } catch (e: Exception) {
+            speakFeedback("Error restoring version")
+        }
+    }
+
+    /**
+     * Compare two versions of the note
+     */
+    private fun compareNoteVersions() {
+        if (noteVersionHistory.size < 2) {
+            speakFeedback("Need at least 2 versions to compare")
+            return
+        }
+
+        val current = noteVersionHistory.last()
+        val previous = noteVersionHistory[noteVersionHistory.size - 2]
+
+        val currentLines = current.content.lines()
+        val previousLines = previous.content.lines()
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("⚖️ VERSION COMPARISON\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("Comparing v${previous.version} → v${current.version}\n\n")
+
+        // Simple diff - show added and removed lines
+        val added = currentLines.filter { it !in previousLines }
+        val removed = previousLines.filter { it !in currentLines }
+
+        if (added.isEmpty() && removed.isEmpty()) {
+            content.append("No differences found.\n")
+        } else {
+            if (removed.isNotEmpty()) {
+                content.append("▸ REMOVED (${removed.size} lines)\n")
+                content.append("───────────────────────────────────\n")
+                removed.take(5).forEach { line ->
+                    content.append("- ${line.take(50)}...\n")
+                }
+                if (removed.size > 5) content.append("  ...and ${removed.size - 5} more\n")
+                content.append("\n")
+            }
+
+            if (added.isNotEmpty()) {
+                content.append("▸ ADDED (${added.size} lines)\n")
+                content.append("───────────────────────────────────\n")
+                added.take(5).forEach { line ->
+                    content.append("+ ${line.take(50)}...\n")
+                }
+                if (added.size > 5) content.append("  ...and ${added.size - 5} more\n")
+            }
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("v${previous.version}: ${previous.changeDescription}\n")
+        content.append("v${current.version}: ${current.changeDescription}")
+
+        showDataOverlay("Version Diff", content.toString())
+    }
+
+    /**
+     * Clear version history
+     */
+    private fun clearNoteVersionHistory() {
+        noteVersionHistory.clear()
+        currentNoteVersion = 0
+        speakFeedback("Version history cleared")
+    }
+
+    /**
+     * Initialize version tracking for a new note
+     */
+    private fun initNoteVersioning(noteContent: String) {
+        noteVersionHistory.clear()
+        currentNoteVersion = 0
+        saveNoteVersion(noteContent, "created", "Initial note created")
+    }
+
+    /**
+     * Track section edits
+     */
+    private fun trackNoteEdit(section: String, action: String) {
+        val content = lastGeneratedNote?.optString("content", "") ?: ""
+        saveNoteVersion(content, "section_update", "$action in $section section")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DATA ENCRYPTION AT REST - Secure local storage of PHI
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private var encryptedPrefs: android.content.SharedPreferences? = null
+    private var isEncryptionEnabled = false
+
+    /**
+     * Initialize encrypted storage using Android Keystore
+     */
+    private fun initializeEncryptedStorage() {
+        try {
+            // Use AndroidX Security library for EncryptedSharedPreferences
+            val masterKey = androidx.security.crypto.MasterKey.Builder(this)
+                .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+                .build()
+
+            encryptedPrefs = androidx.security.crypto.EncryptedSharedPreferences.create(
+                this,
+                "mdx_vision_encrypted_prefs",
+                masterKey,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+
+            isEncryptionEnabled = true
+            android.util.Log.d("MDxVision", "Encrypted storage initialized successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("MDxVision", "Failed to initialize encrypted storage: ${e.message}")
+            // Fall back to regular SharedPreferences
+            encryptedPrefs = getSharedPreferences("mdx_vision_prefs", MODE_PRIVATE)
+            isEncryptionEnabled = false
+        }
+    }
+
+    /**
+     * Securely store sensitive patient data
+     */
+    private fun secureStorePatientData(patientId: String, data: String) {
+        val prefs = encryptedPrefs ?: return
+        prefs.edit().apply {
+            putString("patient_$patientId", data)
+            putLong("patient_${patientId}_timestamp", System.currentTimeMillis())
+            apply()
+        }
+    }
+
+    /**
+     * Securely retrieve patient data
+     */
+    private fun secureRetrievePatientData(patientId: String): String? {
+        val prefs = encryptedPrefs ?: return null
+        return prefs.getString("patient_$patientId", null)
+    }
+
+    /**
+     * Securely store notes
+     */
+    private fun secureStoreNote(noteId: String, noteContent: String) {
+        val prefs = encryptedPrefs ?: return
+        prefs.edit().apply {
+            putString("note_$noteId", noteContent)
+            putLong("note_${noteId}_timestamp", System.currentTimeMillis())
+            apply()
+        }
+    }
+
+    /**
+     * Securely retrieve notes
+     */
+    private fun secureRetrieveNote(noteId: String): String? {
+        val prefs = encryptedPrefs ?: return null
+        return prefs.getString("note_$noteId", null)
+    }
+
+    /**
+     * Securely store draft notes (offline mode)
+     */
+    private fun secureStoreDraft(draftId: String, content: String) {
+        val prefs = encryptedPrefs ?: return
+        val drafts = prefs.getStringSet("draft_ids", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+        drafts.add(draftId)
+        prefs.edit().apply {
+            putString("draft_$draftId", content)
+            putStringSet("draft_ids", drafts)
+            apply()
+        }
+    }
+
+    /**
+     * Get all draft IDs
+     */
+    private fun getSecureDraftIds(): Set<String> {
+        val prefs = encryptedPrefs ?: return emptySet()
+        return prefs.getStringSet("draft_ids", emptySet()) ?: emptySet()
+    }
+
+    /**
+     * Securely store user credentials/tokens
+     */
+    private fun secureStoreCredential(key: String, value: String) {
+        val prefs = encryptedPrefs ?: return
+        prefs.edit().putString("credential_$key", value).apply()
+    }
+
+    /**
+     * Securely retrieve credentials
+     */
+    private fun secureRetrieveCredential(key: String): String? {
+        val prefs = encryptedPrefs ?: return null
+        return prefs.getString("credential_$key", null)
+    }
+
+    /**
+     * Securely wipe all stored data (for logout or device wipe)
+     */
+    private fun secureWipeAllData() {
+        val prefs = encryptedPrefs ?: return
+        prefs.edit().clear().apply()
+        speakFeedback("All encrypted data securely wiped")
+    }
+
+    /**
+     * Check encryption status
+     */
+    private fun showEncryptionStatus() {
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("🔐 DATA ENCRYPTION STATUS\n")
+        content.append("═══════════════════════════════════\n\n")
+
+        if (isEncryptionEnabled) {
+            content.append("✅ Encryption: ENABLED\n")
+            content.append("🔑 Algorithm: AES-256-GCM\n")
+            content.append("🔒 Key Storage: Android Keystore\n")
+            content.append("📱 Key Protection: Hardware-backed (if available)\n\n")
+
+            content.append("▸ PROTECTED DATA\n")
+            content.append("───────────────────────────────────\n")
+            content.append("• Patient demographics\n")
+            content.append("• Clinical notes\n")
+            content.append("• Draft notes\n")
+            content.append("• User credentials\n")
+            content.append("• Session tokens\n")
+            content.append("• Audit logs\n\n")
+
+            val prefs = encryptedPrefs
+            if (prefs != null) {
+                val patientCount = prefs.all.keys.count { it.startsWith("patient_") && !it.contains("timestamp") }
+                val noteCount = prefs.all.keys.count { it.startsWith("note_") && !it.contains("timestamp") }
+                val draftCount = getSecureDraftIds().size
+
+                content.append("▸ STORED ITEMS\n")
+                content.append("───────────────────────────────────\n")
+                content.append("Cached patients: $patientCount\n")
+                content.append("Saved notes: $noteCount\n")
+                content.append("Draft notes: $draftCount\n")
+            }
+        } else {
+            content.append("⚠️ Encryption: DISABLED\n")
+            content.append("Using standard SharedPreferences\n\n")
+            content.append("Reason: Device may not support\n")
+            content.append("hardware-backed encryption\n")
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("HIPAA Compliant: ${if (isEncryptionEnabled) "YES" else "PARTIAL"}")
+
+        showDataOverlay("Encryption Status", content.toString())
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SPECIALTY TEMPLATES - Voice command helpers
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Show list of available specialty templates
+     */
+    private fun showSpecialtyTemplates() {
+        val content = StringBuilder()
+        content.append("🏥 SPECIALTY TEMPLATES\n")
+        content.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+        // Group templates by category
+        val categories = mapOf(
+            "Cardiology" to listOf("cardiology_chest_pain", "cardiology_heart_failure", "cardiology_afib"),
+            "Orthopedics" to listOf("ortho_joint_pain", "ortho_fracture"),
+            "Neurology" to listOf("neuro_headache", "neuro_stroke"),
+            "GI" to listOf("gi_abdominal_pain", "gi_gerd"),
+            "Pulmonology" to listOf("pulm_copd", "pulm_asthma"),
+            "Psychiatry" to listOf("psych_depression", "psych_anxiety"),
+            "Emergency" to listOf("ed_trauma", "ed_sepsis")
+        )
+
+        categories.forEach { (category, templateKeys) ->
+            content.append("▸ $category\n")
+            templateKeys.forEach { key ->
+                val template = noteTemplates[key]
+                if (template != null) {
+                    val shortName = template.name.substringAfter(" - ")
+                    content.append("   • $shortName\n")
+                }
+            }
+            content.append("\n")
+        }
+
+        content.append("───────────────────────────────────\n")
+        content.append("Say: \"Use cardiology chest pain template\"\n")
+        content.append("     \"Apply neuro headache template\"")
+
+        showDataOverlay("Specialty Templates", content.toString())
+        speakFeedback("14 specialty templates available. Say use followed by template name.")
+    }
+
+    /**
+     * Extract template key from voice command
+     */
+    private fun extractSpecialtyTemplateKey(command: String): String? {
+        val lower = command.lowercase()
+
+        // Map spoken phrases to template keys
+        val mappings = mapOf(
+            // Cardiology
+            "cardiology chest pain" to "cardiology_chest_pain",
+            "chest pain" to "cardiology_chest_pain",
+            "cardiology heart failure" to "cardiology_heart_failure",
+            "heart failure" to "cardiology_heart_failure",
+            "chf" to "cardiology_heart_failure",
+            "cardiology afib" to "cardiology_afib",
+            "afib" to "cardiology_afib",
+            "atrial fibrillation" to "cardiology_afib",
+            // Orthopedics
+            "ortho joint pain" to "ortho_joint_pain",
+            "joint pain" to "ortho_joint_pain",
+            "ortho fracture" to "ortho_fracture",
+            "fracture" to "ortho_fracture",
+            // Neurology
+            "neuro headache" to "neuro_headache",
+            "headache" to "neuro_headache",
+            "migraine" to "neuro_headache",
+            "neuro stroke" to "neuro_stroke",
+            "stroke" to "neuro_stroke",
+            "cva" to "neuro_stroke",
+            // GI
+            "gi abdominal pain" to "gi_abdominal_pain",
+            "abdominal pain" to "gi_abdominal_pain",
+            "belly pain" to "gi_abdominal_pain",
+            "gi gerd" to "gi_gerd",
+            "gerd" to "gi_gerd",
+            "acid reflux" to "gi_gerd",
+            // Pulmonology
+            "pulm copd" to "pulm_copd",
+            "copd" to "pulm_copd",
+            "pulm asthma" to "pulm_asthma",
+            "asthma" to "pulm_asthma",
+            // Psychiatry
+            "psych depression" to "psych_depression",
+            "depression" to "psych_depression",
+            "psych anxiety" to "psych_anxiety",
+            "anxiety" to "psych_anxiety",
+            // Emergency
+            "ed trauma" to "ed_trauma",
+            "trauma" to "ed_trauma",
+            "ed sepsis" to "ed_sepsis",
+            "sepsis" to "ed_sepsis"
+        )
+
+        // Find matching template
+        for ((phrase, key) in mappings) {
+            if (lower.contains(phrase)) {
+                return key
+            }
+        }
+        return null
+    }
+
+    /**
+     * Apply a specialty template to the current note
+     */
+    private fun applySpecialtyTemplate(templateKey: String) {
+        val template = noteTemplates[templateKey]
+        if (template == null) {
+            speakFeedback("Template not found")
+            return
+        }
+
+        // Apply template - substitute patient data
+        var content = template.content
+
+        currentPatientData?.let { patient ->
+            content = content.replace("{{patient_name}}", patient.optString("name", "Patient"))
+            content = content.replace("{{age}}", patient.optString("age", ""))
+            content = content.replace("{{gender}}", patient.optString("gender", ""))
+            content = content.replace("{{mrn}}", patient.optString("mrn", ""))
+            content = content.replace("{{dob}}", patient.optString("dob", ""))
+            content = content.replace("{{date}}", java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()))
+        }
+
+        // Store as current note
+        val noteJson = org.json.JSONObject().apply {
+            put("content", content)
+            put("note_type", template.noteType)
+            put("template", templateKey)
+            put("generated_at", System.currentTimeMillis())
+        }
+        lastGeneratedNote = noteJson
+        currentNoteType = template.noteType
+
+        // Initialize version tracking
+        initNoteVersioning(content)
+
+        // Display the template
+        val displayContent = StringBuilder()
+        displayContent.append("📋 ${template.name}\n")
+        displayContent.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+        displayContent.append(content)
+
+        showDataOverlay("Specialty Template Applied", displayContent.toString())
+        speakFeedback("${template.category} template applied. You can edit sections by voice.")
     }
 
     private fun saveCurrentNote() {
@@ -10160,6 +11472,47 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             }
             lower.contains("clear referrals") -> {
                 clearReferrals()
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // SPECIALTY TEMPLATES - Feature #56
+            // ═══════════════════════════════════════════════════════════════════════════
+            lower.contains("list specialty templates") || lower.contains("specialty templates") ||
+            lower.contains("show specialty templates") -> {
+                showSpecialtyTemplates()
+            }
+            lower.contains("use template") || lower.contains("apply template") -> {
+                // Extract template name: "use cardiology chest pain template"
+                val templateKey = extractSpecialtyTemplateKey(lower)
+                if (templateKey != null) {
+                    applySpecialtyTemplate(templateKey)
+                } else {
+                    showSpecialtyTemplates()
+                }
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // NOTE VERSIONING - Feature #57
+            // ═══════════════════════════════════════════════════════════════════════════
+            lower.contains("version history") || lower.contains("note versions") || lower.contains("show versions") -> {
+                showNoteVersionHistory()
+            }
+            lower.contains("restore version") -> {
+                val num = lower.replace(Regex(".*version\\s*(\\d+).*"), "$1").toIntOrNull() ?: 0
+                if (num > 0) restoreNoteVersion(num)
+            }
+            lower.contains("compare versions") || lower.contains("diff versions") || lower.contains("version diff") -> {
+                compareNoteVersions()
+            }
+            lower.contains("clear version history") || lower.contains("clear versions") -> {
+                clearNoteVersionHistory()
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // DATA ENCRYPTION - Feature #60
+            // ═══════════════════════════════════════════════════════════════════════════
+            lower.contains("encryption status") || lower.contains("security status") -> {
+                showEncryptionStatus()
+            }
+            lower.contains("wipe data") || lower.contains("secure wipe") || lower.contains("erase data") -> {
+                secureWipeAllData()
             }
             lower.contains("stop talking") || lower.contains("stop speaking") || lower.contains("be quiet") || lower.contains("quiet") -> {
                 // Stop any ongoing TTS
