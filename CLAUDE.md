@@ -269,6 +269,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 41. **Voice Dictation Mode** - Dictate directly into sections ("dictate to plan"), continuous speech capture, "stop dictating" to insert, visual indicator, word count display
 42. **Voice Templates** - 8 built-in templates (diabetes, hypertension, URI, physical, back pain, UTI, well child, chest pain) with auto-fill patient data, user-created templates, variable substitution ({{patient_name}}, {{medications}}, etc.)
 43. **Voice Orders** - Order labs (12), imaging (10), medications (10) by voice; safety checks for allergies, drug interactions, duplicates, metformin+contrast; confirmation workflow; auto-add to Plan section; "show orders", "cancel order"
+44. **Encounter Timer** - Track time spent with patients; voice commands "start timer", "stop timer", "how long", "reset timer"; visual indicator in top-right corner; TTS time reports; auto-include duration in notes for billing
 
 ## Next Up (Recommended)
 
@@ -281,5 +282,3 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 1. Epic/Veradigm live integration (needs credentials)
 2. OAuth2/SMART on FHIR authentication
 3. Vuzix HUD native overlay
-4. Voice Templates (user-defined note templates)
-5. Voice Orders ("order CBC", "prescribe amoxicillin")

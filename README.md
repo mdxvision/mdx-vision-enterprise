@@ -184,6 +184,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Order Queue**: "Show orders" displays pending orders grouped by type
 - **Order Management**: "Cancel order" removes last, "Clear all orders" removes all
 
+### Encounter Timer (NEW)
+- **Track Time**: Automatically track time spent with each patient
+- **Voice Control**: "Start timer", "Stop timer", "How long", "Reset timer"
+- **Visual Indicator**: Floating timer display in top-right corner
+- **TTS Feedback**: Spoken time reports on request
+- **Auto Note Integration**: Include encounter duration in clinical notes
+- **Billing Support**: Helps with time-based CPT code selection
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

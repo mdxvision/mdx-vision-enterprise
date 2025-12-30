@@ -212,6 +212,10 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Show orders" / "List orders" | Done |
 | [x] "Cancel order" - Remove last order | Done |
 | [x] "Clear all orders" - Remove all orders | Done |
+| [x] "Start timer" / "Start encounter" | Done |
+| [x] "Stop timer" / "End encounter" | Done |
+| [x] "How long" / "Check timer" | Done |
+| [x] "Reset timer" | Done |
 
 ---
 
@@ -268,6 +272,7 @@ Based on US Patent 15/237,980 and product requirements.
 34. ~~**Voice Dictation Mode**~~ - Done (Dictate directly into sections, "dictate to plan", accumulates speech, "stop dictating" to insert)
 35. ~~**Voice Templates**~~ - Done (8 built-in templates with auto-fill patient data, user-created templates, "use diabetes template", variable substitution)
 36. ~~**Voice Orders**~~ - Done (Order labs/imaging/meds by voice, safety checks for allergies/interactions/duplicates, confirmation workflow, auto-add to Plan section)
+37. ~~**Encounter Timer**~~ - Done (Track time spent with patients, voice commands to start/stop/check/reset, visual indicator, auto-include in notes)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

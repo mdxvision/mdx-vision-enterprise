@@ -182,6 +182,15 @@ Neuro: Grossly intact""",
     private var dictationBuffer: StringBuilder = StringBuilder()  // Accumulates dictated text
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // ENCOUNTER TIMER - Track time spent with patient
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var encounterStartTime: Long? = null  // System.currentTimeMillis() when timer started
+    private var encounterTimerRunning: Boolean = false
+    private var timerIndicatorView: TextView? = null  // Visual indicator showing elapsed time
+    private var timerUpdateHandler: android.os.Handler? = null
+    private var timerUpdateRunnable: Runnable? = null
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // VOICE ORDERS - State Variables
     // ═══════════════════════════════════════════════════════════════════════════
     private val orderQueue = mutableListOf<Order>()  // Pending orders for current patient
@@ -3802,6 +3811,199 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
         return items
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ENCOUNTER TIMER - Timer Control Functions
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Start the encounter timer
+     */
+    private fun startEncounterTimer() {
+        if (encounterTimerRunning) {
+            val elapsed = getElapsedTimeFormatted()
+            speakFeedback("Timer already running. $elapsed elapsed.")
+            return
+        }
+
+        encounterStartTime = System.currentTimeMillis()
+        encounterTimerRunning = true
+        showTimerIndicator()
+        startTimerUpdates()
+        speakFeedback("Encounter timer started")
+        Log.d(TAG, "Encounter timer started")
+    }
+
+    /**
+     * Stop the encounter timer
+     */
+    private fun stopEncounterTimer() {
+        if (!encounterTimerRunning) {
+            speakFeedback("No timer running")
+            return
+        }
+
+        val elapsed = getElapsedTimeFormatted()
+        val minutes = getElapsedMinutes()
+        encounterTimerRunning = false
+        stopTimerUpdates()
+        hideTimerIndicator()
+
+        // Speak the total time
+        speakFeedback("Encounter timer stopped. Total time: $elapsed")
+
+        // Show summary
+        Toast.makeText(this, "Encounter: $elapsed ($minutes min)", Toast.LENGTH_LONG).show()
+        Log.d(TAG, "Encounter timer stopped: $elapsed")
+    }
+
+    /**
+     * Report the current elapsed time
+     */
+    private fun reportEncounterTime() {
+        if (!encounterTimerRunning) {
+            speakFeedback("No timer running. Say start timer to begin.")
+            return
+        }
+
+        val elapsed = getElapsedTimeFormatted()
+        val minutes = getElapsedMinutes()
+        speakFeedback("You have been with this patient for $elapsed. That's $minutes minutes.")
+    }
+
+    /**
+     * Reset the encounter timer without stopping
+     */
+    private fun resetEncounterTimer() {
+        if (!encounterTimerRunning) {
+            speakFeedback("No timer running")
+            return
+        }
+
+        encounterStartTime = System.currentTimeMillis()
+        speakFeedback("Timer reset")
+        updateTimerDisplay()
+    }
+
+    /**
+     * Get elapsed time in formatted string (e.g., "5 minutes 30 seconds")
+     */
+    private fun getElapsedTimeFormatted(): String {
+        val startTime = encounterStartTime ?: return "0 seconds"
+        val elapsedMs = System.currentTimeMillis() - startTime
+        val totalSeconds = elapsedMs / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+
+        return when {
+            minutes == 0L -> "$seconds seconds"
+            seconds == 0L -> "$minutes minutes"
+            else -> "$minutes minutes $seconds seconds"
+        }
+    }
+
+    /**
+     * Get elapsed time in minutes (for billing)
+     */
+    private fun getElapsedMinutes(): Int {
+        val startTime = encounterStartTime ?: return 0
+        val elapsedMs = System.currentTimeMillis() - startTime
+        return (elapsedMs / 60000).toInt()
+    }
+
+    /**
+     * Get elapsed time in MM:SS format for display
+     */
+    private fun getElapsedTimeDisplay(): String {
+        val startTime = encounterStartTime ?: return "00:00"
+        val elapsedMs = System.currentTimeMillis() - startTime
+        val totalSeconds = elapsedMs / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        return String.format("%02d:%02d", minutes, seconds)
+    }
+
+    /**
+     * Show the timer indicator on screen
+     */
+    private fun showTimerIndicator() {
+        if (timerIndicatorView != null) return
+
+        timerIndicatorView = TextView(this).apply {
+            text = "⏱ 00:00"
+            textSize = 14f
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xCC2563EB.toInt())  // Blue with transparency
+            setPadding(16, 8, 16, 8)
+            gravity = android.view.Gravity.CENTER
+
+            // Position at top right
+            val params = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.TOP or android.view.Gravity.END
+                topMargin = 100
+                rightMargin = 16
+            }
+            layoutParams = params
+        }
+
+        val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+        rootView.addView(timerIndicatorView)
+    }
+
+    /**
+     * Hide the timer indicator
+     */
+    private fun hideTimerIndicator() {
+        timerIndicatorView?.let { view ->
+            val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+            rootView.removeView(view)
+        }
+        timerIndicatorView = null
+    }
+
+    /**
+     * Start periodic timer updates
+     */
+    private fun startTimerUpdates() {
+        timerUpdateHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        timerUpdateRunnable = object : Runnable {
+            override fun run() {
+                if (encounterTimerRunning) {
+                    updateTimerDisplay()
+                    timerUpdateHandler?.postDelayed(this, 1000)  // Update every second
+                }
+            }
+        }
+        timerUpdateHandler?.post(timerUpdateRunnable!!)
+    }
+
+    /**
+     * Stop periodic timer updates
+     */
+    private fun stopTimerUpdates() {
+        timerUpdateRunnable?.let { timerUpdateHandler?.removeCallbacks(it) }
+        timerUpdateHandler = null
+        timerUpdateRunnable = null
+    }
+
+    /**
+     * Update the timer display
+     */
+    private fun updateTimerDisplay() {
+        timerIndicatorView?.text = "⏱ ${getElapsedTimeDisplay()}"
+    }
+
+    /**
+     * Get encounter time for documentation (adds to note)
+     */
+    private fun getEncounterTimeForNote(): String {
+        if (!encounterTimerRunning && encounterStartTime == null) return ""
+        val minutes = getElapsedMinutes()
+        return "Time spent with patient: $minutes minutes"
+    }
+
     private fun showVoiceCommandHelp() {
         val helpText = """
             |🎤 VOICE COMMANDS
@@ -3918,6 +4120,12 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Cancel order" - Remove last order
             |• "Clear all orders" - Remove all orders
             |• "Yes" / "No" - Confirm/reject after warning
+            |
+            |⏱️ ENCOUNTER TIMER
+            |• "Start timer" - Begin timing encounter
+            |• "Stop timer" - End timer, report total
+            |• "How long" - Check elapsed time
+            |• "Reset timer" - Restart from zero
             |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
@@ -6336,6 +6544,30 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
                     isMedicationOrder(orderText) -> processMedicationOrder(orderText)
                     else -> speakFeedback("Order not recognized. Try: order CBC, order chest x-ray, or prescribe amoxicillin.")
                 }
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // ENCOUNTER TIMER - Timer commands
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Start timer: "start timer", "begin timer", "start encounter"
+            lower.contains("start timer") || lower.contains("begin timer") ||
+            lower.contains("start encounter") || lower.contains("start the timer") -> {
+                startEncounterTimer()
+            }
+            // Stop timer: "stop timer", "end timer", "stop encounter"
+            lower.contains("stop timer") || lower.contains("end timer") ||
+            lower.contains("stop encounter") || lower.contains("end encounter") -> {
+                stopEncounterTimer()
+            }
+            // Check time: "how long", "what's the time", "check timer", "elapsed time"
+            lower.contains("how long") || lower.contains("what time") || lower.contains("check timer") ||
+            lower.contains("elapsed time") || lower.contains("time elapsed") ||
+            lower.contains("how much time") || lower.contains("time spent") -> {
+                reportEncounterTime()
+            }
+            // Reset timer: "reset timer", "restart timer"
+            lower.contains("reset timer") || lower.contains("restart timer") -> {
+                resetEncounterTimer()
             }
             // Session timeout voice commands (HIPAA compliance)
             lower.contains("lock session") || lower == "lock" -> {
