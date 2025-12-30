@@ -6929,6 +6929,14 @@ SOFA Score: [X]
     }
 
     /**
+     * Get elapsed time in seconds
+     */
+    private fun getElapsedSeconds(): Long {
+        val startTime = encounterStartTime ?: return 0
+        return (System.currentTimeMillis() - startTime) / 1000
+    }
+
+    /**
      * Show the timer indicator on screen
      */
     private fun showTimerIndicator() {
@@ -7652,13 +7660,13 @@ SOFA Score: [X]
         content.append("───────────────────────────────────\n")
 
         // Include pending orders if any
-        if (pendingOrders.isNotEmpty()) {
+        if (orderQueue.isNotEmpty()) {
             content.append("Pending Orders:\n")
-            for (order in pendingOrders.take(5)) {
+            for (order in orderQueue.take(5)) {
                 content.append("  • ${order.displayName}\n")
             }
-            if (pendingOrders.size > 5) {
-                content.append("  + ${pendingOrders.size - 5} more\n")
+            if (orderQueue.size > 5) {
+                content.append("  + ${orderQueue.size - 5} more\n")
             }
         }
 
@@ -7673,9 +7681,10 @@ SOFA Score: [X]
         }
 
         // Include encounter time if timer was running
-        if (encounterDurationSeconds > 0) {
-            val mins = encounterDurationSeconds / 60
-            val secs = encounterDurationSeconds % 60
+        val elapsedSeconds = getElapsedSeconds()
+        if (elapsedSeconds > 0) {
+            val mins = elapsedSeconds / 60
+            val secs = elapsedSeconds % 60
             content.append("\n⏱️ Encounter time: ${mins}m ${secs}s\n")
         }
 
@@ -7740,8 +7749,8 @@ SOFA Score: [X]
 
         // R - Recommendation
         speech.append("Recommendation: ")
-        if (pendingOrders.isNotEmpty()) {
-            speech.append("${pendingOrders.size} pending orders. ")
+        if (orderQueue.isNotEmpty()) {
+            speech.append("${orderQueue.size} pending orders. ")
         }
         speech.append("Continue current plan. ")
 
@@ -7812,7 +7821,7 @@ SOFA Score: [X]
         }
 
         // Include pending orders as new prescriptions
-        val newMeds = pendingOrders.filter { it.category == "medication" }
+        val newMeds = orderQueue.filter { it.type == OrderType.MEDICATION }
         if (newMeds.isNotEmpty()) {
             content.append("\n📋 NEW PRESCRIPTIONS:\n")
             for (med in newMeds) {
@@ -7844,8 +7853,8 @@ SOFA Score: [X]
         }
 
         // Pending labs/imaging as follow-up
-        val pendingLabs = pendingOrders.filter { it.category == "lab" }
-        val pendingImaging = pendingOrders.filter { it.category == "imaging" }
+        val pendingLabs = orderQueue.filter { it.type == OrderType.LAB }
+        val pendingImaging = orderQueue.filter { it.type == OrderType.IMAGING }
         if (pendingLabs.isNotEmpty()) {
             content.append("• Complete lab work: ${pendingLabs.joinToString(", ") { it.displayName }}\n")
         }
@@ -7915,9 +7924,9 @@ SOFA Score: [X]
         }
 
         // New prescriptions
-        val newMeds = pendingOrders.filter { it.category == "medication" }
-        if (newMeds.isNotEmpty()) {
-            speech.append("You have ${newMeds.size} new prescriptions. ")
+        val newMedsSpeech = orderQueue.filter { it.type == OrderType.MEDICATION }
+        if (newMedsSpeech.isNotEmpty()) {
+            speech.append("You have ${newMedsSpeech.size} new prescriptions. ")
         }
 
         // Allergies reminder
@@ -7927,8 +7936,8 @@ SOFA Score: [X]
         }
 
         // Follow-up
-        val pendingLabs = pendingOrders.filter { it.category == "lab" }
-        if (pendingLabs.isNotEmpty()) {
+        val pendingLabsSpeech = orderQueue.filter { it.type == OrderType.LAB }
+        if (pendingLabsSpeech.isNotEmpty()) {
             speech.append("You need to complete lab work. ")
         }
 
@@ -8858,21 +8867,6 @@ SOFA Score: [X]
         speakFeedback("${noteVersionHistory.size} versions in history")
     }
 
-    private fun getTimeAgo(timestamp: Long): String {
-        val now = System.currentTimeMillis()
-        val diff = now - timestamp
-        val seconds = diff / 1000
-        val minutes = seconds / 60
-        val hours = minutes / 60
-
-        return when {
-            seconds < 60 -> "Just now"
-            minutes < 60 -> "$minutes min ago"
-            hours < 24 -> "$hours hours ago"
-            else -> "${hours / 24} days ago"
-        }
-    }
-
     /**
      * Restore a previous version of the note
      */
@@ -8899,7 +8893,7 @@ SOFA Score: [X]
             saveNoteVersion(version.content, "restored", "Restored from v$versionNumber")
 
             speakFeedback("Restored to version $versionNumber")
-            showGeneratedNote()
+            showNoteWithSaveOption("Restored Note (v$versionNumber)", version.content)
         } catch (e: Exception) {
             speakFeedback("Error restoring version")
         }
@@ -9183,7 +9177,7 @@ SOFA Score: [X]
         categories.forEach { (category, templateKeys) ->
             content.append("▸ $category\n")
             templateKeys.forEach { key ->
-                val template = noteTemplates[key]
+                val template = builtInTemplates[key]
                 if (template != null) {
                     val shortName = template.name.substringAfter(" - ")
                     content.append("   • $shortName\n")
@@ -9266,7 +9260,7 @@ SOFA Score: [X]
      * Apply a specialty template to the current note
      */
     private fun applySpecialtyTemplate(templateKey: String) {
-        val template = noteTemplates[templateKey]
+        val template = builtInTemplates[templateKey]
         if (template == null) {
             speakFeedback("Template not found")
             return
@@ -9285,12 +9279,11 @@ SOFA Score: [X]
         }
 
         // Store as current note
-        val noteJson = org.json.JSONObject().apply {
-            put("content", content)
-            put("note_type", template.noteType)
-            put("template", templateKey)
-            put("generated_at", System.currentTimeMillis())
-        }
+        val noteJson = org.json.JSONObject()
+        noteJson.put("content", content as Any)
+        noteJson.put("note_type", template.noteType as Any)
+        noteJson.put("template", templateKey as Any)
+        noteJson.put("generated_at", System.currentTimeMillis() as Any)
         lastGeneratedNote = noteJson
         currentNoteType = template.noteType
 
@@ -9301,7 +9294,7 @@ SOFA Score: [X]
         val displayContent = StringBuilder()
         displayContent.append("📋 ${template.name}\n")
         displayContent.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
-        displayContent.append(content)
+        displayContent.append(content.toString())
 
         showDataOverlay("Specialty Template Applied", displayContent.toString())
         speakFeedback("${template.category} template applied. You can edit sections by voice.")
