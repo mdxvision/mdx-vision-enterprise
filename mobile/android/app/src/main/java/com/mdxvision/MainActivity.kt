@@ -504,6 +504,44 @@ Neuro: Grossly intact""",
     // Variables: {{patient_name}}, {{dob}}, {{age}}, {{gender}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{date}}
     private val USER_TEMPLATES_KEY = "user_note_templates"
 
+    // Custom voice commands - user-defined command aliases and macros
+    private val CUSTOM_COMMANDS_KEY = "custom_voice_commands"
+
+    /**
+     * Custom voice command that maps a trigger phrase to one or more actions
+     */
+    data class CustomCommand(
+        val name: String,           // Display name (e.g., "Admission Check")
+        val trigger: String,        // Trigger phrase (e.g., "admission check")
+        val actions: List<String>,  // List of actions to execute (e.g., ["show vitals", "show meds"])
+        val description: String = "" // Optional description
+    ) {
+        fun toJson(): JSONObject {
+            return JSONObject().apply {
+                put("name", name)
+                put("trigger", trigger)
+                put("actions", JSONArray(actions))
+                put("description", description)
+            }
+        }
+
+        companion object {
+            fun fromJson(json: JSONObject): CustomCommand {
+                val actionsArray = json.optJSONArray("actions") ?: JSONArray()
+                val actions = mutableListOf<String>()
+                for (i in 0 until actionsArray.length()) {
+                    actions.add(actionsArray.getString(i))
+                }
+                return CustomCommand(
+                    name = json.optString("name", ""),
+                    trigger = json.optString("trigger", ""),
+                    actions = actions,
+                    description = json.optString("description", "")
+                )
+            }
+        }
+    }
+
     private val builtInTemplates = mapOf(
         "diabetes" to NoteTemplate(
             name = "Diabetes Follow-up",
@@ -3486,6 +3524,266 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // CUSTOM VOICE COMMANDS - User-defined command aliases and macros
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Get all custom commands from SharedPreferences
+     */
+    private fun getCustomCommands(): Map<String, CustomCommand> {
+        val commandsJson = cachePrefs.getString(CUSTOM_COMMANDS_KEY, null) ?: return emptyMap()
+        return try {
+            val result = mutableMapOf<String, CustomCommand>()
+            val json = JSONObject(commandsJson)
+            for (key in json.keys()) {
+                result[key] = CustomCommand.fromJson(json.getJSONObject(key))
+            }
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading custom commands: ${e.message}")
+            emptyMap()
+        }
+    }
+
+    /**
+     * Save a custom command
+     */
+    private fun saveCustomCommand(command: CustomCommand) {
+        val key = command.trigger.lowercase().replace(Regex("[^a-z0-9 ]"), "").trim()
+
+        val existingJson = cachePrefs.getString(CUSTOM_COMMANDS_KEY, null)
+        val commands = if (existingJson != null) JSONObject(existingJson) else JSONObject()
+
+        commands.put(key, command.toJson())
+        cachePrefs.edit().putString(CUSTOM_COMMANDS_KEY, commands.toString()).apply()
+
+        Log.d(TAG, "Saved custom command: ${command.name} -> ${command.actions}")
+    }
+
+    /**
+     * Delete a custom command
+     */
+    private fun deleteCustomCommand(commandName: String) {
+        val key = commandName.lowercase().replace(Regex("[^a-z0-9 ]"), "").trim()
+
+        val existingJson = cachePrefs.getString(CUSTOM_COMMANDS_KEY, null) ?: return
+        val commands = JSONObject(existingJson)
+
+        // Try exact match first
+        if (commands.has(key)) {
+            commands.remove(key)
+            cachePrefs.edit().putString(CUSTOM_COMMANDS_KEY, commands.toString()).apply()
+            speakFeedback("Deleted command: $commandName")
+            Log.d(TAG, "Deleted custom command: $key")
+            return
+        }
+
+        // Try partial match
+        for (cmdKey in commands.keys()) {
+            val cmd = CustomCommand.fromJson(commands.getJSONObject(cmdKey))
+            if (cmd.name.lowercase().contains(key) || cmd.trigger.lowercase().contains(key)) {
+                commands.remove(cmdKey)
+                cachePrefs.edit().putString(CUSTOM_COMMANDS_KEY, commands.toString()).apply()
+                speakFeedback("Deleted command: ${cmd.name}")
+                Log.d(TAG, "Deleted custom command: $cmdKey")
+                return
+            }
+        }
+
+        speakFeedback("Command not found: $commandName")
+    }
+
+    /**
+     * Find a custom command by trigger phrase
+     */
+    private fun findCustomCommand(phrase: String): CustomCommand? {
+        val lowerPhrase = phrase.lowercase().trim()
+        val commands = getCustomCommands()
+
+        // Exact match
+        for ((_, cmd) in commands) {
+            if (lowerPhrase == cmd.trigger.lowercase() ||
+                lowerPhrase.contains(cmd.trigger.lowercase())) {
+                return cmd
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Execute a custom command by running its actions in sequence
+     */
+    private fun executeCustomCommand(command: CustomCommand) {
+        Log.d(TAG, "Executing custom command: ${command.name} with ${command.actions.size} actions")
+        speakFeedback("Running ${command.name}")
+
+        // Execute actions with a small delay between each
+        var delay = 0L
+        for (action in command.actions) {
+            android.os.Handler(mainLooper).postDelayed({
+                Log.d(TAG, "Executing action: $action")
+                processTranscript(action)
+            }, delay)
+            delay += 500L // 500ms between actions
+        }
+    }
+
+    /**
+     * Parse and create a custom command from voice input
+     * Patterns:
+     * - "create command [name] that does [action1] then [action2]"
+     * - "when I say [phrase] do [action]"
+     * - "teach [name] to do [action1] and [action2]"
+     */
+    private fun parseAndCreateCommand(input: String): Boolean {
+        val lower = input.lowercase().trim()
+
+        // Pattern: "create command [name] that does [actions]"
+        val createPattern = Regex("(?:create|make|add|new) (?:command|macro|shortcut) ([\\w\\s]+?) (?:that does?|to do|which does?|:) (.+)")
+        val createMatch = createPattern.find(lower)
+        if (createMatch != null) {
+            val name = createMatch.groupValues[1].trim()
+            val actionsStr = createMatch.groupValues[2].trim()
+            val actions = parseActionList(actionsStr)
+
+            if (actions.isNotEmpty()) {
+                val command = CustomCommand(
+                    name = name.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } },
+                    trigger = name,
+                    actions = actions,
+                    description = "Custom command created by voice"
+                )
+                saveCustomCommand(command)
+                speakFeedback("Created command: ${command.name}. Say \"${command.trigger}\" to run it.")
+                showCommandCreatedOverlay(command)
+                return true
+            }
+        }
+
+        // Pattern: "when I say [phrase] do [action]"
+        val whenPattern = Regex("when (?:i|I) say ([\\w\\s]+?) (?:do|run|execute) (.+)")
+        val whenMatch = whenPattern.find(lower)
+        if (whenMatch != null) {
+            val trigger = whenMatch.groupValues[1].trim()
+            val actionsStr = whenMatch.groupValues[2].trim()
+            val actions = parseActionList(actionsStr)
+
+            if (actions.isNotEmpty()) {
+                val command = CustomCommand(
+                    name = trigger.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } },
+                    trigger = trigger,
+                    actions = actions,
+                    description = "Voice alias"
+                )
+                saveCustomCommand(command)
+                speakFeedback("Got it! When you say \"$trigger\", I'll do that.")
+                return true
+            }
+        }
+
+        // Pattern: "teach [name] to [action]"
+        val teachPattern = Regex("teach ([\\w\\s]+?) to (.+)")
+        val teachMatch = teachPattern.find(lower)
+        if (teachMatch != null) {
+            val name = teachMatch.groupValues[1].trim()
+            val actionsStr = teachMatch.groupValues[2].trim()
+            val actions = parseActionList(actionsStr)
+
+            if (actions.isNotEmpty()) {
+                val command = CustomCommand(
+                    name = name.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } },
+                    trigger = name,
+                    actions = actions,
+                    description = "Taught command"
+                )
+                saveCustomCommand(command)
+                speakFeedback("Learned! Say \"$name\" to run this command.")
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * Parse action list from voice input
+     * Handles: "then", "and", "and then", commas
+     */
+    private fun parseActionList(actionsStr: String): List<String> {
+        // Split by common separators
+        val parts = actionsStr
+            .replace(" and then ", "|")
+            .replace(" then ", "|")
+            .replace(" and ", "|")
+            .replace(", ", "|")
+            .replace(",", "|")
+            .split("|")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+
+        return parts
+    }
+
+    /**
+     * Show overlay confirming command creation
+     */
+    private fun showCommandCreatedOverlay(command: CustomCommand) {
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("✅ COMMAND CREATED\n")
+        content.append("═══════════════════════════════════\n\n")
+        content.append("📢 Name: ${command.name}\n\n")
+        content.append("🎤 Say: \"${command.trigger}\"\n\n")
+        content.append("📋 Actions:\n")
+        command.actions.forEachIndexed { index, action ->
+            content.append("  ${index + 1}. $action\n")
+        }
+        content.append("\n───────────────────────────────────\n")
+        content.append("Say \"my commands\" to see all")
+
+        showDataOverlay("Command Created", content.toString())
+    }
+
+    /**
+     * Show all custom commands
+     */
+    private fun showCustomCommands() {
+        val commands = getCustomCommands()
+
+        if (commands.isEmpty()) {
+            speakFeedback("No custom commands yet. Say: create command morning rounds that does show vitals then show meds")
+            showDataOverlay("Custom Commands", "No custom commands created yet.\n\n" +
+                "📝 To create a command, say:\n" +
+                "• \"Create command [name] that does [actions]\"\n" +
+                "• \"When I say [phrase] do [action]\"\n" +
+                "• \"Teach [name] to [actions]\"\n\n" +
+                "Example:\n" +
+                "\"Create command morning rounds that does\n" +
+                " show vitals then show meds then show labs\"")
+            return
+        }
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("🎤 MY CUSTOM COMMANDS\n")
+        content.append("═══════════════════════════════════\n\n")
+
+        commands.values.forEachIndexed { index, cmd ->
+            content.append("${index + 1}. ${cmd.name}\n")
+            content.append("   Say: \"${cmd.trigger}\"\n")
+            content.append("   Does: ${cmd.actions.joinToString(" → ")}\n\n")
+        }
+
+        content.append("───────────────────────────────────\n")
+        content.append("• \"Delete command [name]\" to remove\n")
+        content.append("• \"Create command...\" to add new")
+
+        showDataOverlay("My Commands", content.toString())
+        speakFeedback("You have ${commands.size} custom commands.")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // VOICE ORDERS - Order Processing Functions
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -5282,6 +5580,13 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Vital history" - View past readings
             |• "Add vitals to note" - Insert into note
             |• "Clear vitals" - Remove all captured
+            |
+            |🎤 CUSTOM COMMANDS
+            |• "Create command [name] that does [actions]"
+            |• "When I say [phrase] do [action]"
+            |• "Teach [name] to [actions]"
+            |• "My commands" - List custom commands
+            |• "Delete command [name]" - Remove
             |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
@@ -8037,6 +8342,43 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
                     transcriptText.text = "Say: My name is Dr. [Name]"
                 }
             }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // CUSTOM VOICE COMMANDS - User-defined macros and aliases
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Create command: "create command [name] that does [actions]"
+            lower.contains("create command") || lower.contains("make command") ||
+            lower.contains("new command") || lower.contains("add command") ||
+            lower.contains("create macro") || lower.contains("make macro") ||
+            lower.contains("new macro") || lower.contains("add macro") ||
+            lower.startsWith("when i say") || lower.startsWith("when I say") ||
+            lower.startsWith("teach ") -> {
+                if (!parseAndCreateCommand(transcript)) {
+                    speakFeedback("Could not create command. Try: create command morning rounds that does show vitals then show meds")
+                }
+            }
+            // Show custom commands: "my commands", "list commands", "show commands"
+            lower.contains("my command") || lower.contains("list command") ||
+            lower.contains("show command") || lower.contains("custom command") ||
+            lower.contains("my macro") || lower.contains("list macro") -> {
+                showCustomCommands()
+            }
+            // Delete command: "delete command [name]", "remove command [name]"
+            lower.contains("delete command") || lower.contains("remove command") ||
+            lower.contains("delete macro") || lower.contains("remove macro") -> {
+                val commandName = lower
+                    .replace("delete command", "")
+                    .replace("remove command", "")
+                    .replace("delete macro", "")
+                    .replace("remove macro", "")
+                    .trim()
+                if (commandName.isNotEmpty()) {
+                    deleteCustomCommand(commandName)
+                } else {
+                    speakFeedback("Say delete command followed by the command name")
+                }
+            }
+
             lower.contains("clear") || lower.contains("reset") -> {
                 // Clear current patient data (not cache)
                 currentPatientData = null
@@ -8044,9 +8386,15 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
                 transcriptText.text = "Patient data cleared"
             }
             else -> {
-                // Display transcribed text
-                transcriptText.text = "\"$transcript\""
-                Log.d(TAG, "Voice command: $transcript")
+                // Check for custom commands before falling through
+                val customCommand = findCustomCommand(lower)
+                if (customCommand != null) {
+                    executeCustomCommand(customCommand)
+                } else {
+                    // Display transcribed text
+                    transcriptText.text = "\"$transcript\""
+                    Log.d(TAG, "Voice command: $transcript")
+                }
             }
         }
     }

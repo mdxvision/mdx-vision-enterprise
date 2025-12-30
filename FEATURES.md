@@ -222,6 +222,11 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Add vitals to note" | Done |
 | [x] "Clear vitals" | Done |
 | [x] "Vital history" / "Past vitals" | Done |
+| [x] "Create command [name] that does [actions]" | Done |
+| [x] "When I say [phrase] do [action]" | Done |
+| [x] "Teach [name] to [actions]" | Done |
+| [x] "My commands" / "List commands" | Done |
+| [x] "Delete command [name]" | Done |
 
 ---
 
@@ -282,6 +287,7 @@ Based on US Patent 15/237,980 and product requirements.
 38. ~~**Order Sets**~~ - Done (12 clinical order bundles: chest pain, sepsis, stroke, CHF, COPD, DKA, PE, pneumonia, UTI, abdominal pain, admission labs, preop labs)
 39. ~~**Voice Vitals Entry**~~ - Done (Capture vitals by voice: BP, HR, Temp, O2, RR, Weight, Height, Pain; range validation; critical value warnings; add to notes)
 40. ~~**Vital History Display**~~ - Done (View historical vital readings timeline, "vital history" voice command, last 10 readings per vital type with trend icons and dates)
+41. ~~**Custom Voice Commands**~~ - Done (Create user-defined command macros, chain actions with "then"/"and", "create command", "teach", "when I say", "my commands", "delete command")
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
