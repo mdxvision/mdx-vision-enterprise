@@ -121,12 +121,12 @@ Based on US Patent 15/237,980 and product requirements.
 
 | Requirement | Status | Notes |
 |-------------|--------|-------|
-| [ ] HIPAA audit logging | Pending | - |
+| [x] HIPAA audit logging | Done | JSON audit logs, PHI access tracking, rotating files |
 | [ ] Data encryption at rest | Pending | - |
-| [ ] Data encryption in transit | Done | HTTPS/TLS |
+| [x] Data encryption in transit | Done | HTTPS/TLS |
 | [ ] User authentication | Pending | OAuth2/SMART on FHIR |
 | [ ] Role-based access | Pending | - |
-| [ ] Session timeout | Pending | - |
+| [x] Session timeout | Done | HIPAA auto-lock, configurable 1-60 min |
 | [ ] PHI data masking | Pending | - |
 
 ---
@@ -236,6 +236,8 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Creatinine clearance" / "CrCl" | Done |
 | [x] "CHADS VASc" / "Stroke risk" | Done |
 | [x] "Calculators" / "Show calculators" | Done |
+| [x] "Handoff report" / "SBAR" | Done |
+| [x] "Speak handoff" | Done |
 
 ---
 
@@ -298,11 +300,13 @@ Based on US Patent 15/237,980 and product requirements.
 40. ~~**Vital History Display**~~ - Done (View historical vital readings timeline, "vital history" voice command, last 10 readings per vital type with trend icons and dates)
 41. ~~**Custom Voice Commands**~~ - Done (Create user-defined command macros, chain actions with "then"/"and", "create command", "teach", "when I say", "my commands", "delete command")
 42. ~~**Medical Calculator**~~ - Done (Voice-activated clinical calcs: BMI, eGFR, corrected calcium, anion gap, A1c↔glucose, MAP, CrCl, CHADS₂-VASc; auto-pulls from patient chart)
+43. ~~**SBAR Handoff Report**~~ - Done (Structured shift handoff, SBAR format, visual + TTS spoken report, includes critical vitals/allergies/meds/orders/care plans)
 
 ### Upcoming
-1. **Epic Integration** - Complete with credentials
+1. **Epic/Veradigm Integration** - Needs live credentials
 2. **Vuzix HUD Overlay** - True AR display mode
-3. **User Authentication** - OAuth2/SMART on FHIR
+3. **OAuth2/SMART on FHIR** - User authentication
+4. **Data Encryption at Rest** - Local storage security
 
 ---
 

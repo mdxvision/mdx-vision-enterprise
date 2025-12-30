@@ -296,16 +296,18 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 47. **Vital History Display** - View historical vital readings timeline; "vital history", "past vitals"; shows last 10 readings per vital type with trend icons (↗️↘️→🆕), dates, and interpretation flags
 48. **Custom Voice Commands** - Create user-defined command macros; "create command [name] that does [actions]", "when I say [phrase] do [action]", "teach [name] to [actions]"; chain multiple actions with "then"/"and"; "my commands" to list, "delete command" to remove; persistent storage
 49. **Medical Calculator** - Voice-activated clinical calculations; auto-pull values from patient chart; BMI, eGFR (CKD-EPI 2021), corrected calcium, anion gap, A1c↔glucose, MAP, CrCl (Cockcroft-Gault), CHADS₂-VASc; interpretations and clinical ranges included
+50. **SBAR Handoff Report** - Structured shift handoff reports; SBAR format (Situation, Background, Assessment, Recommendation); visual display + TTS spoken report; includes critical vitals, allergies, meds, pending orders, care plans; voice commands ("handoff report", "speak handoff", "SBAR")
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | See Larger Features below |
+| All medium effort items completed! | 50 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)
 2. OAuth2/SMART on FHIR authentication
 3. Vuzix HUD native overlay
-4. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog
+4. Data encryption at rest (local storage)
+5. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog

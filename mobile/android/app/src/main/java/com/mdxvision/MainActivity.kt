@@ -6689,6 +6689,250 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HANDOFF REPORT - SBAR format for shift handoffs
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Generate and display SBAR handoff report for current patient
+     * SBAR = Situation, Background, Assessment, Recommendation
+     */
+    private fun generateHandoffReport() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speakFeedback("No patient loaded. Load a patient first for handoff report.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val dob = patient.optString("date_of_birth", "")
+        val gender = patient.optString("gender", "").uppercase()
+        val patientId = patient.optString("patient_id", "")
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════════════\n")
+        content.append("📋 SBAR HANDOFF REPORT\n")
+        content.append("═══════════════════════════════════\n\n")
+
+        // Header with patient info
+        content.append("👤 $name")
+        if (gender.isNotEmpty()) content.append(" ($gender)")
+        if (dob.isNotEmpty()) content.append(" DOB: $dob")
+        content.append("\n")
+        if (patientId.isNotEmpty()) content.append("MRN: $patientId\n")
+        content.append("\n")
+
+        // S - SITUATION
+        content.append("▸ S - SITUATION\n")
+        content.append("───────────────────────────────────\n")
+        val conditions = patient.optJSONArray("conditions")
+        if (conditions != null && conditions.length() > 0) {
+            val primaryCondition = conditions.getJSONObject(0).optString("name", "")
+            content.append("Primary: $primaryCondition\n")
+            if (conditions.length() > 1) {
+                content.append("+ ${conditions.length() - 1} other active problems\n")
+            }
+        } else {
+            content.append("No active problems documented\n")
+        }
+
+        // Check for critical vitals
+        val criticalVitals = patient.optJSONArray("critical_vitals")
+        if (criticalVitals != null && criticalVitals.length() > 0) {
+            content.append("⚠️ CRITICAL: ")
+            for (i in 0 until criticalVitals.length()) {
+                val cv = criticalVitals.getJSONObject(i)
+                content.append("${cv.optString("name")}: ${cv.optString("value")} ")
+            }
+            content.append("\n")
+        }
+        content.append("\n")
+
+        // B - BACKGROUND
+        content.append("▸ B - BACKGROUND\n")
+        content.append("───────────────────────────────────\n")
+
+        // Allergies (critical for handoff)
+        val allergies = patient.optJSONArray("allergies")
+        if (allergies != null && allergies.length() > 0) {
+            content.append("🚨 Allergies: ")
+            for (i in 0 until minOf(allergies.length(), 4)) {
+                if (i > 0) content.append(", ")
+                content.append(allergies.getString(i))
+            }
+            if (allergies.length() > 4) content.append(" +${allergies.length() - 4} more")
+            content.append("\n")
+        } else {
+            content.append("Allergies: NKDA\n")
+        }
+
+        // Current medications
+        val meds = patient.optJSONArray("medications")
+        if (meds != null && meds.length() > 0) {
+            content.append("💊 Meds: ${meds.length()} active\n")
+            for (i in 0 until minOf(meds.length(), 3)) {
+                content.append("  • ${meds.getString(i)}\n")
+            }
+            if (meds.length() > 3) content.append("  + ${meds.length() - 3} more\n")
+        }
+
+        // Relevant history
+        if (conditions != null && conditions.length() > 1) {
+            content.append("Hx: ")
+            for (i in 1 until minOf(conditions.length(), 4)) {
+                val cond = conditions.getJSONObject(i)
+                if (i > 1) content.append(", ")
+                content.append(cond.optString("name", ""))
+            }
+            content.append("\n")
+        }
+        content.append("\n")
+
+        // A - ASSESSMENT
+        content.append("▸ A - ASSESSMENT\n")
+        content.append("───────────────────────────────────\n")
+
+        // Current vitals
+        val vitals = patient.optJSONArray("vitals")
+        if (vitals != null && vitals.length() > 0) {
+            content.append("Vitals:\n")
+            for (i in 0 until minOf(vitals.length(), 6)) {
+                val v = vitals.getJSONObject(i)
+                val vName = v.optString("name", "")
+                val vValue = v.optString("value", "")
+                val vUnit = v.optString("unit", "")
+                val interp = v.optString("interpretation", "")
+                val flag = when (interp) {
+                    "HH", "LL" -> "‼️"
+                    "H" -> "↑"
+                    "L" -> "↓"
+                    else -> ""
+                }
+                content.append("  $vName: $vValue $vUnit $flag\n")
+            }
+        }
+
+        // Recent/pending labs
+        val labs = patient.optJSONArray("labs")
+        if (labs != null && labs.length() > 0) {
+            content.append("Recent Labs:\n")
+            for (i in 0 until minOf(labs.length(), 4)) {
+                val lab = labs.getJSONObject(i)
+                val labName = lab.optString("name", "")
+                val labValue = lab.optString("value", "")
+                val labUnit = lab.optString("unit", "")
+                content.append("  $labName: $labValue $labUnit\n")
+            }
+        }
+        content.append("\n")
+
+        // R - RECOMMENDATION
+        content.append("▸ R - RECOMMENDATION\n")
+        content.append("───────────────────────────────────\n")
+
+        // Include pending orders if any
+        if (pendingOrders.isNotEmpty()) {
+            content.append("Pending Orders:\n")
+            for (order in pendingOrders.take(5)) {
+                content.append("  • ${order.displayName}\n")
+            }
+            if (pendingOrders.size > 5) {
+                content.append("  + ${pendingOrders.size - 5} more\n")
+            }
+        }
+
+        // Care plans
+        val carePlans = patient.optJSONArray("care_plans")
+        if (carePlans != null && carePlans.length() > 0) {
+            content.append("Active Care Plans:\n")
+            for (i in 0 until minOf(carePlans.length(), 2)) {
+                val plan = carePlans.getJSONObject(i)
+                content.append("  • ${plan.optString("title", "Care Plan")}\n")
+            }
+        }
+
+        // Include encounter time if timer was running
+        if (encounterDurationSeconds > 0) {
+            val mins = encounterDurationSeconds / 60
+            val secs = encounterDurationSeconds % 60
+            content.append("\n⏱️ Encounter time: ${mins}m ${secs}s\n")
+        }
+
+        content.append("\n───────────────────────────────────\n")
+        content.append("Report generated: ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())}")
+
+        showDataOverlay("SBAR Handoff", content.toString())
+        speakFeedback("Handoff report ready for $name")
+    }
+
+    /**
+     * Speak the SBAR handoff report aloud
+     */
+    private fun speakHandoffReport() {
+        val patient = currentPatientData
+        if (patient == null) {
+            speak("No patient loaded for handoff.")
+            return
+        }
+
+        val name = patient.optString("name", "Unknown")
+        val speech = StringBuilder()
+
+        // S - Situation
+        speech.append("SBAR handoff for $name. ")
+        speech.append("Situation: ")
+        val conditions = patient.optJSONArray("conditions")
+        if (conditions != null && conditions.length() > 0) {
+            val primary = conditions.getJSONObject(0).optString("name", "")
+            speech.append("Primary problem is $primary. ")
+        }
+
+        // Check critical
+        val criticalVitals = patient.optJSONArray("critical_vitals")
+        if (criticalVitals != null && criticalVitals.length() > 0) {
+            speech.append("Alert: Patient has critical vitals. ")
+        }
+
+        // B - Background
+        speech.append("Background: ")
+        val allergies = patient.optJSONArray("allergies")
+        if (allergies != null && allergies.length() > 0) {
+            speech.append("Allergies include ${allergies.getString(0)}. ")
+        } else {
+            speech.append("No known drug allergies. ")
+        }
+
+        val meds = patient.optJSONArray("medications")
+        if (meds != null && meds.length() > 0) {
+            speech.append("On ${meds.length()} medications. ")
+        }
+
+        // A - Assessment
+        speech.append("Assessment: ")
+        val vitals = patient.optJSONArray("vitals")
+        if (vitals != null && vitals.length() > 0) {
+            for (i in 0 until minOf(vitals.length(), 3)) {
+                val v = vitals.getJSONObject(i)
+                speech.append("${formatVitalNameForSpeech(v.optString("name", ""))}: ${v.optString("value", "")}. ")
+            }
+        }
+
+        // R - Recommendation
+        speech.append("Recommendation: ")
+        if (pendingOrders.isNotEmpty()) {
+            speech.append("${pendingOrders.size} pending orders. ")
+        }
+        speech.append("Continue current plan. ")
+
+        speech.append("End of handoff.")
+
+        // Show visual report too
+        generateHandoffReport()
+
+        // Speak
+        speak(speech.toString())
+    }
+
     private fun saveCurrentNote() {
         // Show sign-off confirmation dialog before saving
         showSignOffConfirmation()

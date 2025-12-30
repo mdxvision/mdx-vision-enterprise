@@ -123,7 +123,7 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] Patient note history | Done | GET `/patient/{id}/notes` |
 | [x] Edit note | Done | EditText in overlay, reset button, voice commands |
 | [x] Sign/authenticate note | Done | Confirmation dialog with checkbox, signed_by tracking |
-| [ ] Push to EHR | Pending | FHIR DocumentReference |
+| [x] Push to EHR | Done | FHIR DocumentReference POST, voice commands, LOINC codes |
 | [ ] Note versioning | Pending | Track changes |
 
 ### Post-Encounter Summary
@@ -213,6 +213,126 @@ Based on MDx v2.0 Brief Technical Description document.
 | [x] "Generate note" / "Looks good" | Done | Generate from preview |
 | [x] "Re-record" / "Try again" | Done | Restart transcription |
 | [x] "Speech feedback" / "Toggle feedback" | Done | Toggle voice confirmations |
+
+### Session & History Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Show history" / "Recent patients" | Done | View recently viewed patients |
+| [x] "Load [N]" | Done | Quick load from history (1-10) |
+| [x] "Clear history" | Done | Clear patient history |
+| [x] "Lock session" / "Lock" | Done | Lock screen immediately |
+| [x] "Unlock" | Done | Unlock session |
+| [x] "Timeout [N] minutes" | Done | Set inactivity timeout |
+
+### Voice Note Editing Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Change [section] to [text]" | Done | Replace section content |
+| [x] "Set [section] to [text]" | Done | Replace section content |
+| [x] "Add to [section]: [text]" | Done | Append to section |
+| [x] "Include in [section]: [text]" | Done | Append to section |
+| [x] "Delete last sentence" | Done | Remove last sentence |
+| [x] "Delete last line" | Done | Remove last line |
+| [x] "Delete [section] item [N]" | Done | Remove specific item |
+| [x] "Clear [section]" | Done | Clear section content |
+| [x] "Insert normal exam" | Done | Add normal exam macro |
+| [x] "Insert normal vitals" | Done | Add normal vitals macro |
+| [x] "Insert negative ROS" | Done | Add negative ROS macro |
+| [x] "Insert follow up" | Done | Add follow-up macro |
+| [x] "Undo" | Done | Revert last edit (10 levels) |
+
+### Voice Navigation Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Scroll down" / "Page down" | Done | Scroll content down |
+| [x] "Scroll up" / "Page up" | Done | Scroll content up |
+| [x] "Go to top" / "Top of page" | Done | Jump to beginning |
+| [x] "Go to bottom" / "Bottom of page" | Done | Jump to end |
+| [x] "Go to [section]" | Done | Jump to SOAP section |
+| [x] "Jump to [section]" | Done | Jump to SOAP section |
+| [x] "Show [section] only" | Done | Isolate single section |
+| [x] "Read [section]" | Done | TTS read section aloud |
+| [x] "Read note" / "Read entire note" | Done | TTS read full note |
+
+### Voice Dictation Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Dictate to [section]" | Done | Start dictating to section |
+| [x] "Stop dictating" | Done | End dictation, insert text |
+| [x] "Cancel dictation" | Done | Discard dictation |
+
+### Voice Template Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Use [template] template" | Done | Apply built-in template |
+| [x] "List templates" | Done | Show all templates |
+| [x] "Save as template [name]" | Done | Save current note as template |
+| [x] "Delete template [name]" | Done | Remove user template |
+
+### Voice Order Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Order [lab]" | Done | Order lab test (CBC, CMP, etc.) |
+| [x] "Order [imaging]" | Done | Order imaging study |
+| [x] "Prescribe [med] [dose] [freq] for [duration]" | Done | Prescribe medication |
+| [x] "Show orders" / "List orders" | Done | View pending orders |
+| [x] "Cancel order" | Done | Remove last order |
+| [x] "Clear all orders" | Done | Remove all orders |
+| [x] "Order [set] workup" | Done | Order clinical bundle |
+| [x] "List order sets" | Done | Show available sets |
+| [x] "What's in [set]" | Done | Preview set contents |
+
+### Encounter Timer Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Start timer" / "Start encounter" | Done | Begin timing |
+| [x] "Stop timer" / "End encounter" | Done | Stop timing |
+| [x] "How long" / "Check timer" | Done | Get elapsed time |
+| [x] "Reset timer" | Done | Clear timer |
+
+### Voice Vitals Entry Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "BP [sys] over [dia]" | Done | Capture blood pressure |
+| [x] "Pulse [rate]" / "Heart rate [rate]" | Done | Capture heart rate |
+| [x] "Temp [value]" | Done | Capture temperature |
+| [x] "O2 sat [value]" / "Oxygen [value]" | Done | Capture SpO2 |
+| [x] "Respiratory rate [value]" | Done | Capture RR |
+| [x] "Weight [value]" | Done | Capture weight |
+| [x] "Height [value]" | Done | Capture height |
+| [x] "Pain [value]" | Done | Capture pain level |
+| [x] "Show captured vitals" | Done | View entered vitals |
+| [x] "Add vitals to note" | Done | Insert into Objective |
+| [x] "Clear vitals" | Done | Clear captured vitals |
+| [x] "Vital history" / "Past vitals" | Done | View historical readings |
+
+### Custom Voice Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Create command [name] that does [actions]" | Done | Create macro |
+| [x] "When I say [phrase] do [action]" | Done | Create macro |
+| [x] "Teach [name] to [actions]" | Done | Create macro |
+| [x] "My commands" / "List commands" | Done | Show user commands |
+| [x] "Delete command [name]" | Done | Remove user command |
+
+### Medical Calculator Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Calculate BMI" / "Body mass index" | Done | Calculate BMI |
+| [x] "Calculate GFR" / "Kidney function" | Done | Calculate eGFR (CKD-EPI) |
+| [x] "Corrected calcium" | Done | Calculate corrected Ca |
+| [x] "Anion gap" | Done | Calculate anion gap |
+| [x] "A1c to glucose" / "Convert A1c" | Done | Convert A1c ↔ glucose |
+| [x] "Calculate MAP" / "Mean arterial pressure" | Done | Calculate MAP |
+| [x] "Creatinine clearance" / "CrCl" | Done | Calculate CrCl |
+| [x] "CHADS VASc" / "Stroke risk" | Done | Calculate CHADS₂-VASc |
+| [x] "Calculators" / "Show calculators" | Done | List all calculators |
+
+### SBAR Handoff Commands
+| Command | Status | Function |
+|---------|--------|----------|
+| [x] "Handoff report" / "SBAR" | Done | Generate visual handoff report |
+| [x] "Speak handoff" | Done | TTS reads handoff aloud |
 
 ---
 
@@ -318,12 +438,12 @@ Based on MDx v2.0 Brief Technical Description document.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | [x] HTTPS/TLS | Done | In transit encryption |
-| [ ] HIPAA audit logging | Pending | Access logs |
+| [x] HIPAA audit logging | Done | JSON audit logs, PHI access tracking, rotating file storage |
 | [ ] Data encryption at rest | Pending | Local storage |
 | [ ] OAuth2 authentication | Pending | User login |
 | [ ] SMART on FHIR | Pending | EHR auth |
 | [ ] Role-based access | Pending | Permissions |
-| [ ] Session timeout | Pending | Auto-logout |
+| [x] Session timeout | Done | HIPAA compliance auto-lock, configurable 1-60 min, voice commands |
 | [ ] PHI masking | Pending | Display protection |
 | [ ] BAA compliance | Pending | Business associate |
 
@@ -372,8 +492,8 @@ Based on MDx v2.0 Brief Technical Description document.
 
 ## Implementation Summary
 
-**Completed:** 80+ features
-**Pending:** 25+ features
+**Completed:** 100+ features
+**Pending:** 15+ features
 **Future:** 5+ features
 
 ### Key Milestones Achieved
@@ -392,13 +512,27 @@ Based on MDx v2.0 Brief Technical Description document.
 13. CPT modifier support with 20+ modifiers and auto-detection
 14. Critical lab alerts with TTS spoken warnings (potassium, glucose, troponin, etc.)
 15. Critical vital alerts with TTS spoken warnings (BP, HR, SpO2, Temp - spoken first)
+16. Medication interaction alerts with severity levels and TTS warnings
+17. Push notes to EHR via FHIR DocumentReference
+18. HIPAA audit logging with JSON structured logs
+19. Lab and vital trends with historical comparison
+20. Patient photo display and search history
+21. Session timeout for HIPAA compliance
+22. Voice note editing, navigation, and dictation mode
+23. Voice templates with auto-fill patient data (8 built-in)
+24. Voice orders with safety checks (labs, imaging, meds)
+25. Order sets (12 clinical bundles)
+26. Voice vitals entry with range validation
+27. Vital history display with trends
+28. Custom voice commands (user-defined macros)
+29. Medical calculator (BMI, eGFR, CrCl, CHADS₂-VASc, etc.)
+30. SBAR handoff report for shift changes
 
 ### Next Priorities
-1. Epic/Veradigm live integration
+1. Epic/Veradigm live integration (needs credentials)
 2. Vuzix HUD native overlay
-3. HIPAA audit logging
-4. OAuth2/SMART on FHIR authentication
-5. Push notes to EHR (FHIR DocumentReference)
+3. OAuth2/SMART on FHIR authentication
+4. Data encryption at rest
 
 ---
 

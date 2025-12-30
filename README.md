@@ -23,7 +23,7 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 
 ## Key Features
 
-### Voice Commands (30+)
+### Voice Commands (100+)
 - **Wake Word**: "Hey MDx" for hands-free activation
 - **12-Button Grid**: Tap or speak commands for all functions
 - **Patient Data**: Load, search, scan wristband
@@ -208,6 +208,35 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Note Integration**: "Add vitals to note" inserts into Objective section
 - **Vitals Display**: "Show captured vitals" to review before adding to note
 - **Unit Support**: Fahrenheit/Celsius, lbs/kg, feet-inches/cm
+
+### Vital History Display (NEW)
+- **Historical Timeline**: View last 10 readings per vital type
+- **Trend Indicators**: ↗️ rising, ↘️ falling, → stable, 🆕 new
+- **Date Context**: Shows when each reading was recorded
+- **Voice Command**: "Vital history" or "Past vitals"
+
+### Custom Voice Commands (NEW)
+- **User Macros**: Create personalized command shortcuts
+- **Action Chaining**: Chain multiple actions with "then" or "and"
+- **Voice Creation**: "Create command [name] that does [actions]"
+- **Aliases**: "When I say [phrase] do [action]", "Teach [name] to [actions]"
+- **Management**: "My commands" to list, "Delete command [name]" to remove
+- **Persistent**: Commands survive app restarts
+
+### Medical Calculator (NEW)
+- **Voice-Activated**: Calculate clinical values by voice
+- **Auto-Pull Data**: Automatically uses values from patient chart
+- **8 Calculators**: BMI, eGFR (CKD-EPI 2021), corrected calcium, anion gap, A1c↔glucose, MAP, CrCl (Cockcroft-Gault), CHADS₂-VASc
+- **Interpretations**: Results include clinical ranges and guidance
+- **Voice Commands**: "Calculate BMI", "Kidney function", "Stroke risk"
+
+### SBAR Handoff Report (NEW)
+- **Structured Format**: SBAR (Situation, Background, Assessment, Recommendation)
+- **Shift Change Ready**: Complete patient handoff in standardized format
+- **Visual Display**: Formatted report with critical info highlighted
+- **Spoken Report**: TTS reads handoff aloud for hands-free
+- **Comprehensive**: Includes critical vitals, allergies, meds, pending orders, care plans
+- **Voice Commands**: "Handoff report", "Speak handoff", "SBAR"
 
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
