@@ -438,6 +438,67 @@ Neuro: Grossly intact""",
         )
     )
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VOICE VITALS ENTRY - Capture vitals by voice
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    enum class VitalType {
+        BLOOD_PRESSURE,
+        HEART_RATE,
+        TEMPERATURE,
+        OXYGEN_SATURATION,
+        RESPIRATORY_RATE,
+        WEIGHT,
+        HEIGHT,
+        PAIN_LEVEL
+    }
+
+    data class CapturedVital(
+        val type: VitalType,
+        val value: String,           // "120/80", "72", "98.6"
+        val unit: String,            // "mmHg", "bpm", "°F"
+        val displayName: String,     // "Blood Pressure", "Heart Rate"
+        val timestamp: Long = System.currentTimeMillis()
+    )
+
+    // Vital reference ranges for validation
+    data class VitalRange(
+        val min: Double,
+        val max: Double,
+        val criticalLow: Double? = null,
+        val criticalHigh: Double? = null
+    )
+
+    private val vitalRanges = mapOf(
+        "systolic" to VitalRange(60.0, 250.0, 70.0, 180.0),
+        "diastolic" to VitalRange(30.0, 150.0, 40.0, 120.0),
+        "heart_rate" to VitalRange(20.0, 250.0, 40.0, 150.0),
+        "temperature_f" to VitalRange(90.0, 110.0, 95.0, 104.0),
+        "temperature_c" to VitalRange(32.0, 43.0, 35.0, 40.0),
+        "oxygen_saturation" to VitalRange(50.0, 100.0, 88.0, null),
+        "respiratory_rate" to VitalRange(4.0, 60.0, 8.0, 30.0),
+        "weight_lbs" to VitalRange(1.0, 1000.0),
+        "weight_kg" to VitalRange(0.5, 500.0),
+        "height_in" to VitalRange(10.0, 100.0),
+        "height_cm" to VitalRange(25.0, 250.0),
+        "pain" to VitalRange(0.0, 10.0)
+    )
+
+    // Vital aliases for voice recognition
+    private val vitalAliases = mapOf(
+        VitalType.BLOOD_PRESSURE to listOf("bp", "blood pressure", "pressure", "b p"),
+        VitalType.HEART_RATE to listOf("heart rate", "pulse", "hr", "heartrate", "heart beat", "bpm"),
+        VitalType.TEMPERATURE to listOf("temp", "temperature", "fever"),
+        VitalType.OXYGEN_SATURATION to listOf("o2", "oxygen", "sat", "sats", "o2 sat", "oxygen saturation", "spo2", "pulse ox"),
+        VitalType.RESPIRATORY_RATE to listOf("respiratory rate", "respirations", "resp rate", "rr", "breathing rate", "breaths"),
+        VitalType.WEIGHT to listOf("weight", "wt"),
+        VitalType.HEIGHT to listOf("height", "ht", "tall"),
+        VitalType.PAIN_LEVEL to listOf("pain", "pain level", "pain scale", "pain score")
+    )
+
+    // Captured vitals storage
+    private val capturedVitals = mutableListOf<CapturedVital>()
+
     // Voice templates - built-in note templates with auto-fill variables
     // Variables: {{patient_name}}, {{dob}}, {{age}}, {{gender}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{date}}
     private val USER_TEMPLATES_KEY = "user_note_templates"
@@ -4211,6 +4272,464 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // VOICE VITALS ENTRY - Capture and manage vitals by voice
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Check if text contains a vital sign entry
+     */
+    private fun isVitalEntry(text: String): Boolean {
+        val lower = text.lowercase()
+        return vitalAliases.values.any { aliases ->
+            aliases.any { alias -> lower.contains(alias) }
+        } && Regex("\\d+").containsMatchIn(lower)
+    }
+
+    /**
+     * Parse and process a vital sign from voice input
+     */
+    private fun processVitalEntry(text: String) {
+        val lower = text.lowercase()
+
+        // Try to match each vital type
+        when {
+            // Blood Pressure: "BP 120 over 80", "blood pressure 120/80"
+            vitalAliases[VitalType.BLOOD_PRESSURE]?.any { lower.contains(it) } == true -> {
+                parseBloodPressure(lower)
+            }
+            // Heart Rate: "heart rate 72", "pulse 80 bpm"
+            vitalAliases[VitalType.HEART_RATE]?.any { lower.contains(it) } == true -> {
+                parseHeartRate(lower)
+            }
+            // Temperature: "temp 98.6", "temperature 101.2 fahrenheit"
+            vitalAliases[VitalType.TEMPERATURE]?.any { lower.contains(it) } == true -> {
+                parseTemperature(lower)
+            }
+            // Oxygen Saturation: "o2 sat 98", "oxygen 95 percent"
+            vitalAliases[VitalType.OXYGEN_SATURATION]?.any { lower.contains(it) } == true -> {
+                parseOxygenSaturation(lower)
+            }
+            // Respiratory Rate: "resp rate 16", "respirations 18"
+            vitalAliases[VitalType.RESPIRATORY_RATE]?.any { lower.contains(it) } == true -> {
+                parseRespiratoryRate(lower)
+            }
+            // Weight: "weight 180 pounds", "weight 82 kilos"
+            vitalAliases[VitalType.WEIGHT]?.any { lower.contains(it) } == true -> {
+                parseWeight(lower)
+            }
+            // Height: "height 5 foot 10", "height 178 centimeters"
+            vitalAliases[VitalType.HEIGHT]?.any { lower.contains(it) } == true -> {
+                parseHeight(lower)
+            }
+            // Pain Level: "pain 5 out of 10", "pain level 7"
+            vitalAliases[VitalType.PAIN_LEVEL]?.any { lower.contains(it) } == true -> {
+                parsePainLevel(lower)
+            }
+            else -> {
+                speakFeedback("Could not recognize vital sign. Try: BP 120 over 80, pulse 72, or temp 98.6")
+            }
+        }
+    }
+
+    /**
+     * Parse blood pressure: "120 over 80", "120/80", "120 80"
+     */
+    private fun parseBloodPressure(text: String) {
+        // Match patterns like "120 over 80", "120/80", "120 80"
+        val patterns = listOf(
+            Regex("(\\d{2,3})\\s*(?:over|/)\\s*(\\d{2,3})"),
+            Regex("(\\d{2,3})\\s+(\\d{2,3})")
+        )
+
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            if (match != null) {
+                val systolic = match.groupValues[1].toIntOrNull() ?: continue
+                val diastolic = match.groupValues[2].toIntOrNull() ?: continue
+
+                // Validate ranges
+                val sysRange = vitalRanges["systolic"]!!
+                val diaRange = vitalRanges["diastolic"]!!
+
+                if (systolic < sysRange.min || systolic > sysRange.max) {
+                    speakFeedback("Systolic $systolic seems out of range. Please verify.")
+                    return
+                }
+                if (diastolic < diaRange.min || diastolic > diaRange.max) {
+                    speakFeedback("Diastolic $diastolic seems out of range. Please verify.")
+                    return
+                }
+
+                val vital = CapturedVital(
+                    type = VitalType.BLOOD_PRESSURE,
+                    value = "$systolic/$diastolic",
+                    unit = "mmHg",
+                    displayName = "Blood Pressure"
+                )
+                addCapturedVital(vital)
+
+                // Check for critical values
+                val isCritical = (sysRange.criticalHigh != null && systolic >= sysRange.criticalHigh) ||
+                                 (diaRange.criticalHigh != null && diastolic >= diaRange.criticalHigh) ||
+                                 (sysRange.criticalLow != null && systolic <= sysRange.criticalLow)
+
+                if (isCritical) {
+                    speakFeedback("Warning! Blood pressure $systolic over $diastolic recorded. Critical value detected.")
+                } else {
+                    speakFeedback("Blood pressure $systolic over $diastolic recorded.")
+                }
+                return
+            }
+        }
+        speakFeedback("Could not parse blood pressure. Say: BP 120 over 80")
+    }
+
+    /**
+     * Parse heart rate: "72", "72 bpm", "pulse 80"
+     */
+    private fun parseHeartRate(text: String) {
+        val match = Regex("(\\d{2,3})").find(text)
+        if (match != null) {
+            val hr = match.groupValues[1].toIntOrNull() ?: return
+            val range = vitalRanges["heart_rate"]!!
+
+            if (hr < range.min || hr > range.max) {
+                speakFeedback("Heart rate $hr seems out of range. Please verify.")
+                return
+            }
+
+            val vital = CapturedVital(
+                type = VitalType.HEART_RATE,
+                value = hr.toString(),
+                unit = "bpm",
+                displayName = "Heart Rate"
+            )
+            addCapturedVital(vital)
+
+            val isCritical = (range.criticalHigh != null && hr >= range.criticalHigh) ||
+                             (range.criticalLow != null && hr <= range.criticalLow)
+
+            if (isCritical) {
+                speakFeedback("Warning! Heart rate $hr recorded. Critical value detected.")
+            } else {
+                speakFeedback("Heart rate $hr recorded.")
+            }
+        } else {
+            speakFeedback("Could not parse heart rate. Say: pulse 72")
+        }
+    }
+
+    /**
+     * Parse temperature: "98.6", "101.2 fahrenheit", "37.5 celsius"
+     */
+    private fun parseTemperature(text: String) {
+        val match = Regex("(\\d{2,3}(?:\\.\\d)?)").find(text)
+        if (match != null) {
+            val temp = match.groupValues[1].toDoubleOrNull() ?: return
+
+            // Determine if Celsius or Fahrenheit
+            val isCelsius = text.contains("celsius") || text.contains("centigrade") || temp < 50
+            val range = if (isCelsius) vitalRanges["temperature_c"]!! else vitalRanges["temperature_f"]!!
+            val unit = if (isCelsius) "°C" else "°F"
+
+            if (temp < range.min || temp > range.max) {
+                speakFeedback("Temperature $temp $unit seems out of range. Please verify.")
+                return
+            }
+
+            val vital = CapturedVital(
+                type = VitalType.TEMPERATURE,
+                value = temp.toString(),
+                unit = unit,
+                displayName = "Temperature"
+            )
+            addCapturedVital(vital)
+
+            val isCritical = (range.criticalHigh != null && temp >= range.criticalHigh) ||
+                             (range.criticalLow != null && temp <= range.criticalLow)
+
+            if (isCritical) {
+                speakFeedback("Warning! Temperature $temp $unit recorded. Critical value detected.")
+            } else {
+                speakFeedback("Temperature $temp $unit recorded.")
+            }
+        } else {
+            speakFeedback("Could not parse temperature. Say: temp 98.6")
+        }
+    }
+
+    /**
+     * Parse oxygen saturation: "98", "95 percent"
+     */
+    private fun parseOxygenSaturation(text: String) {
+        val match = Regex("(\\d{2,3})").find(text)
+        if (match != null) {
+            val o2 = match.groupValues[1].toIntOrNull() ?: return
+            val range = vitalRanges["oxygen_saturation"]!!
+
+            if (o2 < range.min || o2 > range.max) {
+                speakFeedback("Oxygen saturation $o2% seems out of range. Please verify.")
+                return
+            }
+
+            val vital = CapturedVital(
+                type = VitalType.OXYGEN_SATURATION,
+                value = o2.toString(),
+                unit = "%",
+                displayName = "Oxygen Saturation"
+            )
+            addCapturedVital(vital)
+
+            val isCritical = range.criticalLow != null && o2 <= range.criticalLow
+
+            if (isCritical) {
+                speakFeedback("Warning! Oxygen saturation $o2% recorded. Critical low value detected.")
+            } else {
+                speakFeedback("Oxygen saturation $o2% recorded.")
+            }
+        } else {
+            speakFeedback("Could not parse oxygen saturation. Say: O2 sat 98")
+        }
+    }
+
+    /**
+     * Parse respiratory rate: "16", "18 breaths per minute"
+     */
+    private fun parseRespiratoryRate(text: String) {
+        val match = Regex("(\\d{1,2})").find(text)
+        if (match != null) {
+            val rr = match.groupValues[1].toIntOrNull() ?: return
+            val range = vitalRanges["respiratory_rate"]!!
+
+            if (rr < range.min || rr > range.max) {
+                speakFeedback("Respiratory rate $rr seems out of range. Please verify.")
+                return
+            }
+
+            val vital = CapturedVital(
+                type = VitalType.RESPIRATORY_RATE,
+                value = rr.toString(),
+                unit = "/min",
+                displayName = "Respiratory Rate"
+            )
+            addCapturedVital(vital)
+
+            val isCritical = (range.criticalHigh != null && rr >= range.criticalHigh) ||
+                             (range.criticalLow != null && rr <= range.criticalLow)
+
+            if (isCritical) {
+                speakFeedback("Warning! Respiratory rate $rr recorded. Critical value detected.")
+            } else {
+                speakFeedback("Respiratory rate $rr recorded.")
+            }
+        } else {
+            speakFeedback("Could not parse respiratory rate. Say: resp rate 16")
+        }
+    }
+
+    /**
+     * Parse weight: "180 pounds", "82 kilos", "180 lbs"
+     */
+    private fun parseWeight(text: String) {
+        val match = Regex("(\\d{1,3}(?:\\.\\d)?)").find(text)
+        if (match != null) {
+            val weight = match.groupValues[1].toDoubleOrNull() ?: return
+
+            // Determine unit
+            val isKg = text.contains("kilo") || text.contains("kg")
+            val unit = if (isKg) "kg" else "lbs"
+            val range = if (isKg) vitalRanges["weight_kg"]!! else vitalRanges["weight_lbs"]!!
+
+            if (weight < range.min || weight > range.max) {
+                speakFeedback("Weight $weight $unit seems out of range. Please verify.")
+                return
+            }
+
+            val vital = CapturedVital(
+                type = VitalType.WEIGHT,
+                value = weight.toString(),
+                unit = unit,
+                displayName = "Weight"
+            )
+            addCapturedVital(vital)
+            speakFeedback("Weight $weight $unit recorded.")
+        } else {
+            speakFeedback("Could not parse weight. Say: weight 180 pounds")
+        }
+    }
+
+    /**
+     * Parse height: "5 foot 10", "178 centimeters", "70 inches"
+     */
+    private fun parseHeight(text: String) {
+        // Try feet and inches: "5 foot 10", "5'10"
+        val feetInchesMatch = Regex("(\\d)\\s*(?:foot|feet|ft|')\\s*(\\d{1,2})").find(text)
+        if (feetInchesMatch != null) {
+            val feet = feetInchesMatch.groupValues[1].toIntOrNull() ?: 0
+            val inches = feetInchesMatch.groupValues[2].toIntOrNull() ?: 0
+            val totalInches = feet * 12 + inches
+
+            val vital = CapturedVital(
+                type = VitalType.HEIGHT,
+                value = "$feet'$inches\"",
+                unit = "ft/in",
+                displayName = "Height"
+            )
+            addCapturedVital(vital)
+            speakFeedback("Height $feet foot $inches recorded.")
+            return
+        }
+
+        // Try just a number with unit
+        val match = Regex("(\\d{2,3})").find(text)
+        if (match != null) {
+            val height = match.groupValues[1].toIntOrNull() ?: return
+
+            val isCm = text.contains("centimeter") || text.contains("cm") || height > 100
+            val unit = if (isCm) "cm" else "in"
+
+            val vital = CapturedVital(
+                type = VitalType.HEIGHT,
+                value = height.toString(),
+                unit = unit,
+                displayName = "Height"
+            )
+            addCapturedVital(vital)
+            speakFeedback("Height $height $unit recorded.")
+        } else {
+            speakFeedback("Could not parse height. Say: height 5 foot 10")
+        }
+    }
+
+    /**
+     * Parse pain level: "5 out of 10", "pain level 7", "pain 8"
+     */
+    private fun parsePainLevel(text: String) {
+        val match = Regex("(\\d{1,2})").find(text)
+        if (match != null) {
+            val pain = match.groupValues[1].toIntOrNull() ?: return
+            val range = vitalRanges["pain"]!!
+
+            if (pain < range.min || pain > range.max) {
+                speakFeedback("Pain level must be 0 to 10.")
+                return
+            }
+
+            val vital = CapturedVital(
+                type = VitalType.PAIN_LEVEL,
+                value = pain.toString(),
+                unit = "/10",
+                displayName = "Pain Level"
+            )
+            addCapturedVital(vital)
+            speakFeedback("Pain level $pain out of 10 recorded.")
+        } else {
+            speakFeedback("Could not parse pain level. Say: pain 5 out of 10")
+        }
+    }
+
+    /**
+     * Add a captured vital and update the display
+     */
+    private fun addCapturedVital(vital: CapturedVital) {
+        // Remove any existing vital of the same type (keep most recent)
+        capturedVitals.removeAll { it.type == vital.type }
+        capturedVitals.add(vital)
+        Log.d(TAG, "Captured vital: ${vital.displayName} = ${vital.value} ${vital.unit}")
+    }
+
+    /**
+     * Show all captured vitals
+     */
+    private fun showCapturedVitals() {
+        if (capturedVitals.isEmpty()) {
+            speakFeedback("No vitals captured yet. Say a vital like: BP 120 over 80")
+            return
+        }
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════\n")
+        content.append("📊 CAPTURED VITALS\n")
+        content.append("═══════════════════════════\n\n")
+
+        capturedVitals.forEach { vital ->
+            val timeAgo = getTimeAgo(vital.timestamp)
+            content.append("${vital.displayName}: ${vital.value} ${vital.unit}\n")
+            content.append("  ($timeAgo)\n\n")
+        }
+
+        content.append("───────────────────────────\n")
+        content.append("Say \"add vitals to note\" or\n")
+        content.append("\"clear vitals\" to reset")
+
+        showDataOverlay("Captured Vitals", content.toString())
+        speakFeedback("${capturedVitals.size} vitals captured.")
+    }
+
+    /**
+     * Clear all captured vitals
+     */
+    private fun clearCapturedVitals() {
+        val count = capturedVitals.size
+        capturedVitals.clear()
+        hideDataOverlay()
+        speakFeedback("Cleared $count vitals.")
+    }
+
+    /**
+     * Format captured vitals for note insertion
+     */
+    private fun getCapturedVitalsForNote(): String {
+        if (capturedVitals.isEmpty()) return ""
+
+        val sb = StringBuilder()
+        sb.append("Vitals:\n")
+        capturedVitals.forEach { vital ->
+            sb.append("• ${vital.displayName}: ${vital.value} ${vital.unit}\n")
+        }
+        return sb.toString()
+    }
+
+    /**
+     * Add captured vitals to the current note
+     */
+    private fun addVitalsToNote() {
+        if (capturedVitals.isEmpty()) {
+            speakFeedback("No vitals to add. Capture vitals first.")
+            return
+        }
+
+        val vitalsText = getCapturedVitalsForNote()
+
+        // Add to objective section if note is active
+        if (noteEditText != null && editableNoteContent != null) {
+            appendToNoteSection("objective", vitalsText)
+            speakFeedback("Added ${capturedVitals.size} vitals to objective section.")
+        } else {
+            // Store for later use
+            pendingPlanItems.add(vitalsText)
+            speakFeedback("${capturedVitals.size} vitals saved. They will be included in your next note.")
+        }
+    }
+
+    /**
+     * Get relative time ago string
+     */
+    private fun getTimeAgo(timestamp: Long): String {
+        val diff = System.currentTimeMillis() - timestamp
+        val seconds = diff / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+
+        return when {
+            seconds < 60 -> "just now"
+            minutes < 60 -> "$minutes min ago"
+            hours < 24 -> "$hours hr ago"
+            else -> "${hours / 24} days ago"
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // ENCOUNTER TIMER - Timer Control Functions
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -4537,6 +5056,19 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Stop timer" - End timer, report total
             |• "How long" - Check elapsed time
             |• "Reset timer" - Restart from zero
+            |
+            |📊 VOICE VITALS ENTRY
+            |• "BP 120 over 80" - Record blood pressure
+            |• "Pulse 72" / "Heart rate 80" - Record HR
+            |• "Temp 98.6" - Record temperature
+            |• "O2 sat 98" / "Oxygen 95" - Record SpO2
+            |• "Resp rate 16" - Record respiratory rate
+            |• "Weight 180 pounds" - Record weight
+            |• "Height 5 foot 10" - Record height
+            |• "Pain 5 out of 10" - Record pain level
+            |• "Show captured vitals" - View all vitals
+            |• "Add vitals to note" - Insert into note
+            |• "Clear vitals" - Remove all captured
             |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
@@ -6971,6 +7503,29 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
                     isMedicationOrder(orderText) -> processMedicationOrder(orderText)
                     else -> speakFeedback("Order not recognized. Try: order CBC, order chest pain workup, or prescribe amoxicillin.")
                 }
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // VOICE VITALS ENTRY - Capture vitals by voice
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Show captured vitals: "show vitals captured", "captured vitals", "my vitals"
+            lower.contains("captured vital") || lower.contains("my vital") ||
+            lower.contains("show captured") || lower.contains("vitals captured") -> {
+                showCapturedVitals()
+            }
+            // Clear captured vitals: "clear vitals", "clear captured vitals", "reset vitals"
+            lower.contains("clear vital") || lower.contains("reset vital") ||
+            lower.contains("delete vital") -> {
+                clearCapturedVitals()
+            }
+            // Add vitals to note: "add vitals to note", "insert vitals", "vitals to note"
+            lower.contains("add vital") && lower.contains("note") ||
+            lower.contains("insert vital") || lower.contains("vitals to note") -> {
+                addVitalsToNote()
+            }
+            // Vital entry: "BP 120 over 80", "pulse 72", "temp 98.6", etc.
+            isVitalEntry(lower) -> {
+                processVitalEntry(lower)
             }
             // ═══════════════════════════════════════════════════════════════════════════
             // ENCOUNTER TIMER - Timer commands

@@ -292,6 +292,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 43. **Voice Orders** - Order labs (12), imaging (10), medications (10) by voice; safety checks for allergies, drug interactions, duplicates, metformin+contrast; confirmation workflow; auto-add to Plan section; "show orders", "cancel order"
 44. **Encounter Timer** - Track time spent with patients; voice commands "start timer", "stop timer", "how long", "reset timer"; visual indicator in top-right corner; TTS time reports; auto-include duration in notes for billing
 45. **Order Sets** - 12 clinical order bundles (chest pain, sepsis, stroke, CHF, COPD, DKA, PE, pneumonia, UTI, abdominal pain, admission labs, preop labs); "order chest pain workup", "list order sets", "what's in [set]" to preview
+46. **Voice Vitals Entry** - Capture vitals by voice ("BP 120 over 80", "pulse 72", "temp 98.6"); 8 vital types with range validation; critical value warnings; "show captured vitals", "add vitals to note"
 
 ## Next Up (Recommended)
 
@@ -304,3 +305,4 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 1. Epic/Veradigm live integration (needs credentials)
 2. OAuth2/SMART on FHIR authentication
 3. Vuzix HUD native overlay
+4. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog

@@ -200,6 +200,15 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Preview Sets**: "What's in chest pain" to see contents before ordering
 - **List Sets**: "List order sets" to see all available bundles
 
+### Voice Vitals Entry (NEW)
+- **Capture by Voice**: "BP 120 over 80", "Pulse 72", "Temp 98.6", "O2 sat 98"
+- **8 Vital Types**: Blood Pressure, Heart Rate, Temperature, SpO2, Respiratory Rate, Weight, Height, Pain Level
+- **Range Validation**: Validates values are within clinical ranges
+- **Critical Alerts**: Automatic warning for critical values (BP >180, HR <40/>150, SpO2 <88%)
+- **Note Integration**: "Add vitals to note" inserts into Objective section
+- **Vitals Display**: "Show captured vitals" to review before adding to note
+- **Unit Support**: Fahrenheit/Celsius, lbs/kg, feet-inches/cm
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

@@ -274,6 +274,7 @@ Based on US Patent 15/237,980 and product requirements.
 36. ~~**Voice Orders**~~ - Done (Order labs/imaging/meds by voice, safety checks for allergies/interactions/duplicates, confirmation workflow, auto-add to Plan section)
 37. ~~**Encounter Timer**~~ - Done (Track time spent with patients, voice commands to start/stop/check/reset, visual indicator, auto-include in notes)
 38. ~~**Order Sets**~~ - Done (12 clinical order bundles: chest pain, sepsis, stroke, CHF, COPD, DKA, PE, pneumonia, UTI, abdominal pain, admission labs, preop labs)
+39. ~~**Voice Vitals Entry**~~ - Done (Capture vitals by voice: BP, HR, Temp, O2, RR, Weight, Height, Pain; range validation; critical value warnings; add to notes)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
