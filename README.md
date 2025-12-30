@@ -158,6 +158,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Full Read**: "Read note", "Read entire note" - TTS reads complete note
 - **Hands-Free Navigation**: Navigate and review notes without touching device
 
+### Voice Dictation Mode (NEW)
+- **Direct Dictation**: "Dictate to plan", "Dictate to assessment" - speak directly into sections
+- **Continuous Capture**: Speech accumulates until you say "stop dictating"
+- **Visual Indicator**: Red recording indicator shows dictation in progress
+- **Word Count**: Live display of words captured during dictation
+- **Cancel Option**: "Cancel dictation" to discard without inserting
+- **Undo Support**: Dictated text can be undone with "undo" command
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

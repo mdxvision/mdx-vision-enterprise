@@ -266,6 +266,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 38. **Session Timeout** - HIPAA compliance auto-lock after 5 min inactivity, configurable timeout, voice commands ("lock session", "unlock", "timeout N min")
 39. **Voice Note Editing** - Voice commands to edit notes: change/set sections, add to sections, delete last sentence/line/item, clear sections, insert macros (normal exam, normal vitals, negative ROS, follow up), 10-level undo history
 40. **Voice Navigation** - Scroll up/down, go to top/bottom, jump to SOAP sections ("go to assessment"), show section only, TTS read-back of sections/entire note
+41. **Voice Dictation Mode** - Dictate directly into sections ("dictate to plan"), continuous speech capture, "stop dictating" to insert, visual indicator, word count display
 
 ## Next Up (Recommended)
 
@@ -278,5 +279,5 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 1. Epic/Veradigm live integration (needs credentials)
 2. OAuth2/SMART on FHIR authentication
 3. Vuzix HUD native overlay
-4. Voice Dictation Mode (dictate directly into fields)
-5. Voice Templates (user-defined note templates)
+4. Voice Templates (user-defined note templates)
+5. Voice Orders ("order CBC", "prescribe amoxicillin")

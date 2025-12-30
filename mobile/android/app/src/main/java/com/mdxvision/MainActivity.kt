@@ -176,6 +176,11 @@ Neuro: Grossly intact""",
     private var currentScrollView: android.widget.ScrollView? = null
     private var currentContentText: TextView? = null  // For read-back
 
+    // Voice dictation mode - direct speech-to-text into note sections
+    private var isDictationMode: Boolean = false
+    private var dictationTargetSection: String? = null  // Which section to dictate into
+    private var dictationBuffer: StringBuilder = StringBuilder()  // Accumulates dictated text
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -1987,6 +1992,206 @@ Neuro: Grossly intact""",
         Log.d(TAG, "Voice navigation: showing $section only")
     }
 
+    // ============ Voice Dictation Mode Functions ============
+
+    /**
+     * Start dictation mode for a specific note section.
+     * All subsequent speech will be accumulated and inserted into the target section.
+     */
+    private fun startDictation(section: String) {
+        if (noteEditText == null || editableNoteContent == null) {
+            Toast.makeText(this, "Open a note first to dictate", Toast.LENGTH_SHORT).show()
+            speakFeedback("Open a note first")
+            return
+        }
+
+        // Validate section exists
+        val resolvedSection = resolveSection(section)
+        if (resolvedSection == null) {
+            Toast.makeText(this, "Unknown section: $section", Toast.LENGTH_SHORT).show()
+            speakFeedback("Unknown section")
+            return
+        }
+
+        isDictationMode = true
+        dictationTargetSection = resolvedSection
+        dictationBuffer.clear()
+
+        val sectionName = resolvedSection.replaceFirstChar { it.uppercase() }
+        transcriptText.text = "🎙️ Dictating to $sectionName... Say 'stop dictating' when done"
+        statusText.text = "DICTATION MODE: $sectionName"
+
+        speakFeedback("Dictating to $sectionName. Speak now.")
+        Toast.makeText(this, "Dictation started for $sectionName", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Dictation mode started for section: $resolvedSection")
+
+        // Show visual indicator
+        showDictationIndicator(sectionName)
+    }
+
+    /**
+     * Stop dictation mode and insert accumulated text into the target section.
+     */
+    private fun stopDictation() {
+        if (!isDictationMode) {
+            Toast.makeText(this, "Not in dictation mode", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val section = dictationTargetSection
+        val dictatedText = dictationBuffer.toString().trim()
+
+        isDictationMode = false
+        dictationTargetSection = null
+
+        // Hide dictation indicator
+        hideDictationIndicator()
+
+        if (dictatedText.isEmpty()) {
+            transcriptText.text = "Dictation ended (no text captured)"
+            speakFeedback("No text captured")
+            Log.d(TAG, "Dictation stopped with no text")
+            return
+        }
+
+        if (section != null) {
+            // Push to history before making changes
+            pushEditHistory()
+
+            // Append dictated text to the section
+            appendToNoteSection(section, dictatedText)
+
+            val sectionName = section.replaceFirstChar { it.uppercase() }
+            val wordCount = dictatedText.split("\\s+".toRegex()).size
+            transcriptText.text = "Added $wordCount words to $sectionName"
+            speakFeedback("Added $wordCount words to $sectionName")
+            Log.d(TAG, "Dictation complete: $wordCount words added to $section")
+        }
+
+        dictationBuffer.clear()
+        statusText.text = "MDx Vision"
+    }
+
+    /**
+     * Cancel dictation mode without inserting text.
+     */
+    private fun cancelDictation() {
+        if (!isDictationMode) {
+            Toast.makeText(this, "Not in dictation mode", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isDictationMode = false
+        dictationTargetSection = null
+        dictationBuffer.clear()
+
+        hideDictationIndicator()
+
+        transcriptText.text = "Dictation cancelled"
+        statusText.text = "MDx Vision"
+        speakFeedback("Dictation cancelled")
+        Log.d(TAG, "Dictation cancelled")
+    }
+
+    /**
+     * Add text to the dictation buffer (called during speech recognition in dictation mode).
+     */
+    private fun addToDictationBuffer(text: String) {
+        if (!isDictationMode) return
+
+        if (dictationBuffer.isNotEmpty()) {
+            dictationBuffer.append(" ")
+        }
+        dictationBuffer.append(text)
+
+        // Update display to show what's been captured
+        val section = dictationTargetSection?.replaceFirstChar { it.uppercase() } ?: "Note"
+        val wordCount = dictationBuffer.toString().split("\\s+".toRegex()).filter { it.isNotEmpty() }.size
+        transcriptText.text = "🎙️ $section: $wordCount words captured\n\"${getLastWords(dictationBuffer.toString(), 10)}...\""
+
+        Log.d(TAG, "Dictation buffer: ${dictationBuffer.length} chars, $wordCount words")
+    }
+
+    /**
+     * Get the last N words from a string for preview.
+     */
+    private fun getLastWords(text: String, n: Int): String {
+        val words = text.split("\\s+".toRegex()).filter { it.isNotEmpty() }
+        return if (words.size <= n) {
+            text
+        } else {
+            words.takeLast(n).joinToString(" ")
+        }
+    }
+
+    /**
+     * Show visual indicator for dictation mode.
+     */
+    private var dictationIndicator: android.widget.FrameLayout? = null
+
+    private fun showDictationIndicator(sectionName: String) {
+        // Remove existing indicator if any
+        hideDictationIndicator()
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dictationIndicator = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xCC000000.toInt())
+
+            val indicatorLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                setPadding(32, 24, 32, 24)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = android.view.Gravity.TOP
+                }
+            }
+
+            // Recording indicator
+            val recordingText = TextView(context).apply {
+                text = "🎙️ DICTATING TO $sectionName"
+                textSize = 18f
+                setTextColor(0xFFEF4444.toInt())  // Red for recording
+                gravity = android.view.Gravity.CENTER
+                setPadding(0, 0, 0, 8)
+            }
+            indicatorLayout.addView(recordingText)
+
+            // Instructions
+            val instructionsText = TextView(context).apply {
+                text = "Speak now • Say \"stop dictating\" when done"
+                textSize = 14f
+                setTextColor(0xFF94A3B8.toInt())
+                gravity = android.view.Gravity.CENTER
+            }
+            indicatorLayout.addView(instructionsText)
+
+            addView(indicatorLayout)
+
+            // Tap to stop
+            setOnClickListener {
+                stopDictation()
+            }
+        }
+
+        rootView.addView(dictationIndicator)
+    }
+
+    private fun hideDictationIndicator() {
+        dictationIndicator?.let { indicator ->
+            (indicator.parent as? android.view.ViewGroup)?.removeView(indicator)
+            dictationIndicator = null
+        }
+    }
+
+    /**
+     * Check if currently in dictation mode.
+     */
+    private fun isInDictationMode(): Boolean = isDictationMode
+
     private fun showVoiceCommandHelp() {
         val helpText = """
             |🎤 VOICE COMMANDS
@@ -2054,6 +2259,11 @@ Neuro: Grossly intact""",
             |• "Show [section] only" - Show one section
             |• "Read [section]" - Read section aloud
             |• "Read note" - Read entire note aloud
+            |
+            |🎙️ VOICE DICTATION
+            |• "Dictate to [section]" - Start dictating
+            |• "Stop dictating" - End and insert text
+            |• "Cancel dictation" - Discard dictated text
             |
             |📤 OFFLINE DRAFTS
             |• "Show drafts" - View pending drafts
@@ -4210,6 +4420,27 @@ Neuro: Grossly intact""",
             return
         }
 
+        // If in dictation mode, handle dictation-specific commands or capture text
+        if (isDictationMode) {
+            when {
+                lower.contains("stop dictating") || lower.contains("stop dictation") ||
+                lower.contains("end dictation") || lower.contains("done dictating") ||
+                lower.contains("finish dictating") -> {
+                    stopDictation()
+                }
+                lower.contains("cancel dictation") || lower.contains("cancel dictating") ||
+                lower.contains("discard dictation") -> {
+                    cancelDictation()
+                }
+                else -> {
+                    // Capture speech to dictation buffer
+                    addToDictationBuffer(transcript)
+                }
+            }
+            startVoiceRecognition()
+            return
+        }
+
         when {
             lower.contains("patient") && lower.contains("load") -> {
                 // Extract patient ID if mentioned
@@ -4504,6 +4735,24 @@ Neuro: Grossly intact""",
             lower.contains("read note") || lower.contains("read entire note") || lower.contains("read the note") || lower.contains("read all") -> {
                 // Read entire note aloud
                 readEntireNote()
+            }
+            // Voice Dictation Mode Commands
+            (lower.contains("dictate to") || lower.contains("dictate into") || lower.contains("start dictating")) &&
+                (lower.contains("subjective") || lower.contains("objective") ||
+                 lower.contains("assessment") || lower.contains("plan") ||
+                 lower.contains("chief complaint") || lower.contains("history")) -> {
+                // Start dictation to a specific section: "dictate to assessment", "start dictating subjective"
+                val section = extractSectionFromCommand(lower)
+                if (section != null) {
+                    startDictation(section)
+                } else {
+                    Toast.makeText(this, "Say: dictate to [section]", Toast.LENGTH_SHORT).show()
+                }
+            }
+            lower == "dictate" || lower.contains("start dictation") -> {
+                // Start dictation to default section (plan is most common for orders)
+                Toast.makeText(this, "Say 'dictate to [section]' (e.g., 'dictate to plan')", Toast.LENGTH_LONG).show()
+                speakFeedback("Say dictate to and the section name. For example, dictate to plan.")
             }
             // Offline note drafts voice commands
             lower.contains("sync notes") || lower.contains("sync drafts") || lower.contains("upload drafts") -> {

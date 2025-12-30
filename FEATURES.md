@@ -199,6 +199,9 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "Show [section] only" | Done |
 | [x] "Read [section]" - TTS read-back | Done |
 | [x] "Read note" - Read entire note | Done |
+| [x] "Dictate to [section]" - Start dictation | Done |
+| [x] "Stop dictating" - End and insert | Done |
+| [x] "Cancel dictation" - Discard | Done |
 
 ---
 
@@ -252,6 +255,7 @@ Based on US Patent 15/237,980 and product requirements.
 31. ~~**Session Timeout**~~ - Done (HIPAA compliance auto-lock after inactivity, configurable timeout, voice commands, lock screen overlay)
 32. ~~**Voice Note Editing**~~ - Done (Voice commands to edit notes: change/add to sections, delete, insert macros, undo with 10-level history)
 33. ~~**Voice Navigation**~~ - Done (Scroll up/down, go to top/bottom, jump to sections, show section only, read sections/note aloud via TTS)
+34. ~~**Voice Dictation Mode**~~ - Done (Dictate directly into sections, "dictate to plan", accumulates speech, "stop dictating" to insert)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials
