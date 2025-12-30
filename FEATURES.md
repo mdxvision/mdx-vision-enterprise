@@ -206,6 +206,12 @@ Based on US Patent 15/237,980 and product requirements.
 | [x] "List templates" - Show all templates | Done |
 | [x] "Save as template [name]" - Save user template | Done |
 | [x] "Delete template [name]" - Remove user template | Done |
+| [x] "Order [lab]" - Order lab test (CBC, CMP, etc.) | Done |
+| [x] "Order [imaging]" - Order imaging (CT, MRI, X-ray) | Done |
+| [x] "Prescribe [med] [dose] [freq] for [duration]" | Done |
+| [x] "Show orders" / "List orders" | Done |
+| [x] "Cancel order" - Remove last order | Done |
+| [x] "Clear all orders" - Remove all orders | Done |
 
 ---
 
@@ -261,6 +267,7 @@ Based on US Patent 15/237,980 and product requirements.
 33. ~~**Voice Navigation**~~ - Done (Scroll up/down, go to top/bottom, jump to sections, show section only, read sections/note aloud via TTS)
 34. ~~**Voice Dictation Mode**~~ - Done (Dictate directly into sections, "dictate to plan", accumulates speech, "stop dictating" to insert)
 35. ~~**Voice Templates**~~ - Done (8 built-in templates with auto-fill patient data, user-created templates, "use diabetes template", variable substitution)
+36. ~~**Voice Orders**~~ - Done (Order labs/imaging/meds by voice, safety checks for allergies/interactions/duplicates, confirmation workflow, auto-add to Plan section)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

@@ -174,6 +174,16 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Template List**: "List templates" shows all available built-in and user templates
 - **Variable Substitution**: {{patient_name}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{age}}, {{gender}}
 
+### Voice Orders (NEW)
+- **Lab Orders**: "Order CBC", "Order CMP", "Order lipid panel" - 12 common lab tests
+- **Imaging Orders**: "Order chest x-ray", "Order CT head without contrast", "Order MRI brain" - 10 imaging studies
+- **Medication Orders**: "Prescribe amoxicillin 500mg three times daily for 10 days" - 10 common medications
+- **Safety Checks**: Allergy cross-reactivity, drug-drug interactions, duplicate detection, metformin+contrast warning
+- **Confirmation Workflow**: High-severity warnings require verbal "yes" or "no" confirmation
+- **Auto-Add to Plan**: Confirmed orders automatically added to Plan section of note
+- **Order Queue**: "Show orders" displays pending orders grouped by type
+- **Order Management**: "Cancel order" removes last, "Clear all orders" removes all
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection

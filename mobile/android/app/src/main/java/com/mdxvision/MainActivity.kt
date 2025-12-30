@@ -181,6 +181,70 @@ Neuro: Grossly intact""",
     private var dictationTargetSection: String? = null  // Which section to dictate into
     private var dictationBuffer: StringBuilder = StringBuilder()  // Accumulates dictated text
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VOICE ORDERS - State Variables
+    // ═══════════════════════════════════════════════════════════════════════════
+    private val orderQueue = mutableListOf<Order>()  // Pending orders for current patient
+    private var pendingConfirmationOrder: Order? = null  // Order awaiting yes/no confirmation
+    private val pendingPlanItems = mutableListOf<String>()  // Orders to add to Plan when note is generated
+    private val ORDERS_KEY = "pending_orders"
+    private val ORDERS_PATIENT_KEY = "orders_patient_id"
+
+    // Lab orders database
+    private val labOrders = mapOf(
+        "cbc" to LabOrderInfo("CBC", "Complete Blood Count", "85025", listOf("cbc", "complete blood count", "blood count", "hemogram")),
+        "cmp" to LabOrderInfo("CMP", "Comprehensive Metabolic Panel", "80053", listOf("cmp", "comprehensive metabolic", "metabolic panel", "chem 14")),
+        "bmp" to LabOrderInfo("BMP", "Basic Metabolic Panel", "80048", listOf("bmp", "basic metabolic", "chem 7", "electrolytes")),
+        "ua" to LabOrderInfo("UA", "Urinalysis", "81003", listOf("ua", "urinalysis", "urine test", "urine analysis")),
+        "lipid" to LabOrderInfo("Lipid Panel", "Lipid Panel", "80061", listOf("lipid panel", "lipids", "cholesterol panel", "cholesterol")),
+        "tsh" to LabOrderInfo("TSH", "Thyroid Stimulating Hormone", "84443", listOf("tsh", "thyroid", "thyroid function")),
+        "hba1c" to LabOrderInfo("HbA1c", "Hemoglobin A1c", "83036", listOf("a1c", "hba1c", "hemoglobin a1c", "glycated")),
+        "ptinr" to LabOrderInfo("PT/INR", "Prothrombin Time / INR", "85610", listOf("pt", "inr", "pt inr", "protime", "coagulation")),
+        "troponin" to LabOrderInfo("Troponin", "Troponin I/T", "84484", listOf("troponin", "trop", "cardiac enzymes")),
+        "bun" to LabOrderInfo("BUN/Creatinine", "BUN / Creatinine", "84520", listOf("bun", "creatinine", "renal function", "kidney function")),
+        "uculture" to LabOrderInfo("Urine Culture", "Urine Culture and Sensitivity", "87086", listOf("urine culture", "ucx", "u culture")),
+        "bculture" to LabOrderInfo("Blood Culture", "Blood Culture", "87040", listOf("blood culture", "bcx", "blood cx"))
+    )
+
+    // Imaging orders database
+    private val imagingOrders = mapOf(
+        "cxr" to ImagingOrderInfo("Chest X-ray", "Chest Radiograph", "71046", "chest", "xray", listOf("chest x-ray", "chest xray", "cxr", "chest radiograph", "chest film")),
+        "cthead" to ImagingOrderInfo("CT Head", "CT Scan of Head", "70450", "head", "ct", listOf("ct head", "head ct", "ct brain", "brain ct", "ct scan head"), true),
+        "ctchest" to ImagingOrderInfo("CT Chest", "CT Scan of Chest", "71250", "chest", "ct", listOf("ct chest", "chest ct", "ct thorax"), true),
+        "ctabdomen" to ImagingOrderInfo("CT Abdomen/Pelvis", "CT Scan of Abdomen and Pelvis", "74176", "abdomen", "ct", listOf("ct abdomen", "abdominal ct", "ct abd pelvis", "ct belly", "ct abdomen pelvis"), true),
+        "mribrain" to ImagingOrderInfo("MRI Brain", "MRI of Brain", "70551", "brain", "mri", listOf("mri brain", "brain mri", "mri head", "head mri"), true),
+        "mrispine" to ImagingOrderInfo("MRI Spine", "MRI of Spine", "72148", "spine", "mri", listOf("mri spine", "spine mri", "mri lumbar", "mri cervical", "lumbar mri", "cervical mri"), true),
+        "usabdomen" to ImagingOrderInfo("Ultrasound Abdomen", "Abdominal Ultrasound", "76700", "abdomen", "ultrasound", listOf("ultrasound abdomen", "abdominal ultrasound", "us abdomen", "abd us", "ruq ultrasound")),
+        "uspelvis" to ImagingOrderInfo("Ultrasound Pelvis", "Pelvic Ultrasound", "76856", "pelvis", "ultrasound", listOf("pelvic ultrasound", "ultrasound pelvis", "us pelvis", "pelvic us")),
+        "echo" to ImagingOrderInfo("Echocardiogram", "Transthoracic Echocardiogram", "93306", "heart", "ultrasound", listOf("echo", "echocardiogram", "tte", "heart ultrasound")),
+        "xray" to ImagingOrderInfo("X-ray", "Radiograph", "73030", "extremity", "xray", listOf("x-ray", "xray", "radiograph"))
+    )
+
+    // Medication orders database
+    private val medicationOrders = mapOf(
+        "amoxicillin" to MedicationOrderInfo("Amoxicillin", "antibiotic", listOf("250mg", "500mg", "875mg"), listOf("TID", "BID"), listOf("7 days", "10 days", "14 days"), "PO", listOf("amoxicillin", "amox", "amoxil"), listOf("warfarin", "methotrexate"), listOf("penicillin", "ampicillin", "cephalosporin")),
+        "azithromycin" to MedicationOrderInfo("Azithromycin", "antibiotic", listOf("250mg", "500mg"), listOf("daily"), listOf("3 days", "5 days"), "PO", listOf("azithromycin", "zithromax", "z-pack", "zpack"), listOf("warfarin"), listOf("macrolide", "erythromycin")),
+        "ibuprofen" to MedicationOrderInfo("Ibuprofen", "nsaid", listOf("200mg", "400mg", "600mg", "800mg"), listOf("TID", "Q6H", "PRN"), listOf("5 days", "7 days", "as needed"), "PO", listOf("ibuprofen", "advil", "motrin"), listOf("warfarin", "aspirin", "lisinopril", "lithium", "methotrexate"), listOf("nsaid", "aspirin")),
+        "acetaminophen" to MedicationOrderInfo("Acetaminophen", "analgesic", listOf("325mg", "500mg", "650mg", "1000mg"), listOf("Q4-6H", "PRN"), listOf("as needed"), "PO", listOf("acetaminophen", "tylenol", "apap"), listOf("warfarin"), listOf()),
+        "prednisone" to MedicationOrderInfo("Prednisone", "corticosteroid", listOf("5mg", "10mg", "20mg", "40mg", "60mg"), listOf("daily", "BID"), listOf("5 days", "7 days", "taper"), "PO", listOf("prednisone", "deltasone", "pred"), listOf("nsaid", "warfarin", "insulin"), listOf("corticosteroid")),
+        "omeprazole" to MedicationOrderInfo("Omeprazole", "ppi", listOf("20mg", "40mg"), listOf("daily", "BID"), listOf("2 weeks", "4 weeks", "8 weeks"), "PO", listOf("omeprazole", "prilosec", "ppi"), listOf("clopidogrel", "methotrexate"), listOf()),
+        "metformin" to MedicationOrderInfo("Metformin", "antidiabetic", listOf("500mg", "850mg", "1000mg"), listOf("BID", "TID"), listOf("ongoing"), "PO", listOf("metformin", "glucophage"), listOf("contrast", "alcohol"), listOf()),
+        "lisinopril" to MedicationOrderInfo("Lisinopril", "ace_inhibitor", listOf("2.5mg", "5mg", "10mg", "20mg", "40mg"), listOf("daily"), listOf("ongoing"), "PO", listOf("lisinopril", "zestril", "prinivil"), listOf("potassium", "spironolactone", "nsaid", "lithium"), listOf("ace inhibitor")),
+        "amlodipine" to MedicationOrderInfo("Amlodipine", "calcium_channel_blocker", listOf("2.5mg", "5mg", "10mg"), listOf("daily"), listOf("ongoing"), "PO", listOf("amlodipine", "norvasc"), listOf("simvastatin"), listOf()),
+        "hydrocodone" to MedicationOrderInfo("Hydrocodone/APAP", "opioid", listOf("5/325mg", "7.5/325mg", "10/325mg"), listOf("Q4-6H PRN"), listOf("3 days", "5 days", "7 days"), "PO", listOf("hydrocodone", "vicodin", "norco", "lortab"), listOf("benzodiazepine", "alcohol", "gabapentin"), listOf("opioid"), true)
+    )
+
+    // Frequency aliases for natural language parsing
+    private val frequencyAliases = mapOf(
+        "once daily" to "daily", "one time a day" to "daily", "once a day" to "daily",
+        "twice daily" to "BID", "two times daily" to "BID", "twice a day" to "BID",
+        "three times daily" to "TID", "three times a day" to "TID",
+        "four times daily" to "QID", "four times a day" to "QID",
+        "every 4 hours" to "Q4H", "every 6 hours" to "Q6H", "every 8 hours" to "Q8H", "every 12 hours" to "Q12H",
+        "as needed" to "PRN", "when needed" to "PRN", "prn" to "PRN",
+        "at bedtime" to "QHS", "before bed" to "QHS"
+    )
+
     // Voice templates - built-in note templates with auto-fill variables
     // Variables: {{patient_name}}, {{dob}}, {{age}}, {{gender}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{date}}
     private val USER_TEMPLATES_KEY = "user_note_templates"
@@ -500,6 +564,155 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
         val category: String,
         val noteType: String,  // SOAP, HP, PROGRESS, CONSULT
         val content: String
+    )
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VOICE ORDERS - Data Classes
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Order type enum
+    enum class OrderType {
+        LAB, IMAGING, MEDICATION
+    }
+
+    // Order status enum
+    enum class OrderStatus {
+        PENDING, CONFIRMED, CANCELLED
+    }
+
+    // Safety warning types
+    enum class SafetyWarningType {
+        ALLERGY, DRUG_INTERACTION, DUPLICATE_ORDER, CONTRAINDICATION
+    }
+
+    // Safety warning data class
+    data class SafetyWarning(
+        val type: SafetyWarningType,
+        val severity: String,  // "high", "moderate", "low"
+        val message: String,
+        val details: String = ""
+    )
+
+    // Order data class
+    data class Order(
+        val id: String = java.util.UUID.randomUUID().toString(),
+        val type: OrderType,
+        val name: String,                    // "CBC", "Amoxicillin"
+        val displayName: String,             // "Complete Blood Count"
+        val details: String = "",            // "500mg TID x 10 days"
+        val status: OrderStatus = OrderStatus.PENDING,
+        val timestamp: Long = System.currentTimeMillis(),
+        val safetyWarnings: List<SafetyWarning> = emptyList(),
+        val requiresConfirmation: Boolean = false,
+        // Medication-specific fields
+        val dose: String? = null,
+        val frequency: String? = null,
+        val duration: String? = null,
+        val route: String? = null,
+        val prn: Boolean = false,
+        // Imaging-specific fields
+        val contrast: Boolean? = null,
+        val bodyPart: String? = null,
+        val laterality: String? = null
+    ) {
+        fun toJson(): org.json.JSONObject {
+            return org.json.JSONObject().apply {
+                put("id", id)
+                put("type", type.name)
+                put("name", name)
+                put("displayName", displayName)
+                put("details", details)
+                put("status", status.name)
+                put("timestamp", timestamp)
+                put("dose", dose)
+                put("frequency", frequency)
+                put("duration", duration)
+                put("route", route)
+                put("prn", prn)
+                put("contrast", contrast)
+                put("bodyPart", bodyPart)
+                put("laterality", laterality)
+                put("safetyWarnings", org.json.JSONArray().apply {
+                    safetyWarnings.forEach { warning ->
+                        put(org.json.JSONObject().apply {
+                            put("type", warning.type.name)
+                            put("severity", warning.severity)
+                            put("message", warning.message)
+                            put("details", warning.details)
+                        })
+                    }
+                })
+            }
+        }
+
+        companion object {
+            fun fromJson(json: org.json.JSONObject): Order {
+                val warnings = mutableListOf<SafetyWarning>()
+                val warningsArray = json.optJSONArray("safetyWarnings")
+                if (warningsArray != null) {
+                    for (i in 0 until warningsArray.length()) {
+                        val w = warningsArray.getJSONObject(i)
+                        warnings.add(SafetyWarning(
+                            type = SafetyWarningType.valueOf(w.getString("type")),
+                            severity = w.getString("severity"),
+                            message = w.getString("message"),
+                            details = w.optString("details", "")
+                        ))
+                    }
+                }
+                return Order(
+                    id = json.getString("id"),
+                    type = OrderType.valueOf(json.getString("type")),
+                    name = json.getString("name"),
+                    displayName = json.getString("displayName"),
+                    details = json.optString("details", ""),
+                    status = OrderStatus.valueOf(json.getString("status")),
+                    timestamp = json.getLong("timestamp"),
+                    safetyWarnings = warnings,
+                    dose = json.optString("dose", null),
+                    frequency = json.optString("frequency", null),
+                    duration = json.optString("duration", null),
+                    route = json.optString("route", null),
+                    prn = json.optBoolean("prn", false),
+                    contrast = if (json.has("contrast") && !json.isNull("contrast")) json.getBoolean("contrast") else null,
+                    bodyPart = json.optString("bodyPart", null),
+                    laterality = json.optString("laterality", null)
+                )
+            }
+        }
+    }
+
+    // Lab order info
+    data class LabOrderInfo(
+        val name: String,
+        val displayName: String,
+        val cptCode: String,
+        val aliases: List<String>
+    )
+
+    // Imaging order info
+    data class ImagingOrderInfo(
+        val name: String,
+        val displayName: String,
+        val cptCode: String,
+        val bodyPart: String,
+        val modality: String,
+        val aliases: List<String>,
+        val supportsContrast: Boolean = false
+    )
+
+    // Medication order info
+    data class MedicationOrderInfo(
+        val name: String,
+        val drugClass: String,
+        val commonDoses: List<String>,
+        val commonFrequencies: List<String>,
+        val commonDurations: List<String>,
+        val route: String,
+        val aliases: List<String>,
+        val interactionsWith: List<String>,
+        val allergyCrossReact: List<String>,
+        val isControlled: Boolean = false
     )
 
     // Barcode scanner launcher
@@ -3017,6 +3230,578 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
         return aliases[lowerName]
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VOICE ORDERS - Order Processing Functions
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Find lab order by alias text
+     */
+    private fun findLabByAlias(text: String): LabOrderInfo? {
+        val lower = text.lowercase().trim()
+        for ((_, lab) in labOrders) {
+            if (lab.aliases.any { lower.contains(it) }) {
+                return lab
+            }
+        }
+        return null
+    }
+
+    /**
+     * Find imaging order by alias text
+     */
+    private fun findImagingByAlias(text: String): ImagingOrderInfo? {
+        val lower = text.lowercase().trim()
+        for ((_, imaging) in imagingOrders) {
+            if (imaging.aliases.any { lower.contains(it) }) {
+                return imaging
+            }
+        }
+        return null
+    }
+
+    /**
+     * Find medication order by alias text
+     */
+    private fun findMedicationByAlias(text: String): MedicationOrderInfo? {
+        val lower = text.lowercase().trim()
+        for ((_, med) in medicationOrders) {
+            if (med.aliases.any { lower.contains(it) }) {
+                return med
+            }
+        }
+        return null
+    }
+
+    /**
+     * Check if text is a lab order
+     */
+    private fun isLabOrder(text: String): Boolean {
+        return findLabByAlias(text) != null
+    }
+
+    /**
+     * Check if text is an imaging order
+     */
+    private fun isImagingOrder(text: String): Boolean {
+        return findImagingByAlias(text) != null
+    }
+
+    /**
+     * Check if text is a medication order
+     */
+    private fun isMedicationOrder(text: String): Boolean {
+        return findMedicationByAlias(text) != null
+    }
+
+    /**
+     * Process a lab order voice command
+     */
+    private fun processLabOrder(text: String) {
+        val lab = findLabByAlias(text)
+        if (lab == null) {
+            speakFeedback("Lab test not recognized. Try: CBC, CMP, BMP, UA, lipids, A1C, or TSH.")
+            return
+        }
+
+        // Check for duplicate
+        val duplicateWarning = checkDuplicateOrder(OrderType.LAB, lab.name)
+        val warnings = listOfNotNull(duplicateWarning)
+
+        val order = Order(
+            type = OrderType.LAB,
+            name = lab.name,
+            displayName = lab.displayName,
+            safetyWarnings = warnings,
+            requiresConfirmation = warnings.isNotEmpty()
+        )
+
+        if (order.requiresConfirmation) {
+            pendingConfirmationOrder = order
+            speakFeedback("${duplicateWarning?.message} Do you still want to order? Say yes or no.")
+        } else {
+            addOrderToQueue(order)
+            speakFeedback("Ordered ${lab.displayName}")
+        }
+    }
+
+    /**
+     * Process an imaging order voice command
+     */
+    private fun processImagingOrder(text: String) {
+        val imaging = findImagingByAlias(text)
+        if (imaging == null) {
+            speakFeedback("Imaging study not recognized. Try: chest x-ray, CT head, MRI brain, or ultrasound.")
+            return
+        }
+
+        // Parse contrast preference
+        val lower = text.lowercase()
+        val contrast = when {
+            lower.contains("without contrast") -> false
+            lower.contains("with and without") -> null  // Both phases
+            lower.contains("with contrast") -> true
+            else -> null  // Not specified
+        }
+
+        // Parse laterality
+        val laterality = when {
+            lower.contains("left") -> "left"
+            lower.contains("right") -> "right"
+            lower.contains("bilateral") -> "bilateral"
+            else -> null
+        }
+
+        val warnings = mutableListOf<SafetyWarning>()
+
+        // Check for duplicate
+        checkDuplicateOrder(OrderType.IMAGING, imaging.name)?.let { warnings.add(it) }
+
+        // Check metformin + contrast warning
+        if (contrast == true) {
+            checkMetforminContrastWarning()?.let { warnings.add(it) }
+        }
+
+        val contrastText = when (contrast) {
+            true -> " with contrast"
+            false -> " without contrast"
+            null -> ""
+        }
+
+        val order = Order(
+            type = OrderType.IMAGING,
+            name = imaging.name,
+            displayName = "${imaging.displayName}$contrastText",
+            contrast = contrast,
+            bodyPart = imaging.bodyPart,
+            laterality = laterality,
+            safetyWarnings = warnings,
+            requiresConfirmation = warnings.isNotEmpty()
+        )
+
+        if (order.requiresConfirmation) {
+            pendingConfirmationOrder = order
+            val warningMsg = warnings.joinToString(". ") { it.message }
+            if (warnings.any { it.severity == "high" }) {
+                speakFeedback("Critical warning: $warningMsg Say yes to confirm or no to cancel.")
+            } else {
+                speakFeedback("Warning: $warningMsg Say yes to confirm or no to cancel.")
+            }
+        } else {
+            addOrderToQueue(order)
+            speakFeedback("Ordered ${order.displayName}")
+        }
+    }
+
+    /**
+     * Process a medication order voice command
+     */
+    private fun processMedicationOrder(text: String) {
+        val med = findMedicationByAlias(text)
+        if (med == null) {
+            speakFeedback("Medication not recognized. Try common medications like amoxicillin, ibuprofen, or prednisone.")
+            return
+        }
+
+        val lower = text.lowercase()
+
+        // Parse dose (e.g., "500mg", "500 mg")
+        val dosePattern = Regex("(\\d+)\\s*(mg|mcg|ml|g)")
+        val doseMatch = dosePattern.find(lower)
+        val dose = doseMatch?.value?.replace(" ", "") ?: med.commonDoses.firstOrNull()
+
+        // Parse frequency
+        var frequency: String? = null
+        for ((alias, canonical) in frequencyAliases) {
+            if (lower.contains(alias)) {
+                frequency = canonical
+                break
+            }
+        }
+        frequency = frequency ?: med.commonFrequencies.firstOrNull()
+
+        // Parse duration (e.g., "for 10 days", "for 2 weeks")
+        val durationPattern = Regex("for\\s+(\\d+)\\s*(days?|weeks?)")
+        val durationMatch = durationPattern.find(lower)
+        val duration = durationMatch?.value?.replace("for ", "") ?: med.commonDurations.firstOrNull()
+
+        // Check if PRN
+        val prn = lower.contains("prn") || lower.contains("as needed") || lower.contains("when needed")
+
+        // Safety checks
+        val warnings = mutableListOf<SafetyWarning>()
+
+        // 1. Allergy check
+        checkMedicationAllergy(med)?.let { warnings.add(it) }
+
+        // 2. Drug interaction check
+        warnings.addAll(checkMedicationInteractions(med))
+
+        // 3. Duplicate check
+        checkDuplicateOrder(OrderType.MEDICATION, med.name)?.let { warnings.add(it) }
+
+        // Build details string
+        val details = buildString {
+            append(dose ?: "")
+            frequency?.let { append(" $it") }
+            duration?.let { append(" x $it") }
+            if (prn) append(" PRN")
+        }.trim()
+
+        val order = Order(
+            type = OrderType.MEDICATION,
+            name = med.name,
+            displayName = med.name,
+            details = details,
+            dose = dose,
+            frequency = frequency,
+            duration = duration,
+            route = med.route,
+            prn = prn,
+            safetyWarnings = warnings,
+            requiresConfirmation = warnings.isNotEmpty()
+        )
+
+        if (order.requiresConfirmation) {
+            pendingConfirmationOrder = order
+            val highWarnings = warnings.filter { it.severity == "high" }
+            if (highWarnings.isNotEmpty()) {
+                val warningMsg = highWarnings.joinToString(". ") { it.message }
+                speakFeedback("Critical warning: $warningMsg Do you still want to prescribe? Say yes to confirm or no to cancel.")
+            } else {
+                speakFeedback("Warning: ${warnings.first().message} Say yes to confirm or no to cancel.")
+            }
+        } else {
+            addOrderToQueue(order)
+            speakFeedback("Prescribed ${med.name} $details")
+        }
+    }
+
+    /**
+     * Check for duplicate order in queue
+     */
+    private fun checkDuplicateOrder(type: OrderType, name: String): SafetyWarning? {
+        val duplicate = orderQueue.find { it.type == type && it.name.equals(name, ignoreCase = true) }
+        return if (duplicate != null) {
+            SafetyWarning(
+                type = SafetyWarningType.DUPLICATE_ORDER,
+                severity = "moderate",
+                message = "$name has already been ordered in this session"
+            )
+        } else null
+    }
+
+    /**
+     * Check for allergy to medication
+     */
+    private fun checkMedicationAllergy(med: MedicationOrderInfo): SafetyWarning? {
+        val patient = currentPatientData ?: return null
+        val allergies = patient.optJSONArray("allergies") ?: return null
+
+        val patientAllergies = mutableListOf<String>()
+        for (i in 0 until allergies.length()) {
+            patientAllergies.add(allergies.getString(i).lowercase())
+        }
+
+        // Check cross-reactivity
+        val crossMatch = med.allergyCrossReact.find { cross ->
+            patientAllergies.any { allergy ->
+                allergy.contains(cross.lowercase()) || cross.lowercase().contains(allergy)
+            }
+        }
+
+        // Check direct match
+        val directMatch = patientAllergies.find { allergy ->
+            med.name.lowercase().contains(allergy) || allergy.contains(med.name.lowercase()) ||
+            med.aliases.any { alias -> allergy.contains(alias) || alias.contains(allergy) }
+        }
+
+        return if (crossMatch != null || directMatch != null) {
+            SafetyWarning(
+                type = SafetyWarningType.ALLERGY,
+                severity = "high",
+                message = "Patient has documented allergy to ${directMatch ?: crossMatch}. ${med.name} may cause allergic reaction.",
+                details = if (med.allergyCrossReact.isNotEmpty()) "Cross-reactivity: ${med.allergyCrossReact.joinToString(", ")}" else ""
+            )
+        } else null
+    }
+
+    /**
+     * Check for drug interactions with current medications
+     */
+    private fun checkMedicationInteractions(med: MedicationOrderInfo): List<SafetyWarning> {
+        val patient = currentPatientData ?: return emptyList()
+        val currentMeds = patient.optJSONArray("medications") ?: return emptyList()
+
+        val warnings = mutableListOf<SafetyWarning>()
+        val patientMedNames = mutableListOf<String>()
+        for (i in 0 until currentMeds.length()) {
+            patientMedNames.add(currentMeds.getString(i).lowercase())
+        }
+
+        for (interactingDrug in med.interactionsWith) {
+            val match = patientMedNames.find { patientMed ->
+                patientMed.contains(interactingDrug.lowercase()) ||
+                interactingDrug.lowercase().contains(patientMed)
+            }
+            if (match != null) {
+                // Determine severity based on drug class
+                val severity = when {
+                    med.drugClass == "opioid" && (interactingDrug.contains("benzodiazepine") || interactingDrug.contains("alcohol")) -> "high"
+                    interactingDrug.contains("warfarin") -> "high"
+                    med.drugClass == "nsaid" && interactingDrug.contains("lithium") -> "high"
+                    else -> "moderate"
+                }
+                warnings.add(SafetyWarning(
+                    type = SafetyWarningType.DRUG_INTERACTION,
+                    severity = severity,
+                    message = "${med.name} interacts with patient's current medication: $match",
+                    details = "Use with caution"
+                ))
+            }
+        }
+
+        return warnings
+    }
+
+    /**
+     * Check for metformin + contrast warning
+     */
+    private fun checkMetforminContrastWarning(): SafetyWarning? {
+        val patient = currentPatientData ?: return null
+        val currentMeds = patient.optJSONArray("medications") ?: return null
+
+        for (i in 0 until currentMeds.length()) {
+            val med = currentMeds.getString(i).lowercase()
+            if (med.contains("metformin") || med.contains("glucophage")) {
+                return SafetyWarning(
+                    type = SafetyWarningType.CONTRAINDICATION,
+                    severity = "high",
+                    message = "Patient takes metformin. Hold metformin 48 hours before and after contrast imaging to prevent lactic acidosis.",
+                    details = "Recommend holding metformin around contrast administration"
+                )
+            }
+        }
+        return null
+    }
+
+    /**
+     * Add order to queue and auto-add to Plan section
+     */
+    private fun addOrderToQueue(order: Order) {
+        val confirmedOrder = order.copy(status = OrderStatus.CONFIRMED)
+        orderQueue.add(confirmedOrder)
+        saveOrdersToPrefs()
+        addOrderToPlanSection(confirmedOrder)
+        Log.d(TAG, "Order added: ${order.name}, queue size: ${orderQueue.size}")
+    }
+
+    /**
+     * Save orders to SharedPreferences
+     */
+    private fun saveOrdersToPrefs() {
+        try {
+            val ordersJson = org.json.JSONArray()
+            for (order in orderQueue) {
+                ordersJson.put(order.toJson())
+            }
+            cachePrefs.edit()
+                .putString(ORDERS_KEY, ordersJson.toString())
+                .putString(ORDERS_PATIENT_KEY, currentPatientData?.optString("patient_id", "") ?: "")
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving orders: ${e.message}")
+        }
+    }
+
+    /**
+     * Load orders from SharedPreferences
+     */
+    private fun loadOrdersFromPrefs() {
+        try {
+            val currentPatientId = currentPatientData?.optString("patient_id", "") ?: ""
+            val savedPatientId = cachePrefs.getString(ORDERS_PATIENT_KEY, "") ?: ""
+
+            // Only load if same patient
+            if (currentPatientId.isNotEmpty() && currentPatientId == savedPatientId) {
+                val ordersStr = cachePrefs.getString(ORDERS_KEY, "[]") ?: "[]"
+                val ordersJson = org.json.JSONArray(ordersStr)
+                orderQueue.clear()
+                for (i in 0 until ordersJson.length()) {
+                    orderQueue.add(Order.fromJson(ordersJson.getJSONObject(i)))
+                }
+                Log.d(TAG, "Loaded ${orderQueue.size} orders for patient $currentPatientId")
+            } else {
+                // Different patient - clear orders
+                orderQueue.clear()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading orders: ${e.message}")
+            orderQueue.clear()
+        }
+    }
+
+    /**
+     * Add order to Plan section of note
+     */
+    private fun addOrderToPlanSection(order: Order) {
+        val orderText = when (order.type) {
+            OrderType.LAB -> "• Order ${order.displayName}"
+            OrderType.IMAGING -> {
+                val contrastText = when (order.contrast) {
+                    true -> " with contrast"
+                    false -> " without contrast"
+                    else -> ""
+                }
+                "• Order ${order.displayName}$contrastText"
+            }
+            OrderType.MEDICATION -> "• Rx: ${order.name} ${order.details}"
+        }
+
+        // If note is being edited, append to plan section
+        if (noteEditText != null && editableNoteContent != null) {
+            appendToNoteSection("plan", orderText)
+        } else {
+            // Store for when note is generated
+            pendingPlanItems.add(orderText)
+        }
+    }
+
+    /**
+     * Show order queue overlay
+     */
+    private fun showOrderQueue() {
+        if (orderQueue.isEmpty()) {
+            val emptyText = """
+                |📋 NO PENDING ORDERS
+                |${"─".repeat(30)}
+                |
+                |Voice Commands:
+                |• "Order CBC" - Order a lab test
+                |• "Order chest x-ray" - Order imaging
+                |• "Prescribe amoxicillin 500mg TID" - Prescribe medication
+                |
+                |Available Labs:
+                |CBC, CMP, BMP, UA, Lipids, TSH, A1c, PT/INR, Troponin
+                |
+                |Available Imaging:
+                |Chest X-ray, CT Head/Chest/Abdomen, MRI Brain/Spine, Echo
+                |
+                |Say "close" to dismiss
+            """.trimMargin()
+            showDataOverlay("📋 Orders", emptyText)
+            speakFeedback("No pending orders")
+            return
+        }
+
+        val sb = StringBuilder()
+
+        // Group by type
+        val labs = orderQueue.filter { it.type == OrderType.LAB }
+        val imaging = orderQueue.filter { it.type == OrderType.IMAGING }
+        val meds = orderQueue.filter { it.type == OrderType.MEDICATION }
+
+        if (labs.isNotEmpty()) {
+            sb.appendLine("🔬 LABS (${labs.size})")
+            labs.forEachIndexed { index, order ->
+                sb.appendLine("  ${index + 1}. ${order.displayName}")
+            }
+            sb.appendLine()
+        }
+
+        if (imaging.isNotEmpty()) {
+            sb.appendLine("📷 IMAGING (${imaging.size})")
+            imaging.forEachIndexed { index, order ->
+                sb.appendLine("  ${index + 1}. ${order.displayName}")
+            }
+            sb.appendLine()
+        }
+
+        if (meds.isNotEmpty()) {
+            sb.appendLine("💊 MEDICATIONS (${meds.size})")
+            meds.forEachIndexed { index, order ->
+                sb.appendLine("  ${index + 1}. ${order.name} ${order.details}")
+                if (order.safetyWarnings.isNotEmpty()) {
+                    order.safetyWarnings.forEach { warning ->
+                        val icon = if (warning.severity == "high") "🚨" else "⚠️"
+                        sb.appendLine("      $icon ${warning.message}")
+                    }
+                }
+            }
+            sb.appendLine()
+        }
+
+        sb.appendLine("─".repeat(40))
+        sb.appendLine("Voice Commands:")
+        sb.appendLine("• \"Cancel order\" - Remove last order")
+        sb.appendLine("• \"Clear all orders\" - Remove all")
+        sb.appendLine("• \"Close\" - Dismiss")
+
+        showDataOverlay("📋 Orders (${orderQueue.size})", sb.toString())
+        speakFeedback("${orderQueue.size} orders pending")
+    }
+
+    /**
+     * Cancel the last order in queue
+     */
+    private fun cancelLastOrder() {
+        if (orderQueue.isEmpty()) {
+            speakFeedback("No orders to cancel")
+            return
+        }
+        val removed = orderQueue.removeAt(orderQueue.size - 1)
+        saveOrdersToPrefs()
+        speakFeedback("Cancelled order for ${removed.displayName}")
+        Log.d(TAG, "Cancelled order: ${removed.name}")
+    }
+
+    /**
+     * Clear all orders in queue
+     */
+    private fun clearAllOrders() {
+        val count = orderQueue.size
+        orderQueue.clear()
+        pendingPlanItems.clear()
+        saveOrdersToPrefs()
+        speakFeedback("Cleared $count orders")
+        hideDataOverlay()
+    }
+
+    /**
+     * Confirm pending order after safety warning
+     */
+    private fun confirmPendingOrder() {
+        val order = pendingConfirmationOrder ?: return
+        pendingConfirmationOrder = null
+        addOrderToQueue(order)
+
+        val message = when (order.type) {
+            OrderType.LAB -> "Ordered ${order.displayName}"
+            OrderType.IMAGING -> "Ordered ${order.displayName}"
+            OrderType.MEDICATION -> "Prescribed ${order.name} ${order.details}"
+        }
+        speakFeedback(message)
+    }
+
+    /**
+     * Reject pending order after safety warning
+     */
+    private fun rejectPendingOrder() {
+        val order = pendingConfirmationOrder ?: return
+        pendingConfirmationOrder = null
+        speakFeedback("Order cancelled")
+        Log.d(TAG, "Order rejected: ${order.name}")
+    }
+
+    /**
+     * Get pending plan items for note generation
+     */
+    private fun getPendingOrdersForPlan(): String {
+        if (pendingPlanItems.isEmpty()) return ""
+        val items = pendingPlanItems.joinToString("\n")
+        return items
+    }
+
     private fun showVoiceCommandHelp() {
         val helpText = """
             |🎤 VOICE COMMANDS
@@ -3120,6 +3905,19 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Delete template [name]" - Remove user template
             |  (diabetes, hypertension, URI, physical,
             |   back pain, UTI, well child, chest pain)
+            |
+            |📋 VOICE ORDERS
+            |• "Order [lab]" - Order a lab test
+            |  (CBC, CMP, BMP, UA, Lipids, TSH, A1c, PT/INR)
+            |• "Order [imaging]" - Order imaging study
+            |  (chest x-ray, CT head/chest, MRI, echo)
+            |• "Order CT [part] with/without contrast"
+            |• "Prescribe [med] [dose] [freq] for [duration]"
+            |  (amoxicillin, ibuprofen, prednisone, etc.)
+            |• "Show orders" - View pending orders
+            |• "Cancel order" - Remove last order
+            |• "Clear all orders" - Remove all orders
+            |• "Yes" / "No" - Confirm/reject after warning
             |
             |🔧 OTHER
             |• "Hey MDx [command]" - Wake word
@@ -5495,6 +6293,49 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             lower.contains("clear history") -> {
                 clearPatientHistory()
                 hideDataOverlay()
+            }
+            // ═══════════════════════════════════════════════════════════════════════════
+            // VOICE ORDERS - Order commands
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Show orders: "show orders", "list orders", "pending orders"
+            lower.contains("show order") || lower.contains("list order") || lower.contains("pending order") ||
+            lower.contains("what are the order") -> {
+                showOrderQueue()
+            }
+            // Cancel order: "cancel order", "remove order", "remove last order"
+            lower.contains("cancel order") || lower.contains("remove order") ||
+            lower.contains("remove last order") || lower.contains("delete order") -> {
+                cancelLastOrder()
+            }
+            // Clear all orders: "clear all orders", "delete all orders"
+            lower.contains("clear all order") || lower.contains("delete all order") -> {
+                clearAllOrders()
+            }
+            // Confirmation: "yes", "confirm" (when order pending)
+            (lower == "yes" || lower == "confirm" || lower.contains("confirm order") ||
+             lower.contains("place order") || lower.contains("go ahead")) && pendingConfirmationOrder != null -> {
+                confirmPendingOrder()
+            }
+            // Rejection: "no", "cancel" (when order pending)
+            (lower == "no" || lower == "reject" || lower.contains("don't order") ||
+             lower.contains("do not order")) && pendingConfirmationOrder != null -> {
+                rejectPendingOrder()
+            }
+            // Prescribe medication: "prescribe amoxicillin 500mg three times daily for 10 days"
+            lower.startsWith("prescribe ") -> {
+                val medText = lower.substringAfter("prescribe ").trim()
+                processMedicationOrder(medText)
+            }
+            // Order command - determine type based on content
+            lower.startsWith("order ") -> {
+                val orderText = lower.substringAfter("order ").trim()
+                when {
+                    isLabOrder(orderText) -> processLabOrder(orderText)
+                    isImagingOrder(orderText) -> processImagingOrder(orderText)
+                    isMedicationOrder(orderText) -> processMedicationOrder(orderText)
+                    else -> speakFeedback("Order not recognized. Try: order CBC, order chest x-ray, or prescribe amoxicillin.")
+                }
             }
             // Session timeout voice commands (HIPAA compliance)
             lower.contains("lock session") || lower == "lock" -> {

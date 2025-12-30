@@ -268,6 +268,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 40. **Voice Navigation** - Scroll up/down, go to top/bottom, jump to SOAP sections ("go to assessment"), show section only, TTS read-back of sections/entire note
 41. **Voice Dictation Mode** - Dictate directly into sections ("dictate to plan"), continuous speech capture, "stop dictating" to insert, visual indicator, word count display
 42. **Voice Templates** - 8 built-in templates (diabetes, hypertension, URI, physical, back pain, UTI, well child, chest pain) with auto-fill patient data, user-created templates, variable substitution ({{patient_name}}, {{medications}}, etc.)
+43. **Voice Orders** - Order labs (12), imaging (10), medications (10) by voice; safety checks for allergies, drug interactions, duplicates, metformin+contrast; confirmation workflow; auto-add to Plan section; "show orders", "cancel order"
 
 ## Next Up (Recommended)
 
