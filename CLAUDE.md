@@ -184,6 +184,27 @@ curl http://localhost:8002/api/v1/transcription/status
 - Web dashboard runs on port 5173
 - Backend API runs on port 8080
 
+### HMD Compatibility
+The Android app is designed to work with any Android-based head-mounted display (HMD):
+
+| Device | Status | Notes |
+|--------|--------|-------|
+| Vuzix Blade 2 | Primary Target | Full SDK integration ready |
+| Vuzix Shield | Compatible | Industrial model |
+| Google Glass Enterprise | Compatible | Standard Android |
+| RealWear Navigator | Compatible | Voice-first design matches |
+| Android XR devices | Future Ready | Standard Android platform |
+| Magic Leap 2 | Planned | Enterprise AR |
+| Meta Quest Pro | Planned | Passthrough AR mode |
+
+**Design Principles for HMD Compatibility:**
+- Voice-first interface (no touch required)
+- High-contrast UI for outdoor/bright environments
+- Large fonts and icons for small displays
+- Minimal UI chrome to maximize content area
+- TTS feedback for eyes-free operation
+- Standard Android APIs (no proprietary dependencies in core)
+
 ## Environment Variables
 
 ```bash
@@ -270,6 +291,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 42. **Voice Templates** - 8 built-in templates (diabetes, hypertension, URI, physical, back pain, UTI, well child, chest pain) with auto-fill patient data, user-created templates, variable substitution ({{patient_name}}, {{medications}}, etc.)
 43. **Voice Orders** - Order labs (12), imaging (10), medications (10) by voice; safety checks for allergies, drug interactions, duplicates, metformin+contrast; confirmation workflow; auto-add to Plan section; "show orders", "cancel order"
 44. **Encounter Timer** - Track time spent with patients; voice commands "start timer", "stop timer", "how long", "reset timer"; visual indicator in top-right corner; TTS time reports; auto-include duration in notes for billing
+45. **Order Sets** - 12 clinical order bundles (chest pain, sepsis, stroke, CHF, COPD, DKA, PE, pneumonia, UTI, abdominal pain, admission labs, preop labs); "order chest pain workup", "list order sets", "what's in [set]" to preview
 
 ## Next Up (Recommended)
 

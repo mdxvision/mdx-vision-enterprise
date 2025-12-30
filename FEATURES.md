@@ -273,6 +273,7 @@ Based on US Patent 15/237,980 and product requirements.
 35. ~~**Voice Templates**~~ - Done (8 built-in templates with auto-fill patient data, user-created templates, "use diabetes template", variable substitution)
 36. ~~**Voice Orders**~~ - Done (Order labs/imaging/meds by voice, safety checks for allergies/interactions/duplicates, confirmation workflow, auto-add to Plan section)
 37. ~~**Encounter Timer**~~ - Done (Track time spent with patients, voice commands to start/stop/check/reset, visual indicator, auto-include in notes)
+38. ~~**Order Sets**~~ - Done (12 clinical order bundles: chest pain, sepsis, stroke, CHF, COPD, DKA, PE, pneumonia, UTI, abdominal pain, admission labs, preop labs)
 
 ### Upcoming
 1. **Epic Integration** - Complete with credentials

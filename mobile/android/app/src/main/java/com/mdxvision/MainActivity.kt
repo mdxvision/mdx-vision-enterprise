@@ -254,6 +254,190 @@ Neuro: Grossly intact""",
         "at bedtime" to "QHS", "before bed" to "QHS"
     )
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ORDER SETS - Predefined bundles of orders for common clinical scenarios
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    data class OrderSetItem(
+        val type: OrderType,
+        val orderKey: String,  // Key in the respective order database (labOrders, imagingOrders, etc.)
+        val details: String = ""  // Optional details (e.g., "with contrast" for imaging)
+    )
+
+    data class OrderSetInfo(
+        val id: String,
+        val name: String,
+        val displayName: String,
+        val description: String,
+        val items: List<OrderSetItem>,
+        val aliases: List<String>
+    )
+
+    private val orderSets = mapOf(
+        "chest_pain" to OrderSetInfo(
+            id = "chest_pain",
+            name = "Chest Pain Workup",
+            displayName = "Chest Pain Workup",
+            description = "Initial workup for acute chest pain / ACS rule-out",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "troponin"),
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.LAB, "ptinr"),
+                OrderSetItem(OrderType.IMAGING, "cxr"),
+                OrderSetItem(OrderType.IMAGING, "echo")
+            ),
+            aliases = listOf("chest pain", "chest pain workup", "acs workup", "acs", "cardiac workup", "rule out mi", "mi workup")
+        ),
+        "sepsis" to OrderSetInfo(
+            id = "sepsis",
+            name = "Sepsis Bundle",
+            displayName = "Sepsis Bundle / Workup",
+            description = "Initial sepsis workup per Surviving Sepsis guidelines",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "bculture"),
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "cmp"),
+                OrderSetItem(OrderType.LAB, "ua"),
+                OrderSetItem(OrderType.LAB, "uculture"),
+                OrderSetItem(OrderType.IMAGING, "cxr")
+            ),
+            aliases = listOf("sepsis", "sepsis bundle", "sepsis workup", "septic workup", "infection workup")
+        ),
+        "dka" to OrderSetInfo(
+            id = "dka",
+            name = "DKA Protocol",
+            displayName = "Diabetic Ketoacidosis Protocol",
+            description = "Initial workup for DKA / hyperglycemic emergency",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "ua"),
+                OrderSetItem(OrderType.LAB, "hba1c")
+            ),
+            aliases = listOf("dka", "dka protocol", "dka workup", "diabetic ketoacidosis", "hyperglycemia workup")
+        ),
+        "admission" to OrderSetInfo(
+            id = "admission",
+            name = "Admission Labs",
+            displayName = "Standard Admission Labs",
+            description = "Basic admission laboratory panel",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "cmp"),
+                OrderSetItem(OrderType.LAB, "ua"),
+                OrderSetItem(OrderType.LAB, "ptinr")
+            ),
+            aliases = listOf("admission labs", "admission", "admit labs", "admission panel", "admit workup")
+        ),
+        "preop" to OrderSetInfo(
+            id = "preop",
+            name = "Preop Labs",
+            displayName = "Preoperative Laboratory Panel",
+            description = "Standard preoperative clearance labs",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.LAB, "ptinr"),
+                OrderSetItem(OrderType.IMAGING, "cxr")
+            ),
+            aliases = listOf("preop", "preop labs", "pre op", "pre-op labs", "surgical clearance", "preoperative")
+        ),
+        "stroke" to OrderSetInfo(
+            id = "stroke",
+            name = "Stroke Workup",
+            displayName = "Acute Stroke Workup",
+            description = "Initial workup for suspected stroke/CVA",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.LAB, "ptinr"),
+                OrderSetItem(OrderType.IMAGING, "cthead")
+            ),
+            aliases = listOf("stroke", "stroke workup", "cva", "cva workup", "code stroke")
+        ),
+        "chf" to OrderSetInfo(
+            id = "chf",
+            name = "CHF Exacerbation",
+            displayName = "CHF Exacerbation Workup",
+            description = "Workup for acute heart failure exacerbation",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.LAB, "troponin"),
+                OrderSetItem(OrderType.IMAGING, "cxr"),
+                OrderSetItem(OrderType.IMAGING, "echo")
+            ),
+            aliases = listOf("chf", "chf exacerbation", "heart failure", "hf exacerbation", "fluid overload")
+        ),
+        "copd" to OrderSetInfo(
+            id = "copd",
+            name = "COPD Exacerbation",
+            displayName = "COPD Exacerbation Workup",
+            description = "Workup for acute COPD exacerbation",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.IMAGING, "cxr")
+            ),
+            aliases = listOf("copd", "copd exacerbation", "copd flare", "respiratory distress")
+        ),
+        "abdominal_pain" to OrderSetInfo(
+            id = "abdominal_pain",
+            name = "Abdominal Pain Workup",
+            displayName = "Acute Abdominal Pain Workup",
+            description = "Initial workup for acute abdominal pain",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "cmp"),
+                OrderSetItem(OrderType.LAB, "lipid"),
+                OrderSetItem(OrderType.LAB, "ua"),
+                OrderSetItem(OrderType.IMAGING, "ctabdomen")
+            ),
+            aliases = listOf("abdominal pain", "abd pain", "belly pain", "abdominal workup", "acute abdomen")
+        ),
+        "uti" to OrderSetInfo(
+            id = "uti",
+            name = "UTI Workup",
+            displayName = "Urinary Tract Infection Workup",
+            description = "Workup for suspected urinary tract infection",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "ua"),
+                OrderSetItem(OrderType.LAB, "uculture"),
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp")
+            ),
+            aliases = listOf("uti", "uti workup", "urinary tract infection", "dysuria workup", "pyelonephritis")
+        ),
+        "pneumonia" to OrderSetInfo(
+            id = "pneumonia",
+            name = "Pneumonia Workup",
+            displayName = "Community Acquired Pneumonia Workup",
+            description = "Workup for suspected pneumonia",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.LAB, "bculture"),
+                OrderSetItem(OrderType.IMAGING, "cxr")
+            ),
+            aliases = listOf("pneumonia", "pneumonia workup", "cap", "community acquired pneumonia", "lung infection")
+        ),
+        "pe" to OrderSetInfo(
+            id = "pe",
+            name = "PE Workup",
+            displayName = "Pulmonary Embolism Workup",
+            description = "Workup for suspected pulmonary embolism",
+            items = listOf(
+                OrderSetItem(OrderType.LAB, "cbc"),
+                OrderSetItem(OrderType.LAB, "bmp"),
+                OrderSetItem(OrderType.LAB, "ptinr"),
+                OrderSetItem(OrderType.LAB, "troponin"),
+                OrderSetItem(OrderType.IMAGING, "ctchest")
+            ),
+            aliases = listOf("pe", "pe workup", "pulmonary embolism", "pulmonary embolus", "dvt pe workup")
+        )
+    )
+
     // Voice templates - built-in note templates with auto-fill variables
     // Variables: {{patient_name}}, {{dob}}, {{age}}, {{gender}}, {{medications}}, {{allergies}}, {{vitals}}, {{conditions}}, {{date}}
     private val USER_TEMPLATES_KEY = "user_note_templates"
@@ -3812,6 +3996,221 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // ORDER SETS - Batch ordering functions
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Find an order set by alias
+     */
+    private fun findOrderSet(text: String): OrderSetInfo? {
+        val lower = text.lowercase().trim()
+        // Direct key match
+        orderSets[lower]?.let { return it }
+        // Alias match
+        for ((_, setInfo) in orderSets) {
+            if (setInfo.aliases.any { lower.contains(it) }) {
+                return setInfo
+            }
+        }
+        return null
+    }
+
+    /**
+     * Check if text matches an order set pattern
+     */
+    private fun isOrderSet(text: String): Boolean {
+        return findOrderSet(text) != null
+    }
+
+    /**
+     * Process an order set - queue all orders with safety checks
+     */
+    private fun processOrderSet(setInfo: OrderSetInfo) {
+        if (currentPatientData == null) {
+            speakFeedback("Please load a patient first")
+            return
+        }
+
+        val orderedItems = mutableListOf<String>()
+        val warnings = mutableListOf<String>()
+        var hasHighSeverityWarning = false
+
+        // Process each item in the order set
+        for (item in setInfo.items) {
+            when (item.type) {
+                OrderType.LAB -> {
+                    val lab = labOrders[item.orderKey]
+                    if (lab != null) {
+                        // Check for duplicate
+                        val duplicate = checkDuplicateOrder(OrderType.LAB, lab.name)
+                        if (duplicate != null) {
+                            warnings.add("${lab.name}: duplicate order")
+                        } else {
+                            val order = Order(
+                                type = OrderType.LAB,
+                                name = lab.name,
+                                displayName = lab.displayName,
+                                details = "CPT: ${lab.cptCode}"
+                            )
+                            orderQueue.add(order)
+                            pendingPlanItems.add("• ${lab.displayName}")
+                            orderedItems.add(lab.name)
+                        }
+                    }
+                }
+                OrderType.IMAGING -> {
+                    val imaging = imagingOrders[item.orderKey]
+                    if (imaging != null) {
+                        // Check for duplicate
+                        val duplicate = checkDuplicateOrder(OrderType.IMAGING, imaging.name)
+                        if (duplicate != null) {
+                            warnings.add("${imaging.name}: duplicate order")
+                        } else {
+                            // Check metformin/contrast warning
+                            if (imaging.supportsContrast || item.details.contains("contrast")) {
+                                val metforminWarning = checkMetforminContrastWarning()
+                                if (metforminWarning != null) {
+                                    warnings.add("${imaging.name}: ${metforminWarning.message}")
+                                    hasHighSeverityWarning = true
+                                }
+                            }
+                            val order = Order(
+                                type = OrderType.IMAGING,
+                                name = imaging.name,
+                                displayName = imaging.displayName,
+                                details = "CPT: ${imaging.cptCode}",
+                                contrast = imaging.supportsContrast,
+                                bodyPart = imaging.bodyPart
+                            )
+                            orderQueue.add(order)
+                            pendingPlanItems.add("• ${imaging.displayName}")
+                            orderedItems.add(imaging.name)
+                        }
+                    }
+                }
+                OrderType.MEDICATION -> {
+                    // Order sets typically don't include medications, but support it
+                    Log.d(TAG, "Medication in order set not processed: ${item.orderKey}")
+                }
+            }
+        }
+
+        saveOrdersToPrefs()
+
+        // Build feedback message
+        val message = StringBuilder()
+        message.append("Ordered ${setInfo.name}: ")
+        message.append(orderedItems.joinToString(", "))
+
+        if (warnings.isNotEmpty()) {
+            message.append(". Warnings: ")
+            message.append(warnings.joinToString("; "))
+        }
+
+        // Show visual summary
+        showOrderSetSummary(setInfo, orderedItems, warnings)
+
+        // Speak feedback
+        speakFeedback(message.toString())
+
+        Log.d(TAG, "Order set ${setInfo.id}: ${orderedItems.size} orders placed, ${warnings.size} warnings")
+    }
+
+    /**
+     * Show visual summary of order set
+     */
+    private fun showOrderSetSummary(setInfo: OrderSetInfo, ordered: List<String>, warnings: List<String>) {
+        val content = StringBuilder()
+        content.append("═══════════════════════════\n")
+        content.append("📦 ${setInfo.displayName}\n")
+        content.append("═══════════════════════════\n\n")
+
+        content.append("✓ Orders Placed:\n")
+        ordered.forEach { content.append("  • $it\n") }
+
+        if (warnings.isNotEmpty()) {
+            content.append("\n⚠️ Warnings:\n")
+            warnings.forEach { content.append("  • $it\n") }
+        }
+
+        content.append("\n───────────────────────────\n")
+        content.append("Total: ${ordered.size} orders\n")
+        content.append("Say \"show orders\" to view queue")
+
+        showDataOverlay("Order Set", content.toString())
+    }
+
+    /**
+     * Show list of available order sets
+     */
+    private fun showOrderSetList() {
+        val content = StringBuilder()
+        content.append("═══════════════════════════\n")
+        content.append("📦 ORDER SETS\n")
+        content.append("═══════════════════════════\n\n")
+
+        orderSets.values.forEach { setInfo ->
+            val labCount = setInfo.items.count { it.type == OrderType.LAB }
+            val imagingCount = setInfo.items.count { it.type == OrderType.IMAGING }
+            content.append("• ${setInfo.name}\n")
+            content.append("  \"Order ${setInfo.aliases.first()}\"\n")
+            content.append("  $labCount labs")
+            if (imagingCount > 0) content.append(", $imagingCount imaging")
+            content.append("\n\n")
+        }
+
+        content.append("───────────────────────────\n")
+        content.append("Say \"what's in [name]\" to preview")
+
+        showDataOverlay("Order Sets", content.toString())
+        speakFeedback("Showing ${orderSets.size} order sets. Say order followed by the set name to place orders.")
+    }
+
+    /**
+     * Preview contents of an order set without ordering
+     */
+    private fun previewOrderSet(text: String) {
+        val setInfo = findOrderSet(text)
+        if (setInfo == null) {
+            speakFeedback("Order set not found. Say list order sets to see available options.")
+            return
+        }
+
+        val content = StringBuilder()
+        content.append("═══════════════════════════\n")
+        content.append("📦 ${setInfo.displayName}\n")
+        content.append("═══════════════════════════\n\n")
+        content.append("${setInfo.description}\n\n")
+
+        val labs = setInfo.items.filter { it.type == OrderType.LAB }
+        val imaging = setInfo.items.filter { it.type == OrderType.IMAGING }
+
+        if (labs.isNotEmpty()) {
+            content.append("🧪 Labs:\n")
+            labs.forEach { item ->
+                val lab = labOrders[item.orderKey]
+                content.append("  • ${lab?.displayName ?: item.orderKey}\n")
+            }
+            content.append("\n")
+        }
+
+        if (imaging.isNotEmpty()) {
+            content.append("📷 Imaging:\n")
+            imaging.forEach { item ->
+                val img = imagingOrders[item.orderKey]
+                content.append("  • ${img?.displayName ?: item.orderKey}\n")
+            }
+            content.append("\n")
+        }
+
+        content.append("───────────────────────────\n")
+        content.append("Say \"order ${setInfo.aliases.first()}\" to place")
+
+        showDataOverlay("Order Set Preview", content.toString())
+        speakFeedback("${setInfo.name} contains ${labs.size} labs and ${imaging.size} imaging studies. Say order ${setInfo.aliases.first()} to place these orders.")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // ENCOUNTER TIMER - Timer Control Functions
     // ═══════════════════════════════════════════════════════════════════════════
 
@@ -4120,6 +4519,18 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             |• "Cancel order" - Remove last order
             |• "Clear all orders" - Remove all orders
             |• "Yes" / "No" - Confirm/reject after warning
+            |
+            |📦 ORDER SETS (Batch Orders)
+            |• "Order chest pain workup" - ACS rule-out
+            |• "Order sepsis bundle" - Sepsis workup
+            |• "Order stroke workup" - CVA workup
+            |• "Order admission labs" - Standard admission
+            |• "Order preop labs" - Surgical clearance
+            |• "Order PE workup" - Pulmonary embolism
+            |• "Order DKA protocol" - Diabetic ketoacidosis
+            |• "Order pneumonia workup" - CAP workup
+            |• "List order sets" - Show all sets
+            |• "What's in [set]" - Preview set contents
             |
             |⏱️ ENCOUNTER TIMER
             |• "Start timer" - Begin timing encounter
@@ -6511,6 +6922,20 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
             lower.contains("what are the order") -> {
                 showOrderQueue()
             }
+            // List order sets: "list order sets", "show order sets", "available order sets"
+            lower.contains("order set") && (lower.contains("list") || lower.contains("show") || lower.contains("available") || lower.contains("what")) -> {
+                showOrderSetList()
+            }
+            // Preview order set: "what's in chest pain", "preview sepsis bundle", "show me chest pain workup"
+            (lower.contains("what's in") || lower.contains("whats in") || lower.contains("preview") ||
+             lower.contains("show me") && lower.contains("workup")) -> {
+                val setName = lower.replace(Regex("(what's in|whats in|preview|show me|workup)"), "").trim()
+                if (setName.isNotEmpty()) {
+                    previewOrderSet(setName)
+                } else {
+                    speakFeedback("Say what's in followed by the order set name, like what's in chest pain.")
+                }
+            }
             // Cancel order: "cancel order", "remove order", "remove last order"
             lower.contains("cancel order") || lower.contains("remove order") ||
             lower.contains("remove last order") || lower.contains("delete order") -> {
@@ -6535,14 +6960,16 @@ Differential: [Musculoskeletal/GERD/Anxiety/ACS ruled out]
                 val medText = lower.substringAfter("prescribe ").trim()
                 processMedicationOrder(medText)
             }
-            // Order command - determine type based on content
+            // Order command - determine type based on content (check order sets first)
             lower.startsWith("order ") -> {
                 val orderText = lower.substringAfter("order ").trim()
+                val orderSet = findOrderSet(orderText)
                 when {
+                    orderSet != null -> processOrderSet(orderSet)
                     isLabOrder(orderText) -> processLabOrder(orderText)
                     isImagingOrder(orderText) -> processImagingOrder(orderText)
                     isMedicationOrder(orderText) -> processMedicationOrder(orderText)
-                    else -> speakFeedback("Order not recognized. Try: order CBC, order chest x-ray, or prescribe amoxicillin.")
+                    else -> speakFeedback("Order not recognized. Try: order CBC, order chest pain workup, or prescribe amoxicillin.")
                 }
             }
             // ═══════════════════════════════════════════════════════════════════════════

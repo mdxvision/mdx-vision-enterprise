@@ -192,6 +192,14 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 - **Auto Note Integration**: Include encounter duration in clinical notes
 - **Billing Support**: Helps with time-based CPT code selection
 
+### Order Sets (NEW)
+- **Batch Ordering**: Place multiple orders with a single voice command
+- **12 Clinical Bundles**: Chest Pain, Sepsis, Stroke, CHF, COPD, DKA, PE, Pneumonia, UTI, Abdominal Pain, Admission Labs, Preop Labs
+- **Voice Commands**: "Order chest pain workup", "Order sepsis bundle", "Order stroke workup"
+- **Safety Checks**: Duplicate detection, metformin/contrast warnings
+- **Preview Sets**: "What's in chest pain" to see contents before ordering
+- **List Sets**: "List order sets" to see all available bundles
+
 ### EHR Integration
 - **FHIR R4**: Standard compliance for all endpoints
 - **Cerner**: Live sandbox connection
