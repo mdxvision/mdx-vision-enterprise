@@ -89,6 +89,21 @@
         .badge-success { background: var(--accent); color: white; }
         .badge-warning { background: #ED8B00; color: white; }
         .badge-primary { background: var(--primary); color: white; }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .page { width: 100%; min-height: auto; padding: 20px; margin: 0; }
+            .header { flex-direction: column; gap: 15px; }
+            .header-left { flex-direction: column; text-align: center; gap: 10px; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .grid-3 { grid-template-columns: 1fr; }
+            .footer-grid { grid-template-columns: 1fr; gap: 15px; }
+        }
+        @media (max-width: 480px) {
+            .page { padding: 15px; }
+            h1 { font-size: 1rem; }
+            h2 { font-size: 0.85rem; }
+        }
     </style>
 </head>
 <body>

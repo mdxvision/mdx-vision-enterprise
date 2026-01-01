@@ -94,6 +94,25 @@
         .cta-box { background: var(--dark); color: white; padding: 12px 20px; text-align: center; margin-top: 15px; }
         .cta-box p { color: rgba(255,255,255,0.8); font-size: 0.75rem; }
         .cta-box strong { color: var(--accent); }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .page { width: 100%; min-height: auto; padding: 20px; margin: 0; }
+            .header { flex-direction: column; text-align: center; gap: 10px; }
+            .logo { height: 30px; }
+            .tagline { text-align: center; }
+            .grid-2 { grid-template-columns: 1fr; }
+            .grid-4 { grid-template-columns: 1fr 1fr; }
+            .role-grid { grid-template-columns: repeat(3, 1fr); }
+            .footer { flex-direction: column; gap: 15px; text-align: center; }
+            .contact-info { flex-direction: column; gap: 10px; }
+        }
+        @media (max-width: 480px) {
+            .page { padding: 15px; }
+            .grid-4 { grid-template-columns: 1fr; }
+            .role-grid { grid-template-columns: repeat(2, 1fr); }
+            .stat-number { font-size: 1.25rem; }
+        }
     </style>
 </head>
 <body>

@@ -26,6 +26,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
 
 /**
  * MDx Vision - Main Activity
@@ -42,9 +44,11 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MDxVision"
         private const val PERMISSION_REQUEST_CODE = 1001
-        private const val EHR_PROXY_URL = "http://10.0.2.2:8002" // EHR Proxy on host machine
+        private const val EHR_PROXY_URL = "http://192.168.1.243:8002" // EHR Proxy - Mac IP for Galaxy S24
         // Test patient from Cerner sandbox
         private const val TEST_PATIENT_ID = "12724066"
+        // DEBUG: Set to true to skip TOTP authentication for testing
+        private const val DEBUG_SKIP_AUTH = true  // TODO: Set to false for production!
         // Offline cache
         private const val PREFS_NAME = "MDxVisionCache"
         private const val CACHE_PREFIX = "patient_"
@@ -72,6 +76,20 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_SESSION_TIMEOUT = "session_timeout_minutes"
         private const val DEFAULT_SESSION_TIMEOUT_MINUTES = 5
         private const val SESSION_CHECK_INTERVAL_MS = 30_000L // Check every 30 seconds
+        // Multi-language support
+        private const val PREF_LANGUAGE = "app_language"
+        private const val LANG_ENGLISH = "en"
+        private const val LANG_SPANISH = "es"
+        private const val LANG_MANDARIN = "zh"
+        private const val LANG_PORTUGUESE = "pt"
+        private const val LANG_RUSSIAN = "ru"
+        // Device authentication (TOTP + QR pairing)
+        private const val PREF_DEVICE_ID = "device_id"
+        private const val PREF_SESSION_TOKEN = "session_token"
+        private const val PREF_CLINICIAN_ID = "clinician_id"
+        private const val PREF_DEVICE_PAIRED = "device_paired"
+        private const val PREF_VOICEPRINT_ENROLLED = "voiceprint_enrolled"
+        private const val QR_SCAN_REQUEST_CODE = 1003
     }
 
     // Offline cache
@@ -82,9 +100,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var transcriptText: TextView
     private lateinit var patientDataText: TextView
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .connectionPool(okhttp3.ConnectionPool(0, 1, java.util.concurrent.TimeUnit.MILLISECONDS))
+        .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
         .build()
 
     // Documentation mode
@@ -93,7 +114,7 @@ class MainActivity : AppCompatActivity() {
 
     // Wake word and continuous listening (Patent Claims 1-4)
     private var isContinuousListening = false
-    private val WAKE_WORD = "hey mdx"
+    private val WAKE_WORD = "mdx"
     private var awaitingCommand = false
 
     // Live transcription via WebSocket (AssemblyAI/Deepgram)
@@ -144,6 +165,92 @@ class MainActivity : AppCompatActivity() {
     private var sessionCheckRunnable: Runnable? = null
     private var lockScreenOverlay: android.widget.FrameLayout? = null
 
+    // Device authentication (TOTP + voiceprint)
+    private var deviceId: String = ""
+    private var sessionToken: String? = null
+    private var clinicianId: String? = null
+    private var isDevicePaired: Boolean = false
+    private var isVoiceprintEnrolled: Boolean = false
+    private var pendingTotpCode: String? = null  // Accumulates spoken digits
+    private var isAwaitingTotpCode: Boolean = false
+    private var totpDigitBuffer: StringBuilder = StringBuilder()
+
+    // Voiceprint enrollment
+    private var isRecordingVoiceprint: Boolean = false
+    private var voiceprintEnrollmentPhrases: List<String> = listOf()
+    private var voiceprintRecordingIndex: Int = 0
+    private var voiceprintAudioSamples: MutableList<String> = mutableListOf()
+    private var voiceprintEnrollmentOverlay: android.widget.FrameLayout? = null
+    private var isAwaitingVoiceprintVerify: Boolean = false
+    private var voiceprintVerifyCallback: ((Boolean) -> Unit)? = null
+
+    // Proximity sensor for auto-lock when glasses removed
+    private var proximitySensor: android.hardware.Sensor? = null
+    private var sensorManager: android.hardware.SensorManager? = null
+    private var isGlassesOnFace: Boolean = true
+
+    // Multi-language support (English, Spanish, Mandarin, Portuguese, Russian)
+    private var currentLanguage: String = LANG_ENGLISH
+    private var currentLocale: Locale = Locale.US
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var isAmbientMode: Boolean = false  // Continuous background listening
+    private var ambientTranscriptBuffer: StringBuilder = StringBuilder()
+    private var ambientStartTime: Long = 0L
+    private val extractedEntities = AmbientClinicalEntities()
+    private var aciOverlay: android.widget.FrameLayout? = null
+    private var aciEntitiesText: TextView? = null
+    private var aciTranscriptText: TextView? = null
+    private var lastEntityUpdateTime: Long = 0L
+    private val ENTITY_UPDATE_DEBOUNCE_MS = 500L  // Debounce entity extraction
+
+    // Clinical entity storage for ACI
+    data class AmbientClinicalEntities(
+        val chiefComplaints: MutableList<String> = mutableListOf(),
+        val symptoms: MutableList<String> = mutableListOf(),
+        val medications: MutableList<String> = mutableListOf(),
+        val allergiesMentioned: MutableList<String> = mutableListOf(),
+        val vitalsMentioned: MutableMap<String, String> = mutableMapOf(),
+        val medicalHistory: MutableList<String> = mutableListOf(),
+        val socialHistory: MutableList<String> = mutableListOf(),
+        val familyHistory: MutableList<String> = mutableListOf(),
+        val reviewOfSystems: MutableMap<String, MutableList<String>> = mutableMapOf(),
+        val physicalExamFindings: MutableList<String> = mutableListOf(),
+        val assessments: MutableList<String> = mutableListOf(),
+        val plans: MutableList<String> = mutableListOf(),
+        val speakerSegments: MutableList<SpeakerSegment> = mutableListOf()
+    ) {
+        fun clear() {
+            chiefComplaints.clear()
+            symptoms.clear()
+            medications.clear()
+            allergiesMentioned.clear()
+            vitalsMentioned.clear()
+            medicalHistory.clear()
+            socialHistory.clear()
+            familyHistory.clear()
+            reviewOfSystems.clear()
+            physicalExamFindings.clear()
+            assessments.clear()
+            plans.clear()
+            speakerSegments.clear()
+        }
+
+        fun hasEntities(): Boolean {
+            return chiefComplaints.isNotEmpty() || symptoms.isNotEmpty() ||
+                   medications.isNotEmpty() || vitalsMentioned.isNotEmpty() ||
+                   assessments.isNotEmpty() || plans.isNotEmpty()
+        }
+    }
+
+    data class SpeakerSegment(
+        val speaker: String,  // "Patient", "Clinician", "Unknown"
+        val text: String,
+        val timestamp: Long
+    )
+
     // Voice note editing - edit history for undo functionality
     private val editHistory = mutableListOf<String>()
     private val MAX_EDIT_HISTORY = 10
@@ -154,6 +261,447 @@ class MainActivity : AppCompatActivity() {
         "objective" to listOf("objective", "exam", "physical", "vitals", "physical exam"),
         "assessment" to listOf("assessment", "diagnosis", "impression", "dx", "diagnoses"),
         "plan" to listOf("plan", "treatment", "recommendations", "rx", "orders")
+    )
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MULTI-LANGUAGE SUPPORT - Command translations
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Spanish command mappings (Spanish phrase -> English command keyword)
+    private val spanishCommands = mapOf(
+        // Patient commands
+        "cargar paciente" to "load patient",
+        "buscar paciente" to "find patient",
+        "escanear pulsera" to "scan wristband",
+        "resumen del paciente" to "patient summary",
+        "dime sobre el paciente" to "tell me about patient",
+        "información del paciente" to "brief me",
+
+        // Data display commands
+        "mostrar signos vitales" to "show vitals",
+        "mostrar alergias" to "show allergies",
+        "mostrar medicamentos" to "show meds",
+        "mostrar laboratorios" to "show labs",
+        "mostrar procedimientos" to "show procedures",
+        "mostrar inmunizaciones" to "show immunizations",
+        "mostrar condiciones" to "show conditions",
+        "mostrar planes de cuidado" to "show care plans",
+        "notas clínicas" to "clinical notes",
+
+        // Documentation commands
+        "iniciar nota" to "start note",
+        "terminar nota" to "stop note",
+        "guardar nota" to "save note",
+        "enviar a historia clínica" to "push to ehr",
+        "editar nota" to "edit note",
+        "restaurar nota" to "reset note",
+
+        // Transcription commands
+        "transcripción en vivo" to "live transcribe",
+        "iniciar transcripción" to "start transcription",
+        "detener transcripción" to "stop transcription",
+        "generar nota" to "generate note",
+        "volver a grabar" to "re-record",
+
+        // Navigation and control
+        "cerrar" to "close",
+        "volver" to "go back",
+        "ayuda" to "help",
+        "comandos" to "show commands",
+        "dejar de escuchar" to "stop listening",
+        "silencio" to "mute",
+        "desbloquear" to "unlock",
+        "bloquear sesión" to "lock session",
+
+        // Note sections (Spanish to English)
+        "subjetivo" to "subjective",
+        "objetivo" to "objective",
+        "evaluación" to "assessment",
+        "diagnóstico" to "diagnosis",
+        "tratamiento" to "plan",
+
+        // SOAP editing
+        "cambiar" to "change",
+        "agregar a" to "add to",
+        "borrar última oración" to "delete last sentence",
+        "deshacer" to "undo",
+        "limpiar" to "clear",
+
+        // Orders
+        "ordenar" to "order",
+        "laboratorios" to "labs",
+        "hemograma" to "cbc",
+        "química sanguínea" to "cmp",
+        "análisis de orina" to "ua",
+        "radiografía" to "xray",
+        "radiografía de tórax" to "chest xray",
+        "tomografía" to "ct",
+        "resonancia" to "mri",
+        "mostrar órdenes" to "show orders",
+        "cancelar orden" to "cancel order",
+
+        // Handoff and discharge
+        "reporte de entrega" to "handoff report",
+        "resumen de alta" to "discharge summary",
+        "instrucciones de alta" to "discharge instructions",
+        "leer alta" to "read discharge",
+
+        // Checklists
+        "mostrar listas" to "show checklists",
+        "iniciar lista" to "start checklist",
+        "marcar" to "check",
+        "marcar todo" to "check all",
+
+        // Timer
+        "iniciar temporizador" to "start timer",
+        "detener temporizador" to "stop timer",
+        "cuánto tiempo" to "how long",
+
+        // Medical calculator
+        "calcular" to "calculate",
+        "índice de masa corporal" to "bmi",
+        "tasa de filtración" to "egfr",
+        "calculadora médica" to "medical calculator"
+    )
+
+    // Spanish section aliases
+    private val spanishSectionAliases = mapOf(
+        "subjective" to listOf("subjetivo", "queja principal", "historia", "motivo de consulta"),
+        "objective" to listOf("objetivo", "examen", "físico", "signos vitales", "examen físico"),
+        "assessment" to listOf("evaluación", "diagnóstico", "impresión", "dx"),
+        "plan" to listOf("plan", "tratamiento", "recomendaciones", "indicaciones")
+    )
+
+    // Russian command mappings (Russian phrase -> English command keyword)
+    private val russianCommands = mapOf(
+        // Patient commands
+        "загрузить пациента" to "load patient",
+        "найти пациента" to "find patient",
+        "сканировать браслет" to "scan wristband",
+        "информация о пациенте" to "patient summary",
+        "расскажи о пациенте" to "tell me about patient",
+        "краткая информация" to "brief me",
+
+        // Data display commands
+        "показать витальные" to "show vitals",
+        "показать жизненные показатели" to "show vitals",
+        "показать аллергии" to "show allergies",
+        "показать лекарства" to "show meds",
+        "показать медикаменты" to "show meds",
+        "показать анализы" to "show labs",
+        "показать лаборатории" to "show labs",
+        "показать процедуры" to "show procedures",
+        "показать прививки" to "show immunizations",
+        "показать вакцинации" to "show immunizations",
+        "показать состояния" to "show conditions",
+        "показать диагнозы" to "show conditions",
+        "показать план лечения" to "show care plans",
+        "клинические записи" to "clinical notes",
+
+        // Documentation commands
+        "начать запись" to "start note",
+        "начать заметку" to "start note",
+        "закончить запись" to "stop note",
+        "сохранить запись" to "save note",
+        "сохранить заметку" to "save note",
+        "отправить в историю болезни" to "push to ehr",
+        "редактировать запись" to "edit note",
+        "сбросить запись" to "reset note",
+
+        // Transcription commands
+        "живая транскрипция" to "live transcribe",
+        "начать транскрипцию" to "start transcription",
+        "остановить транскрипцию" to "stop transcription",
+        "создать заметку" to "generate note",
+        "перезаписать" to "re-record",
+
+        // Navigation and control
+        "закрыть" to "close",
+        "назад" to "go back",
+        "помощь" to "help",
+        "команды" to "show commands",
+        "перестать слушать" to "stop listening",
+        "молчать" to "mute",
+        "разблокировать" to "unlock",
+        "заблокировать сессию" to "lock session",
+
+        // Note sections (Russian to English)
+        "субъективное" to "subjective",
+        "объективное" to "objective",
+        "оценка" to "assessment",
+        "диагноз" to "diagnosis",
+        "лечение" to "plan",
+
+        // SOAP editing
+        "изменить" to "change",
+        "добавить к" to "add to",
+        "удалить последнее предложение" to "delete last sentence",
+        "отменить" to "undo",
+        "очистить" to "clear",
+
+        // Orders
+        "назначить" to "order",
+        "заказать" to "order",
+        "общий анализ крови" to "cbc",
+        "биохимия крови" to "cmp",
+        "анализ мочи" to "ua",
+        "рентген" to "xray",
+        "рентген грудной клетки" to "chest xray",
+        "компьютерная томография" to "ct",
+        "мрт" to "mri",
+        "показать назначения" to "show orders",
+        "отменить назначение" to "cancel order",
+
+        // Handoff and discharge
+        "отчёт о передаче" to "handoff report",
+        "выписка" to "discharge summary",
+        "инструкции при выписке" to "discharge instructions",
+        "прочитать выписку" to "read discharge",
+
+        // Checklists
+        "показать чек-листы" to "show checklists",
+        "начать чек-лист" to "start checklist",
+        "отметить" to "check",
+        "отметить всё" to "check all",
+
+        // Timer
+        "запустить таймер" to "start timer",
+        "остановить таймер" to "stop timer",
+        "сколько времени" to "how long",
+
+        // Medical calculator
+        "рассчитать" to "calculate",
+        "индекс массы тела" to "bmi",
+        "скорость клубочковой фильтрации" to "egfr",
+        "медицинский калькулятор" to "medical calculator"
+    )
+
+    // Russian section aliases
+    private val russianSectionAliases = mapOf(
+        "subjective" to listOf("субъективное", "жалобы", "анамнез", "история болезни"),
+        "objective" to listOf("объективное", "осмотр", "физикальное", "витальные"),
+        "assessment" to listOf("оценка", "диагноз", "заключение"),
+        "plan" to listOf("план", "лечение", "рекомендации", "назначения")
+    )
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // AMBIENT CLINICAL INTELLIGENCE - Entity Extraction Patterns
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Symptom keywords for automatic detection
+    private val symptomPatterns = listOf(
+        // Pain
+        "pain", "ache", "aching", "hurts", "hurting", "sore", "soreness", "tender", "tenderness",
+        "sharp pain", "dull pain", "burning", "throbbing", "stabbing", "cramping", "cramps",
+        // General symptoms
+        "fever", "chills", "fatigue", "tired", "weakness", "malaise", "weight loss", "weight gain",
+        "night sweats", "loss of appetite", "nausea", "vomiting", "diarrhea", "constipation",
+        // Respiratory
+        "cough", "coughing", "shortness of breath", "difficulty breathing", "wheezing", "congestion",
+        "runny nose", "sore throat", "hoarseness", "chest tightness",
+        // Cardiac
+        "chest pain", "palpitations", "racing heart", "irregular heartbeat", "swelling", "edema",
+        // Neurological
+        "headache", "dizziness", "lightheaded", "vertigo", "numbness", "tingling", "weakness",
+        "confusion", "memory problems", "seizure", "tremor", "balance problems",
+        // GI
+        "abdominal pain", "stomach pain", "bloating", "heartburn", "reflux", "difficulty swallowing",
+        "blood in stool", "black stool", "yellow skin", "jaundice",
+        // Musculoskeletal
+        "joint pain", "back pain", "neck pain", "stiffness", "swollen joints", "limited range",
+        // Skin
+        "rash", "itching", "hives", "bruising", "wound", "lesion", "discoloration",
+        // Urinary
+        "frequent urination", "painful urination", "blood in urine", "incontinence",
+        // Mental health
+        "anxiety", "depression", "insomnia", "trouble sleeping", "stress"
+    )
+
+    // Chief complaint trigger phrases
+    private val chiefComplaintTriggers = listOf(
+        "i came in because", "i'm here because", "my main problem is", "what brought me in",
+        "i've been having", "i've been experiencing", "started having", "been dealing with",
+        "the reason i'm here", "my concern is", "i'm worried about", "bothering me",
+        "chief complaint", "presenting with", "complains of", "reports"
+    )
+
+    // Medication mention patterns
+    private val medicationPatterns = listOf(
+        // Common medications
+        "aspirin", "tylenol", "acetaminophen", "ibuprofen", "advil", "motrin", "naproxen", "aleve",
+        "lisinopril", "metoprolol", "amlodipine", "losartan", "hydrochlorothiazide", "atenolol",
+        "metformin", "glipizide", "insulin", "januvia", "ozempic", "trulicity",
+        "atorvastatin", "lipitor", "simvastatin", "pravastatin", "rosuvastatin", "crestor",
+        "omeprazole", "prilosec", "pantoprazole", "protonix", "famotidine", "pepcid",
+        "levothyroxine", "synthroid", "prednisone", "gabapentin", "lyrica", "tramadol",
+        "hydrocodone", "oxycodone", "morphine", "percocet", "vicodin", "norco",
+        "amoxicillin", "azithromycin", "zithromax", "ciprofloxacin", "doxycycline",
+        "sertraline", "zoloft", "fluoxetine", "prozac", "escitalopram", "lexapro",
+        "alprazolam", "xanax", "lorazepam", "ativan", "clonazepam", "klonopin",
+        "warfarin", "coumadin", "eliquis", "xarelto", "plavix", "clopidogrel",
+        // Trigger phrases
+        "taking", "prescribed", "medication", "medicine", "drug", "pills", "tablet", "capsule",
+        "started on", "switched to", "stopped taking", "ran out of", "refill"
+    )
+
+    // Allergy mention patterns
+    private val allergyPatterns = listOf(
+        "allergic to", "allergy to", "allergies", "can't take", "react to", "reaction to",
+        "breaks out", "anaphylaxis", "hives from", "swelling from", "rash from"
+    )
+
+    // Vital sign patterns (for extraction from conversation)
+    private val vitalPatterns = mapOf(
+        "blood_pressure" to listOf("blood pressure", "bp", "pressure is", "pressure was", "systolic", "diastolic"),
+        "heart_rate" to listOf("heart rate", "pulse", "pulse is", "pulse was", "beats per minute", "bpm"),
+        "temperature" to listOf("temperature", "temp", "fever of", "running a fever"),
+        "respiratory_rate" to listOf("respiratory rate", "breathing rate", "breaths per minute"),
+        "oxygen" to listOf("oxygen", "o2 sat", "saturation", "pulse ox", "spo2"),
+        "weight" to listOf("weight", "weigh", "pounds", "kilograms", "kg", "lbs"),
+        "height" to listOf("height", "tall", "feet", "inches")
+    )
+
+    // Medical history triggers
+    private val medicalHistoryTriggers = listOf(
+        "history of", "diagnosed with", "had a", "previous", "past medical", "pmh",
+        "surgery for", "hospitalized for", "treated for"
+    )
+
+    // Social history triggers
+    private val socialHistoryTriggers = listOf(
+        "smoke", "smoking", "cigarettes", "tobacco", "vape", "vaping",
+        "drink", "drinking", "alcohol", "beer", "wine", "liquor",
+        "drugs", "marijuana", "cannabis", "cocaine", "heroin", "opioids",
+        "exercise", "diet", "occupation", "work", "job", "married", "single", "divorced",
+        "live alone", "live with", "caregiver", "support system"
+    )
+
+    // Family history triggers
+    private val familyHistoryTriggers = listOf(
+        "family history", "mother had", "father had", "parents", "siblings", "brother", "sister",
+        "grandmother", "grandfather", "runs in the family", "hereditary", "genetic"
+    )
+
+    // Review of systems categories
+    private val rosCategories = mapOf(
+        "constitutional" to listOf("fever", "chills", "weight", "fatigue", "malaise", "appetite"),
+        "heent" to listOf("headache", "vision", "hearing", "ear", "nose", "throat", "sinus"),
+        "cardiovascular" to listOf("chest pain", "palpitations", "edema", "leg swelling"),
+        "respiratory" to listOf("cough", "shortness of breath", "wheezing", "sputum"),
+        "gastrointestinal" to listOf("nausea", "vomiting", "diarrhea", "constipation", "abdominal"),
+        "genitourinary" to listOf("urination", "frequency", "urgency", "dysuria", "hematuria"),
+        "musculoskeletal" to listOf("joint", "muscle", "back pain", "weakness", "stiffness"),
+        "neurological" to listOf("numbness", "tingling", "weakness", "dizziness", "seizure"),
+        "psychiatric" to listOf("depression", "anxiety", "sleep", "mood", "stress"),
+        "skin" to listOf("rash", "itching", "lesion", "wound", "discoloration")
+    )
+
+    // Physical exam triggers
+    private val physicalExamTriggers = listOf(
+        "on exam", "examination shows", "physical exam", "upon examination",
+        "lungs are", "heart sounds", "abdomen is", "extremities", "neurologically",
+        "no tenderness", "tenderness to", "normal", "abnormal", "unremarkable"
+    )
+
+    // Assessment/diagnosis triggers
+    private val assessmentTriggers = listOf(
+        "i think", "likely", "probably", "appears to be", "consistent with", "suggestive of",
+        "differential includes", "diagnosis", "assessment", "impression", "most likely"
+    )
+
+    // Plan triggers
+    private val planTriggers = listOf(
+        "i'm going to", "we'll", "let's", "plan is", "i recommend", "i suggest",
+        "order", "prescribe", "start you on", "refer to", "follow up", "come back",
+        "blood work", "imaging", "x-ray", "ct scan", "mri", "ultrasound"
+    )
+
+    // Speaker identification patterns
+    private val patientSpeakerPatterns = listOf(
+        "i have", "i feel", "i've been", "my", "i'm", "i am", "i can't", "i don't",
+        "it hurts", "it started", "for me", "bothering me",
+        "i noticed", "i woke up", "i took", "i tried", "i think",
+        "fever", "pain", "hurts", "ache", "sore", "tired", "nausea",
+        "for days", "for weeks", "since yesterday", "last night", "this morning"
+    )
+
+    private val clinicianSpeakerPatterns = listOf(
+        "let me", "i'm going to", "we need to", "i'll order", "i recommend",
+        "your labs", "your vitals", "examination shows", "on exam",
+        "looking at", "i see", "i notice", "deep breath", "breathe in", "breathe out",
+        "follow my", "look at me", "squeeze my", "can you", "does this", "any pain when"
+    )
+
+    // Voice commands to filter from ACI transcript (these are not clinical content)
+    private val aciVoiceCommands = listOf(
+        "stop ambient", "end ambient", "finish ambient", "stop listening",
+        "cancel ambient", "discard", "never mind",
+        "generate note", "create note", "make note", "document this",
+        "hey mdx", "mdx mode", "stop", "delete", "cancel",
+        "show entities", "view transcript", "save note",
+        "start ambient", "ambient mode"
+    )
+
+    // Track last speaker for context-aware identification
+    private var lastIdentifiedSpeaker: String = "Clinician"
+
+    // TTS feedback messages in multiple languages
+    private val ttsMessages = mapOf(
+        "patient_loaded" to mapOf(
+            LANG_ENGLISH to "Patient loaded",
+            LANG_SPANISH to "Paciente cargado",
+            LANG_RUSSIAN to "Пациент загружен"
+        ),
+        "no_patient" to mapOf(
+            LANG_ENGLISH to "No patient loaded. Say load patient first.",
+            LANG_SPANISH to "No hay paciente cargado. Diga cargar paciente primero.",
+            LANG_RUSSIAN to "Пациент не загружен. Скажите загрузить пациента."
+        ),
+        "recording_started" to mapOf(
+            LANG_ENGLISH to "Recording started",
+            LANG_SPANISH to "Grabación iniciada",
+            LANG_RUSSIAN to "Запись начата"
+        ),
+        "recording_stopped" to mapOf(
+            LANG_ENGLISH to "Recording stopped",
+            LANG_SPANISH to "Grabación detenida",
+            LANG_RUSSIAN to "Запись остановлена"
+        ),
+        "note_saved" to mapOf(
+            LANG_ENGLISH to "Note saved",
+            LANG_SPANISH to "Nota guardada",
+            LANG_RUSSIAN to "Запись сохранена"
+        ),
+        "note_generated" to mapOf(
+            LANG_ENGLISH to "Note generated",
+            LANG_SPANISH to "Nota generada",
+            LANG_RUSSIAN to "Запись создана"
+        ),
+        "voice_commands_off" to mapOf(
+            LANG_ENGLISH to "Voice commands disabled",
+            LANG_SPANISH to "Comandos de voz desactivados",
+            LANG_RUSSIAN to "Голосовые команды отключены"
+        ),
+        "language_changed" to mapOf(
+            LANG_ENGLISH to "Language changed to English",
+            LANG_SPANISH to "Idioma cambiado a español",
+            LANG_RUSSIAN to "Язык изменён на русский"
+        ),
+        "listening" to mapOf(
+            LANG_ENGLISH to "Listening",
+            LANG_SPANISH to "Escuchando",
+            LANG_RUSSIAN to "Слушаю"
+        ),
+        "critical_allergy" to mapOf(
+            LANG_ENGLISH to "Warning! Critical allergy:",
+            LANG_SPANISH to "¡Advertencia! Alergia crítica:",
+            LANG_RUSSIAN to "Внимание! Критическая аллергия:"
+        ),
+        "critical_vital" to mapOf(
+            LANG_ENGLISH to "Alert! Critical vital sign:",
+            LANG_SPANISH to "¡Alerta! Signo vital crítico:",
+            LANG_RUSSIAN to "Тревога! Критический показатель:"
+        )
     )
 
     // Macro templates for quick insertion
@@ -1800,6 +2348,10 @@ SOFA Score: [X]
         loadClinicianName()
         loadSpeechFeedbackSetting()
         loadSessionTimeoutSetting()
+        loadLanguagePreference()  // Multi-language support
+
+        // Initialize device authentication (TOTP + proximity lock)
+        initializeDeviceAuth()
 
         // Start session timeout checker for HIPAA compliance
         startSessionTimeoutChecker()
@@ -1830,6 +2382,12 @@ SOFA Score: [X]
         }
 
         checkPermissions()
+
+        // Auto-load test patient on Samsung devices
+        if (android.os.Build.MANUFACTURER.lowercase().contains("samsung")) {
+            // Samsung needs quick endpoint due to network restrictions
+            testNetworkConnection()
+        }
     }
 
     // Data overlay for showing patient info
@@ -1882,7 +2440,7 @@ SOFA Score: [X]
 
         // Define all voice commands
         val commands = listOf(
-            CommandButton("HEY MDX MODE", 0xFF3B82F6.toInt()) { toggleContinuousListening() },
+            CommandButton("MDX MODE", 0xFF3B82F6.toInt()) { toggleContinuousListening() },
             CommandButton("LOAD PATIENT", 0xFF6366F1.toInt()) { fetchPatientData(TEST_PATIENT_ID) },
             CommandButton("FIND PATIENT", 0xFF8B5CF6.toInt()) { promptFindPatient() },
             CommandButton("SCAN WRISTBAND", 0xFFEC4899.toInt()) { startBarcodeScanner() },
@@ -1941,8 +2499,8 @@ SOFA Score: [X]
         isContinuousListening = !isContinuousListening
 
         if (isContinuousListening) {
-            statusText.text = "Hey MDx - Listening"
-            transcriptText.text = "Say 'Hey MDx' then your command"
+            statusText.text = "Listening..."
+            transcriptText.text = "Just speak naturally"
             awaitingCommand = false
             startVoiceRecognition()
         } else {
@@ -2322,17 +2880,22 @@ SOFA Score: [X]
             runOnUiThread {
                 statusText.text = "TRANSCRIBING ($provider)"
                 Log.d(TAG, "Live transcription started: $sessionId via $provider")
-                speakFeedback("Recording started")
+                // Don't speak during transcription - mic picks it up
             }
         }
 
         audioStreamingService?.onDisconnected = { fullTranscript ->
             runOnUiThread {
                 Log.d(TAG, "Transcription ended, ${fullTranscript.length} chars")
-                speakFeedback("Recording stopped")
+                isLiveTranscribing = false
                 // Offer to generate note from transcript
                 if (fullTranscript.isNotEmpty()) {
                     showTranscriptionCompleteOverlay(fullTranscript)
+                }
+                // Restart voice recognition for "generate note" command
+                if (isContinuousListening) {
+                    statusText.text = "Listening..."
+                    startVoiceRecognition()
                 }
             }
         }
@@ -2370,7 +2933,11 @@ SOFA Score: [X]
     private fun stopLiveTranscription() {
         isLiveTranscribing = false
         audioStreamingService?.stopStreaming()
-        statusText.text = "MDx Vision"
+        statusText.text = "Listening..."
+        // Restart voice recognition for commands after transcription
+        if (isContinuousListening) {
+            startVoiceRecognition()
+        }
     }
 
     private fun showLiveTranscriptionOverlay() {
@@ -2458,6 +3025,1224 @@ SOFA Score: [X]
         dataOverlay = null
         liveTranscriptText = null
         liveTranscriptScrollView = null
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // AMBIENT CLINICAL INTELLIGENCE (ACI) - Functions
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Toggle Ambient Clinical Intelligence mode
+     * In this mode, the app continuously listens and auto-extracts clinical entities
+     */
+    private fun toggleAmbientMode() {
+        if (isAmbientMode) {
+            stopAmbientMode()
+        } else {
+            startAmbientMode()
+        }
+    }
+
+    /**
+     * Start Ambient Clinical Intelligence mode
+     * Uses local Android speech recognition for reliability
+     */
+    private fun startAmbientMode() {
+        if (currentPatientData == null) {
+            speakFeedback("Load a patient first before starting ambient mode")
+            Toast.makeText(this, "Load patient first", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isAmbientMode = true
+        ambientStartTime = System.currentTimeMillis()
+        ambientTranscriptBuffer.clear()
+        extractedEntities.clear()
+        lastIdentifiedSpeaker = "Clinician"  // Reset speaker tracking
+
+        statusText.text = "🎙️ AMBIENT MODE"
+        transcriptText.text = "Listening to encounter..."
+
+        // Show ACI overlay
+        showAciOverlay()
+
+        // Use local Android speech recognition for ambient mode (more reliable)
+        // This reuses the existing continuous listening infrastructure
+        speakFeedback("Ambient mode started. Say stop ambient when finished.")
+        Log.d(TAG, "ACI: Ambient mode started with local speech recognition")
+
+        // Start continuous voice recognition for ambient capture
+        startAmbientVoiceRecognition()
+    }
+
+    /**
+     * Start voice recognition specifically for ambient mode
+     */
+    private fun startAmbientVoiceRecognition() {
+        if (!isAmbientMode) return
+
+        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                     android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, currentLanguage)
+            // Longer speech timeout for ambient listening
+            putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+            putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+        }
+
+        try {
+            speechRecognizer?.startListening(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "ACI: Failed to start ambient recognition: ${e.message}")
+        }
+    }
+
+    /**
+     * Stop Ambient Clinical Intelligence mode and optionally generate note
+     */
+    private fun stopAmbientMode(generateNote: Boolean = true) {
+        if (!isAmbientMode) return
+
+        isAmbientMode = false
+        audioStreamingService?.stopStreaming()
+
+        val duration = (System.currentTimeMillis() - ambientStartTime) / 1000 / 60
+        val durationSeconds = (System.currentTimeMillis() - ambientStartTime) / 1000
+        Log.d(TAG, "ACI: Ambient mode stopped after ${duration}min (${durationSeconds}s)")
+
+        if (generateNote) {
+            if (extractedEntities.hasEntities()) {
+                // Generate SOAP note from extracted entities
+                generateAciNote()
+            } else if (ambientTranscriptBuffer.isNotEmpty()) {
+                // Generate from raw transcript if we have any
+                hideAciOverlay()
+                statusText.text = "Generating note from transcript..."
+                generateClinicalNote(ambientTranscriptBuffer.toString())
+            } else {
+                // No transcript captured
+                hideAciOverlay()
+                statusText.text = "MDx Vision"
+                transcriptText.text = "No transcript captured (${durationSeconds}s session)"
+                speakFeedback("No transcript captured. Try speaking clearly or check connection.")
+                Toast.makeText(this, "No transcript captured - check proxy connection", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            hideAciOverlay()
+            statusText.text = "MDx Vision"
+            transcriptText.text = "Ambient mode cancelled"
+        }
+
+        if (generateNote && (extractedEntities.hasEntities() || ambientTranscriptBuffer.isNotEmpty())) {
+            speakFeedback("Ambient mode ended. Note generated.")
+        } else {
+            speakFeedback("Ambient mode ended")
+        }
+
+        // Restart voice recognition
+        if (isContinuousListening) {
+            startVoiceRecognition()
+        }
+    }
+
+    /**
+     * Process transcript in ambient mode - extract clinical entities
+     */
+    private fun processAmbientTranscript(result: AudioStreamingService.TranscriptionResult) {
+        if (!isAmbientMode) return
+
+        val text = result.text
+        val isFinal = result.isFinal
+        val lower = text.lowercase()
+
+        // ═══ CHECK FOR VOICE COMMANDS DURING AMBIENT MODE ═══
+        if (isFinal) {
+            when {
+                lower.contains("stop ambient") || lower.contains("end ambient") ||
+                lower.contains("finish ambient") || lower.contains("stop listening") -> {
+                    Log.d(TAG, "ACI: Stop command detected: $text")
+                    stopAmbientMode(true)
+                    return
+                }
+                lower.contains("cancel ambient") || lower.contains("discard ambient") ||
+                lower.contains("never mind") || lower.contains("cancel") -> {
+                    Log.d(TAG, "ACI: Cancel command detected: $text")
+                    stopAmbientMode(false)
+                    hideAciOverlay()
+                    return
+                }
+                lower.contains("generate note") || lower.contains("create note") ||
+                lower.contains("make note") || lower.contains("document this") -> {
+                    Log.d(TAG, "ACI: Generate note command detected: $text")
+                    stopAmbientMode(true)
+                    return
+                }
+                lower.contains("show entities") || lower.contains("what did you detect") ||
+                lower.contains("what did you hear") || lower.contains("show summary") -> {
+                    Log.d(TAG, "ACI: Show entities command detected: $text")
+                    showAciEntities()
+                    return
+                }
+            }
+        }
+
+        // Add to buffer (skip if it was a command)
+        if (isFinal && text.isNotBlank()) {
+            if (ambientTranscriptBuffer.isNotEmpty()) {
+                ambientTranscriptBuffer.append(" ")
+            }
+
+            // Add speaker prefix if available
+            val speaker = identifySpeaker(text)
+            val segment = SpeakerSegment(speaker, text, System.currentTimeMillis())
+            extractedEntities.speakerSegments.add(segment)
+
+            ambientTranscriptBuffer.append("[$speaker] $text")
+
+            // Extract entities with debouncing
+            val now = System.currentTimeMillis()
+            if (now - lastEntityUpdateTime > ENTITY_UPDATE_DEBOUNCE_MS) {
+                extractClinicalEntities(text)
+                lastEntityUpdateTime = now
+            }
+
+            // Update display
+            updateAciDisplay()
+        }
+
+        // Update live transcript
+        aciTranscriptText?.text = if (isFinal) {
+            ambientTranscriptBuffer.toString().takeLast(500)  // Show last 500 chars
+        } else {
+            "${ambientTranscriptBuffer.toString().takeLast(400)}\n🎤 $text"
+        }
+    }
+
+    /**
+     * Filter out voice commands from ACI transcript
+     * Returns cleaned text with commands removed, or null if entire text was a command
+     */
+    private fun filterVoiceCommandsFromTranscript(text: String): String? {
+        val lower = text.lowercase().trim()
+
+        // Check if entire text is just a voice command
+        for (cmd in aciVoiceCommands) {
+            if (lower == cmd || lower.startsWith("$cmd ") ||
+                lower.endsWith(" $cmd") || lower.contains(" $cmd ")) {
+                // Entire segment is a command or contains only commands
+                if (lower.length < cmd.length + 10) {
+                    Log.d(TAG, "ACI: Filtered voice command: $text")
+                    return null
+                }
+            }
+        }
+
+        // Try to remove command phrases from text
+        var cleaned = text
+        for (cmd in aciVoiceCommands) {
+            val pattern = "(?i)\\b${Regex.escape(cmd)}\\b".toRegex()
+            cleaned = cleaned.replace(pattern, "").trim()
+        }
+
+        // Remove orphaned punctuation and extra spaces
+        cleaned = cleaned.replace(Regex("\\s+"), " ")
+                         .replace(Regex("^[\\s,\\.]+|[\\s,\\.]+$"), "")
+                         .trim()
+
+        // If nothing meaningful left, return null
+        if (cleaned.length < 3 || cleaned.split(" ").all { it.length < 2 }) {
+            return null
+        }
+
+        return cleaned
+    }
+
+    /**
+     * Identify speaker with improved context-aware detection
+     */
+    private fun identifySpeaker(text: String): String {
+        val lower = text.lowercase()
+
+        // Score based on patterns
+        var patientScore = 0
+        var clinicianScore = 0
+
+        // Count pattern matches with weights
+        for (pattern in patientSpeakerPatterns) {
+            if (lower.contains(pattern)) {
+                patientScore += if (pattern in listOf("i have", "i feel", "it hurts", "bothering me")) 3 else 1
+            }
+        }
+        for (pattern in clinicianSpeakerPatterns) {
+            if (lower.contains(pattern)) {
+                clinicianScore += if (pattern in listOf("i recommend", "i'll order", "examination shows", "on exam")) 3 else 1
+            }
+        }
+
+        // Questions typically come from clinician
+        if (lower.contains("?") || lower.startsWith("how") || lower.startsWith("when") ||
+            lower.startsWith("what") || lower.startsWith("where") || lower.startsWith("do you") ||
+            lower.startsWith("are you") || lower.startsWith("have you")) {
+            clinicianScore += 2
+        }
+
+        // First-person symptom descriptions are patient
+        if (Regex("\\bi (have|had|feel|felt|got|get|been|am|was|can't|cannot)\\b").containsMatchIn(lower)) {
+            patientScore += 2
+        }
+
+        // Responses that start with "yes" or "no" or "about" are typically patient answering
+        if (lower.startsWith("yes") || lower.startsWith("no") || lower.startsWith("about") ||
+            lower.startsWith("maybe") || lower.startsWith("sometimes") || lower.startsWith("since")) {
+            patientScore += 1
+        }
+
+        // Medical jargon = clinician
+        val medicalTerms = listOf("diagnosis", "prescribe", "medication", "dosage", "follow up",
+            "blood pressure", "heart rate", "examination", "recommend", "order labs")
+        if (medicalTerms.any { lower.contains(it) }) {
+            clinicianScore += 2
+        }
+
+        val identified = when {
+            patientScore > clinicianScore -> "Patient"
+            clinicianScore > patientScore -> "Clinician"
+            // If tied, alternate from last speaker (natural conversation flow)
+            lastIdentifiedSpeaker == "Clinician" -> "Patient"
+            else -> "Clinician"
+        }
+
+        lastIdentifiedSpeaker = identified
+        return identified
+    }
+
+    /**
+     * Extract clinical entities from text
+     */
+    // Common speech recognition errors for medical terms
+    private val medicalTermCorrections = mapOf(
+        "beaver" to "fever",
+        "beever" to "fever",
+        "feaver" to "fever",
+        "hedake" to "headache",
+        "head ache" to "headache",
+        "head egg" to "headache",
+        "stomach egg" to "stomach ache",
+        "coff" to "cough",
+        "coffin" to "coughing",
+        "nauseous" to "nausea",
+        "dizzy spell" to "dizziness",
+        "short of breath" to "shortness of breath",
+        "chest pains" to "chest pain",
+        "back pains" to "back pain",
+        "sore throw" to "sore throat",
+        "throw up" to "vomiting",
+        "threw up" to "vomited",
+        "diabetes" to "diabetes",
+        "die of beets" to "diabetes",
+        "high pretension" to "hypertension",
+        "high blood pressure" to "hypertension"
+    )
+
+    /**
+     * Correct common speech recognition errors for medical terms
+     */
+    private fun correctMedicalTerms(text: String): String {
+        var corrected = text.lowercase()
+        for ((wrong, right) in medicalTermCorrections) {
+            corrected = corrected.replace(wrong, right)
+        }
+        return corrected
+    }
+
+    private fun extractClinicalEntities(text: String) {
+        // Apply medical term corrections before extraction
+        val lower = correctMedicalTerms(text.lowercase())
+
+        // Extract chief complaints
+        for (trigger in chiefComplaintTriggers) {
+            if (lower.contains(trigger)) {
+                val complaint = extractPhraseAfter(lower, trigger)
+                if (complaint.isNotBlank() && complaint !in extractedEntities.chiefComplaints) {
+                    extractedEntities.chiefComplaints.add(complaint.take(100))
+                }
+            }
+        }
+
+        // Extract symptoms
+        for (symptom in symptomPatterns) {
+            if (lower.contains(symptom) && symptom !in extractedEntities.symptoms) {
+                extractedEntities.symptoms.add(symptom)
+            }
+        }
+
+        // Extract medications mentioned
+        for (med in medicationPatterns) {
+            if (lower.contains(med) && med.length > 3) {  // Skip trigger phrases
+                val normalized = med.replaceFirstChar { it.uppercase() }
+                if (normalized !in extractedEntities.medications) {
+                    extractedEntities.medications.add(normalized)
+                }
+            }
+        }
+
+        // Extract allergy mentions
+        for (pattern in allergyPatterns) {
+            if (lower.contains(pattern)) {
+                val allergy = extractPhraseAfter(lower, pattern)
+                if (allergy.isNotBlank() && allergy !in extractedEntities.allergiesMentioned) {
+                    extractedEntities.allergiesMentioned.add(allergy.take(50))
+                }
+            }
+        }
+
+        // Extract vitals mentioned
+        for ((vital, patterns) in vitalPatterns) {
+            for (pattern in patterns) {
+                if (lower.contains(pattern)) {
+                    val value = extractNumberAfter(lower, pattern)
+                    if (value.isNotBlank()) {
+                        extractedEntities.vitalsMentioned[vital] = value
+                    }
+                }
+            }
+        }
+
+        // Extract medical history
+        for (trigger in medicalHistoryTriggers) {
+            if (lower.contains(trigger)) {
+                val history = extractPhraseAfter(lower, trigger)
+                if (history.isNotBlank() && history !in extractedEntities.medicalHistory) {
+                    extractedEntities.medicalHistory.add(history.take(100))
+                }
+            }
+        }
+
+        // Extract social history
+        for (trigger in socialHistoryTriggers) {
+            if (lower.contains(trigger)) {
+                extractedEntities.socialHistory.add(trigger)
+            }
+        }
+
+        // Extract family history
+        for (trigger in familyHistoryTriggers) {
+            if (lower.contains(trigger)) {
+                val history = extractPhraseAfter(lower, trigger)
+                if (history.isNotBlank() && history !in extractedEntities.familyHistory) {
+                    extractedEntities.familyHistory.add(history.take(100))
+                }
+            }
+        }
+
+        // Categorize into review of systems
+        for ((category, keywords) in rosCategories) {
+            for (keyword in keywords) {
+                if (lower.contains(keyword)) {
+                    val rosList = extractedEntities.reviewOfSystems.getOrPut(category) { mutableListOf() }
+                    if (keyword !in rosList) {
+                        rosList.add(keyword)
+                    }
+                }
+            }
+        }
+
+        // Extract physical exam findings
+        for (trigger in physicalExamTriggers) {
+            if (lower.contains(trigger)) {
+                val finding = extractPhraseAfter(lower, trigger)
+                if (finding.isNotBlank() && finding !in extractedEntities.physicalExamFindings) {
+                    extractedEntities.physicalExamFindings.add(finding.take(100))
+                }
+            }
+        }
+
+        // Extract assessments
+        for (trigger in assessmentTriggers) {
+            if (lower.contains(trigger)) {
+                val assessment = extractPhraseAfter(lower, trigger)
+                if (assessment.isNotBlank() && assessment !in extractedEntities.assessments) {
+                    extractedEntities.assessments.add(assessment.take(100))
+                }
+            }
+        }
+
+        // Extract plans
+        for (trigger in planTriggers) {
+            if (lower.contains(trigger)) {
+                val plan = extractPhraseAfter(lower, trigger)
+                if (plan.isNotBlank() && plan !in extractedEntities.plans) {
+                    extractedEntities.plans.add(plan.take(100))
+                }
+            }
+        }
+    }
+
+    /**
+     * Extract phrase after a trigger word
+     */
+    private fun extractPhraseAfter(text: String, trigger: String): String {
+        val idx = text.indexOf(trigger)
+        if (idx < 0) return ""
+        val after = text.substring(idx + trigger.length).trim()
+        // Take up to first sentence end or 50 words
+        val endIdx = after.indexOfAny(charArrayOf('.', '?', '!', ','))
+        return if (endIdx > 0) {
+            after.substring(0, endIdx).trim()
+        } else {
+            after.split(" ").take(10).joinToString(" ")
+        }
+    }
+
+    /**
+     * Extract number after a pattern (for vitals)
+     */
+    private fun extractNumberAfter(text: String, pattern: String): String {
+        val idx = text.indexOf(pattern)
+        if (idx < 0) return ""
+        val after = text.substring(idx + pattern.length).trim()
+        val match = Regex("\\d+[./]?\\d*").find(after)
+        return match?.value ?: ""
+    }
+
+    /**
+     * Show ACI overlay with real-time entities
+     */
+    private fun showAciOverlay() {
+        aciOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        aciOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(24, 24, 24, 24)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            // Header with recording indicator
+            val header = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 0, 0, 12)
+
+                val dot = TextView(context).apply {
+                    text = "🟢"
+                    textSize = 18f
+                    setPadding(0, 0, 12, 0)
+                }
+                addView(dot)
+
+                val title = TextView(context).apply {
+                    text = "AMBIENT CLINICAL INTELLIGENCE"
+                    textSize = 16f
+                    setTextColor(0xFF10B981.toInt())
+                    layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                addView(title)
+
+                val stopBtn = android.widget.Button(context).apply {
+                    text = "STOP & GENERATE"
+                    textSize = 12f
+                    setBackgroundColor(0xFFEF4444.toInt())
+                    setTextColor(0xFFFFFFFF.toInt())
+                    setOnClickListener { stopAmbientMode(true) }
+                }
+                addView(stopBtn)
+            }
+            innerLayout.addView(header)
+
+            // Entities section (scrollable)
+            val entitiesScroll = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 0.5f
+                )
+            }
+
+            aciEntitiesText = TextView(context).apply {
+                text = "Listening for clinical information..."
+                textSize = 14f
+                setTextColor(0xFFE2E8F0.toInt())
+                setPadding(0, 8, 0, 8)
+            }
+            entitiesScroll.addView(aciEntitiesText)
+            innerLayout.addView(entitiesScroll)
+
+            // Divider
+            val divider = android.view.View(context).apply {
+                setBackgroundColor(0xFF475569.toInt())
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 2
+                ).apply { setMargins(0, 8, 0, 8) }
+            }
+            innerLayout.addView(divider)
+
+            // Transcript section
+            val transcriptLabel = TextView(context).apply {
+                text = "📝 Live Transcript"
+                textSize = 14f
+                setTextColor(0xFF94A3B8.toInt())
+                setPadding(0, 0, 0, 4)
+            }
+            innerLayout.addView(transcriptLabel)
+
+            val transcriptScroll = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 0.5f
+                )
+            }
+
+            aciTranscriptText = TextView(context).apply {
+                text = "🎤 Listening..."
+                textSize = 12f
+                setTextColor(0xFFCBD5E1.toInt())
+            }
+            transcriptScroll.addView(aciTranscriptText)
+            innerLayout.addView(transcriptScroll)
+
+            // Control buttons
+            val controlRow = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                setPadding(0, 12, 0, 0)
+
+                val cancelBtn = android.widget.Button(context).apply {
+                    text = "CANCEL"
+                    textSize = 14f
+                    setBackgroundColor(0xFF64748B.toInt())
+                    setTextColor(0xFFFFFFFF.toInt())
+                    layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        setMargins(0, 0, 8, 0)
+                    }
+                    setOnClickListener { stopAmbientMode(false); hideAciOverlay() }
+                }
+                addView(cancelBtn)
+
+                val pauseBtn = android.widget.Button(context).apply {
+                    text = "PAUSE"
+                    textSize = 14f
+                    setBackgroundColor(0xFFF59E0B.toInt())
+                    setTextColor(0xFFFFFFFF.toInt())
+                    layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    setOnClickListener {
+                        // Toggle pause (could be implemented)
+                        Toast.makeText(context, "Pause not implemented yet", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                addView(pauseBtn)
+            }
+            innerLayout.addView(controlRow)
+
+            addView(innerLayout)
+        }
+
+        rootView.addView(aciOverlay)
+    }
+
+    /**
+     * Update the ACI display with extracted entities
+     */
+    private fun updateAciDisplay() {
+        val sb = StringBuilder()
+
+        if (extractedEntities.chiefComplaints.isNotEmpty()) {
+            sb.append("🎯 CHIEF COMPLAINT\n")
+            extractedEntities.chiefComplaints.forEach { sb.append("  • $it\n") }
+            sb.append("\n")
+        }
+
+        if (extractedEntities.symptoms.isNotEmpty()) {
+            sb.append("🤒 SYMPTOMS (${extractedEntities.symptoms.size})\n")
+            sb.append("  ${extractedEntities.symptoms.take(10).joinToString(", ")}\n\n")
+        }
+
+        if (extractedEntities.vitalsMentioned.isNotEmpty()) {
+            sb.append("📊 VITALS MENTIONED\n")
+            extractedEntities.vitalsMentioned.forEach { (k, v) -> sb.append("  • $k: $v\n") }
+            sb.append("\n")
+        }
+
+        if (extractedEntities.medications.isNotEmpty()) {
+            sb.append("💊 MEDICATIONS (${extractedEntities.medications.size})\n")
+            sb.append("  ${extractedEntities.medications.take(8).joinToString(", ")}\n\n")
+        }
+
+        if (extractedEntities.allergiesMentioned.isNotEmpty()) {
+            sb.append("⚠️ ALLERGIES MENTIONED\n")
+            extractedEntities.allergiesMentioned.forEach { sb.append("  • $it\n") }
+            sb.append("\n")
+        }
+
+        if (extractedEntities.medicalHistory.isNotEmpty()) {
+            sb.append("📋 MEDICAL HISTORY\n")
+            extractedEntities.medicalHistory.take(5).forEach { sb.append("  • $it\n") }
+            sb.append("\n")
+        }
+
+        if (extractedEntities.assessments.isNotEmpty()) {
+            sb.append("🔍 ASSESSMENTS\n")
+            extractedEntities.assessments.forEach { sb.append("  • $it\n") }
+            sb.append("\n")
+        }
+
+        if (extractedEntities.plans.isNotEmpty()) {
+            sb.append("📝 PLAN ITEMS\n")
+            extractedEntities.plans.forEach { sb.append("  • $it\n") }
+            sb.append("\n")
+        }
+
+        if (sb.isEmpty()) {
+            sb.append("Listening for clinical information...\n\n")
+            sb.append("Detected entities will appear here as you speak.")
+        }
+
+        aciEntitiesText?.text = sb.toString()
+    }
+
+    /**
+     * Hide ACI overlay
+     */
+    private fun hideAciOverlay() {
+        aciOverlay?.let { overlay ->
+            (overlay.parent as? android.view.ViewGroup)?.removeView(overlay)
+        }
+        aciOverlay = null
+        aciEntitiesText = null
+        aciTranscriptText = null
+    }
+
+    /**
+     * Generate SOAP note from ACI extracted entities
+     */
+    private fun generateAciNote() {
+        hideAciOverlay()
+        statusText.text = "Generating clinical note..."
+        transcriptText.text = "AI is extracting relevant information..."
+
+        val duration = (System.currentTimeMillis() - ambientStartTime) / 1000 / 60
+        val fullTranscript = ambientTranscriptBuffer.toString()
+
+        // Store full transcript for audit/records (never goes to EHR)
+        lastNoteTranscript = fullTranscript
+        aciFullTranscriptRecord = fullTranscript  // Keep separate copy for records
+
+        // Build entity context to help AI focus on relevant info
+        val entityContext = buildEntityContextForAI()
+
+        // Determine chief complaint with proper fallbacks
+        val chiefComplaint = when {
+            extractedEntities.chiefComplaints.isNotEmpty() -> extractedEntities.chiefComplaints.first()
+            extractedEntities.symptoms.isNotEmpty() -> extractedEntities.symptoms.first()
+            else -> {
+                // Use first patient statement (strip any speaker labels)
+                val patientText = extractedEntities.speakerSegments
+                    .filter { it.speaker == "Patient" }
+                    .firstOrNull()?.text
+                    ?.replace(Regex("^\\s*\\[\\w+\\]\\s*"), "")
+                    ?.trim()
+                    ?.take(80)
+                patientText ?: fullTranscript.replace(Regex("\\[\\w+\\]\\s*"), "").take(80)
+            }
+        }
+
+        // Clean transcript for AI (strip speaker labels, keep content)
+        val cleanTranscriptForAI = fullTranscript
+            .replace(Regex("\\[Patient\\]\\s*"), "Patient: ")
+            .replace(Regex("\\[Clinician\\]\\s*"), "Clinician: ")
+            .replace(Regex("\\[Unknown\\]\\s*"), "")
+
+        // Call AI service to generate focused clinical note
+        Thread {
+            try {
+                val json = JSONObject().apply {
+                    put("transcript", cleanTranscriptForAI)
+                    put("chief_complaint", chiefComplaint)
+                    put("note_type", "SOAP")
+                    put("ambient_mode", true)
+                    put("duration_minutes", duration)
+                    // Include extracted entities as hints for AI
+                    put("detected_entities", entityContext)
+                    // Patient context
+                    currentPatientData?.let { patient ->
+                        put("patient_name", patient.optString("name"))
+                        put("patient_age", patient.optString("age"))
+                        put("patient_gender", patient.optString("gender"))
+                    }
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/notes/quick")
+                    .post(json.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "ACI note generation error: ${e.message}")
+                        runOnUiThread {
+                            // Fallback to local entity-based note
+                            generateLocalAciNote(duration)
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "ACI AI note: $body")
+
+                        runOnUiThread {
+                            try {
+                                val result = JSONObject(body ?: "{}")
+                                lastGeneratedNote = result
+
+                                val displayText = result.optString("display_text", "")
+                                if (displayText.isNotBlank()) {
+                                    editableNoteContent = displayText
+                                    showNoteWithSaveOption("ACI Clinical Note", displayText)
+                                    speakFeedback("Clinical note ready. ${duration} minute encounter.")
+                                } else {
+                                    generateLocalAciNote(duration)
+                                }
+                            } catch (e: Exception) {
+                                generateLocalAciNote(duration)
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "ACI note failed: ${e.message}")
+                runOnUiThread {
+                    generateLocalAciNote(duration)
+                }
+            }
+        }.start()
+    }
+
+    // Store full transcript separately for audit (not sent to EHR)
+    private var aciFullTranscriptRecord: String = ""
+
+    /**
+     * Build entity context JSON for AI to focus extraction
+     */
+    private fun buildEntityContextForAI(): String {
+        val entities = JSONObject().apply {
+            if (extractedEntities.chiefComplaints.isNotEmpty())
+                put("chief_complaints", org.json.JSONArray(extractedEntities.chiefComplaints))
+            if (extractedEntities.symptoms.isNotEmpty())
+                put("symptoms", org.json.JSONArray(extractedEntities.symptoms))
+            if (extractedEntities.medications.isNotEmpty())
+                put("medications", org.json.JSONArray(extractedEntities.medications))
+            if (extractedEntities.allergiesMentioned.isNotEmpty())
+                put("allergies_mentioned", org.json.JSONArray(extractedEntities.allergiesMentioned))
+            if (extractedEntities.vitalsMentioned.isNotEmpty())
+                put("vitals", JSONObject(extractedEntities.vitalsMentioned.toMap()))
+            if (extractedEntities.medicalHistory.isNotEmpty())
+                put("medical_history", org.json.JSONArray(extractedEntities.medicalHistory))
+            if (extractedEntities.assessments.isNotEmpty())
+                put("assessments", org.json.JSONArray(extractedEntities.assessments))
+            if (extractedEntities.plans.isNotEmpty())
+                put("plans", org.json.JSONArray(extractedEntities.plans))
+            if (extractedEntities.physicalExamFindings.isNotEmpty())
+                put("exam_findings", org.json.JSONArray(extractedEntities.physicalExamFindings))
+        }
+        return entities.toString()
+    }
+
+    /**
+     * Fallback: Generate note locally from extracted entities only (no raw transcript)
+     * Enhanced to generate fuller SOAP notes even with limited data
+     */
+    private fun generateLocalAciNote(duration: Long) {
+        val patientName = currentPatientData?.optString("name", "Patient") ?: "Patient"
+        val patientAge = currentPatientData?.optString("age", "") ?: ""
+        val patientGender = currentPatientData?.optString("gender", "") ?: ""
+        val today = java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).format(java.util.Date())
+
+        val noteBuilder = StringBuilder()
+        noteBuilder.append("═══════════════════════════════════\n")
+        noteBuilder.append("    CLINICAL ENCOUNTER NOTE\n")
+        noteBuilder.append("═══════════════════════════════════\n\n")
+
+        // Header with patient context
+        noteBuilder.append("Date: $today\n")
+        noteBuilder.append("Patient: $patientName")
+        if (patientAge.isNotBlank()) noteBuilder.append(" | Age: $patientAge")
+        if (patientGender.isNotBlank()) noteBuilder.append(" | $patientGender")
+        noteBuilder.append("\n")
+        noteBuilder.append("Encounter Duration: ${duration} minutes\n")
+        noteBuilder.append("Documentation: Ambient AI-Assisted\n")
+        noteBuilder.append("─".repeat(35) + "\n\n")
+
+        // ═══ SUBJECTIVE ═══
+        noteBuilder.append("SUBJECTIVE:\n")
+
+        // Chief Complaint - use extracted entities, or first patient statement, or transcript summary
+        noteBuilder.append("Chief Complaint: ")
+        if (extractedEntities.chiefComplaints.isNotEmpty()) {
+            noteBuilder.append(extractedEntities.chiefComplaints.first().replaceFirstChar { it.uppercase() })
+        } else if (extractedEntities.symptoms.isNotEmpty()) {
+            noteBuilder.append(extractedEntities.symptoms.first().replaceFirstChar { it.uppercase() })
+        } else {
+            // Fallback: use first patient statement from transcript
+            val firstPatientStatement = extractedEntities.speakerSegments
+                .filter { it.speaker == "Patient" }
+                .firstOrNull()?.text
+                ?.replace(Regex("^\\s*\\[\\w+\\]\\s*"), "")  // Strip speaker label
+                ?.trim()
+                ?.take(80)
+
+            if (!firstPatientStatement.isNullOrBlank()) {
+                noteBuilder.append(firstPatientStatement.replaceFirstChar { it.uppercase() })
+            } else if (ambientTranscriptBuffer.isNotBlank()) {
+                // Last resort: first part of transcript
+                val firstSegment = ambientTranscriptBuffer.toString()
+                    .replace(Regex("\\[\\w+\\]\\s*"), "")  // Remove speaker labels
+                    .take(80)
+                    .trim()
+                if (firstSegment.isNotBlank()) {
+                    noteBuilder.append(firstSegment.replaceFirstChar { it.uppercase() })
+                } else {
+                    noteBuilder.append("[Per encounter]")
+                }
+            } else {
+                noteBuilder.append("[Per encounter]")
+            }
+        }
+        noteBuilder.append("\n\n")
+
+        // History of Present Illness
+        noteBuilder.append("HPI: ")
+        if (extractedEntities.symptoms.isNotEmpty()) {
+            val symptomList = extractedEntities.symptoms.take(5)
+            val durationMentioned = extractedEntities.speakerSegments
+                .filter { it.speaker == "Patient" }
+                .map { it.text.lowercase() }
+                .firstOrNull { it.contains("day") || it.contains("week") || it.contains("month") }
+
+            noteBuilder.append("$patientName presents with ${symptomList.joinToString(", ")}. ")
+            if (durationMentioned != null) {
+                noteBuilder.append("Patient reports symptoms ${extractDurationPhrase(durationMentioned)}. ")
+            }
+
+            // Build narrative from patient segments
+            val patientStatements = extractedEntities.speakerSegments
+                .filter { it.speaker == "Patient" }
+                .take(3)
+                .map { it.text }
+
+            if (patientStatements.isNotEmpty() && patientStatements.any { it.length > 10 }) {
+                // Strip any speaker labels from the quote
+                val cleanQuote = patientStatements.first()
+                    .replace(Regex("^\\s*\\[\\w+\\]\\s*"), "")  // Remove leading [Speaker]
+                    .trim()
+                if (cleanQuote.isNotBlank()) {
+                    noteBuilder.append("Patient states: \"$cleanQuote\"")
+                }
+            }
+        } else {
+            noteBuilder.append("Patient presented for evaluation. Details per encounter discussion.")
+        }
+        noteBuilder.append("\n\n")
+
+        // Past Medical History
+        noteBuilder.append("PMH: ")
+        if (extractedEntities.medicalHistory.isNotEmpty()) {
+            noteBuilder.append(extractedEntities.medicalHistory.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } })
+        } else {
+            // Pull from chart if available
+            val conditions = currentPatientData?.optJSONArray("conditions")
+            if (conditions != null && conditions.length() > 0) {
+                val condList = mutableListOf<String>()
+                for (i in 0 until minOf(conditions.length(), 5)) {
+                    conditions.optString(i)?.let { condList.add(it) }
+                }
+                noteBuilder.append("Per chart: ${condList.joinToString(", ")}")
+            } else {
+                noteBuilder.append("See chart for complete history")
+            }
+        }
+        noteBuilder.append("\n")
+
+        // Medications
+        noteBuilder.append("Current Medications: ")
+        if (extractedEntities.medications.isNotEmpty()) {
+            noteBuilder.append(extractedEntities.medications.joinToString(", ") { it.replaceFirstChar { c -> c.uppercase() } })
+        } else {
+            noteBuilder.append("Per medication list in chart")
+        }
+        noteBuilder.append("\n")
+
+        // Allergies from chart
+        noteBuilder.append("Allergies: ")
+        val allergies = currentPatientData?.optJSONArray("allergies")
+        if (allergies != null && allergies.length() > 0) {
+            val allergyList = mutableListOf<String>()
+            for (i in 0 until allergies.length()) {
+                allergies.optString(i)?.let { allergyList.add(it) }
+            }
+            noteBuilder.append(allergyList.joinToString(", "))
+        } else {
+            noteBuilder.append("NKDA")
+        }
+        noteBuilder.append("\n")
+
+        // Social History
+        if (extractedEntities.socialHistory.isNotEmpty()) {
+            noteBuilder.append("Social History: ${extractedEntities.socialHistory.joinToString("; ")}\n")
+        }
+
+        // Family History
+        if (extractedEntities.familyHistory.isNotEmpty()) {
+            noteBuilder.append("Family History: ${extractedEntities.familyHistory.joinToString("; ")}\n")
+        }
+
+        // Review of Systems
+        noteBuilder.append("\nReview of Systems:\n")
+        if (extractedEntities.reviewOfSystems.isNotEmpty()) {
+            extractedEntities.reviewOfSystems.forEach { (system, findings) ->
+                noteBuilder.append("  • ${system.replaceFirstChar { it.uppercase() }}: ${findings.joinToString(", ")}\n")
+            }
+        } else if (extractedEntities.symptoms.isNotEmpty()) {
+            // Infer ROS from symptoms
+            noteBuilder.append("  • Constitutional: Denies fever, chills, weight changes\n")
+            noteBuilder.append("  • See HPI for pertinent positives\n")
+        } else {
+            noteBuilder.append("  • Reviewed and negative except as noted in HPI\n")
+        }
+        noteBuilder.append("\n")
+
+        // ═══ OBJECTIVE ═══
+        noteBuilder.append("OBJECTIVE:\n")
+
+        // Vitals
+        noteBuilder.append("Vital Signs: ")
+        if (extractedEntities.vitalsMentioned.isNotEmpty()) {
+            val vitalsList = extractedEntities.vitalsMentioned.map { (k, v) -> "$k: $v" }
+            noteBuilder.append(vitalsList.joinToString(", "))
+        } else {
+            noteBuilder.append("See vital signs flowsheet")
+        }
+        noteBuilder.append("\n\n")
+
+        // Physical Exam
+        noteBuilder.append("Physical Examination:\n")
+        if (extractedEntities.physicalExamFindings.isNotEmpty()) {
+            extractedEntities.physicalExamFindings.forEach { finding ->
+                noteBuilder.append("  • ${finding.replaceFirstChar { it.uppercase() }}\n")
+            }
+        } else {
+            // Default exam based on symptoms
+            noteBuilder.append("  • General: Alert, oriented, no acute distress\n")
+            noteBuilder.append("  • Pertinent exam findings per encounter discussion\n")
+        }
+        noteBuilder.append("\n")
+
+        // ═══ ASSESSMENT ═══
+        noteBuilder.append("ASSESSMENT:\n")
+        var diagnosisCount = 0
+        if (extractedEntities.assessments.isNotEmpty()) {
+            extractedEntities.assessments.forEachIndexed { idx, assessment ->
+                diagnosisCount = idx + 1
+                val icdCode = suggestIcdCode(assessment)
+                noteBuilder.append("${idx + 1}. ${assessment.replaceFirstChar { it.uppercase() }}")
+                if (icdCode != null) noteBuilder.append(" ($icdCode)")
+                noteBuilder.append("\n")
+            }
+        } else if (extractedEntities.symptoms.isNotEmpty()) {
+            // Create assessment from symptoms
+            extractedEntities.symptoms.take(3).forEachIndexed { idx, symptom ->
+                diagnosisCount = idx + 1
+                val icdCode = suggestIcdCode(symptom)
+                noteBuilder.append("${idx + 1}. ${symptom.replaceFirstChar { it.uppercase() }}")
+                if (icdCode != null) noteBuilder.append(" ($icdCode)")
+                noteBuilder.append("\n")
+            }
+        } else {
+            noteBuilder.append("1. [Primary diagnosis per encounter]\n")
+        }
+        noteBuilder.append("\n")
+
+        // ═══ PLAN ═══
+        noteBuilder.append("PLAN:\n")
+        if (extractedEntities.plans.isNotEmpty()) {
+            extractedEntities.plans.forEachIndexed { idx, plan ->
+                noteBuilder.append("${idx + 1}. ${plan.replaceFirstChar { it.uppercase() }}\n")
+            }
+        } else {
+            // Generate plan items based on assessment
+            noteBuilder.append("1. ")
+            if (extractedEntities.medications.isNotEmpty()) {
+                noteBuilder.append("Continue/adjust medications as discussed\n")
+            } else {
+                noteBuilder.append("Treatment plan discussed with patient\n")
+            }
+            noteBuilder.append("2. Follow up as needed\n")
+            noteBuilder.append("3. Patient education provided\n")
+        }
+
+        if (extractedEntities.medications.isNotEmpty()) {
+            noteBuilder.append("\nMedications Discussed: ${extractedEntities.medications.joinToString(", ")}\n")
+        }
+
+        // Footer
+        noteBuilder.append("\n─".repeat(35))
+        noteBuilder.append("\nDocumented via ambient capture. Review for accuracy.\n")
+        noteBuilder.append("Entities extracted: ${countExtractedEntities()} | Segments: ${extractedEntities.speakerSegments.size}\n")
+
+        editableNoteContent = noteBuilder.toString()
+        showNoteWithSaveOption("ACI Clinical Note", noteBuilder.toString())
+        statusText.text = "Note generated"
+        transcriptText.text = "Say 'save note' or 'view transcript' for full record"
+        speakFeedback("Clinical note ready for review")
+    }
+
+    /**
+     * Extract duration phrase from text (e.g., "for 3 days", "since last week")
+     */
+    private fun extractDurationPhrase(text: String): String {
+        val patterns = listOf(
+            Regex("for (\\d+\\s*(?:day|week|month|hour|year)s?)"),
+            Regex("since (yesterday|last \\w+|\\d+ \\w+ ago)"),
+            Regex("(\\d+\\s*(?:day|week|month)s?) ago"),
+            Regex("started (\\w+|\\d+ \\w+ ago)")
+        )
+
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            if (match != null) {
+                return match.value
+            }
+        }
+        return ""
+    }
+
+    /**
+     * Suggest ICD-10 code for a diagnosis/symptom
+     */
+    private fun suggestIcdCode(text: String): String? {
+        val lower = text.lowercase()
+        return when {
+            lower.contains("fever") -> "R50.9"
+            lower.contains("headache") -> "R51.9"
+            lower.contains("cough") -> "R05.9"
+            lower.contains("chest pain") -> "R07.9"
+            lower.contains("abdominal pain") || lower.contains("stomach") -> "R10.9"
+            lower.contains("nausea") -> "R11.0"
+            lower.contains("fatigue") || lower.contains("tired") -> "R53.83"
+            lower.contains("hypertension") || lower.contains("high blood pressure") -> "I10"
+            lower.contains("diabetes") -> "E11.9"
+            lower.contains("anxiety") -> "F41.9"
+            lower.contains("depression") -> "F32.9"
+            lower.contains("back pain") -> "M54.5"
+            lower.contains("sore throat") || lower.contains("pharyngitis") -> "J02.9"
+            lower.contains("upper respiratory") || lower.contains("cold") || lower.contains("uri") -> "J06.9"
+            lower.contains("shortness of breath") || lower.contains("dyspnea") -> "R06.0"
+            lower.contains("dizziness") -> "R42"
+            lower.contains("pain") -> "R52"
+            else -> null
+        }
+    }
+
+    /**
+     * Count total extracted entities for summary
+     */
+    private fun countExtractedEntities(): Int {
+        return extractedEntities.chiefComplaints.size +
+               extractedEntities.symptoms.size +
+               extractedEntities.medications.size +
+               extractedEntities.assessments.size +
+               extractedEntities.plans.size +
+               extractedEntities.vitalsMentioned.size +
+               extractedEntities.physicalExamFindings.size
+    }
+
+    /**
+     * Extract chief complaint from raw transcript text
+     */
+    private fun extractChiefComplaintFromText(transcript: String): String {
+        val corrected = correctMedicalTerms(transcript.lowercase())
+
+        // Check for chief complaint triggers
+        for (trigger in chiefComplaintTriggers) {
+            if (corrected.contains(trigger)) {
+                val complaint = extractPhraseAfter(corrected, trigger)
+                if (complaint.isNotBlank()) {
+                    return complaint.take(80).replaceFirstChar { it.uppercase() }
+                }
+            }
+        }
+
+        // Check for symptoms
+        for (symptom in symptomPatterns) {
+            if (corrected.contains(symptom)) {
+                return symptom.replaceFirstChar { it.uppercase() }
+            }
+        }
+
+        // Fallback: use first meaningful part of transcript
+        val cleanedTranscript = transcript
+            .replace(Regex("\\[\\w+\\]\\s*"), "")  // Remove speaker labels
+            .trim()
+            .take(80)
+
+        return if (cleanedTranscript.isNotBlank()) {
+            cleanedTranscript.replaceFirstChar { it.uppercase() }
+        } else {
+            "Per patient encounter"
+        }
+    }
+
+    /**
+     * View full transcript for records (not sent to EHR)
+     */
+    private fun viewFullTranscript() {
+        val transcript = if (aciFullTranscriptRecord.isNotBlank()) {
+            aciFullTranscriptRecord
+        } else if (!lastNoteTranscript.isNullOrBlank()) {
+            lastNoteTranscript!!
+        } else {
+            "No transcript available"
+        }
+
+        val duration = extractedEntities.speakerSegments.size
+        val header = "═══ FULL ENCOUNTER TRANSCRIPT ═══\n" +
+                     "For records only - NOT sent to EHR\n" +
+                     "Segments: $duration\n" +
+                     "─".repeat(35) + "\n\n"
+
+        showDataOverlay("📝 Full Transcript", header + transcript)
+        speakFeedback("Showing full transcript for records")
+    }
+
+    /**
+     * Show ACI entities summary (without generating note)
+     */
+    private fun showAciEntities() {
+        if (!extractedEntities.hasEntities()) {
+            Toast.makeText(this, "No entities detected yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.append("═══ DETECTED CLINICAL ENTITIES ═══\n\n")
+
+        sb.append("Chief Complaints: ${extractedEntities.chiefComplaints.size}\n")
+        sb.append("Symptoms: ${extractedEntities.symptoms.size}\n")
+        sb.append("Medications: ${extractedEntities.medications.size}\n")
+        sb.append("Vitals: ${extractedEntities.vitalsMentioned.size}\n")
+        sb.append("Allergies: ${extractedEntities.allergiesMentioned.size}\n")
+        sb.append("Medical History: ${extractedEntities.medicalHistory.size}\n")
+        sb.append("Assessments: ${extractedEntities.assessments.size}\n")
+        sb.append("Plan Items: ${extractedEntities.plans.size}\n\n")
+
+        sb.append("Say 'generate note' to create documentation\n")
+        sb.append("Say 'stop ambient' to end listening")
+
+        showDataOverlay("ACI Summary", sb.toString())
     }
 
     private fun showTranscriptionCompleteOverlay(transcript: String) {
@@ -2684,11 +4469,14 @@ SOFA Score: [X]
         statusText.text = "Generating $noteTypeDisplay..."
         transcriptText.text = "Processing transcript"
 
+        // Extract chief complaint from transcript
+        val chiefComplaint = extractChiefComplaintFromText(transcript)
+
         Thread {
             try {
                 val json = JSONObject().apply {
                     put("transcript", transcript)
-                    put("chief_complaint", "See transcript")
+                    put("chief_complaint", chiefComplaint)
                     put("note_type", currentNoteType)
                 }
 
@@ -5717,7 +7505,7 @@ SOFA Score: [X]
     }
 
     /**
-     * Add order to queue and auto-add to Plan section
+     * Add order to queue, auto-add to Plan section, and auto-push to EHR
      */
     private fun addOrderToQueue(order: Order) {
         val confirmedOrder = order.copy(status = OrderStatus.CONFIRMED)
@@ -5725,6 +7513,63 @@ SOFA Score: [X]
         saveOrdersToPrefs()
         addOrderToPlanSection(confirmedOrder)
         Log.d(TAG, "Order added: ${order.name}, queue size: ${orderQueue.size}")
+
+        // Auto-push to EHR
+        pushSingleOrderToEhr(confirmedOrder)
+    }
+
+    /**
+     * Push a single order to EHR immediately
+     */
+    private fun pushSingleOrderToEhr(order: Order) {
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isEmpty() || !isNetworkAvailable()) {
+            // Will sync later
+            return
+        }
+
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("patient_id", patientId)
+                    put("order_type", order.type.name)
+                    put("code", order.name)
+                    put("display_name", order.displayName)
+                    put("status", "active")
+                    put("priority", "routine")
+                    put("requester_name", clinicianName)
+                    put("notes", order.details)
+                    order.dose?.let { put("dose", it) }
+                    order.frequency?.let { put("frequency", it) }
+                    order.duration?.let { put("duration", it) }
+                    order.route?.let { put("route", it) }
+                    put("prn", order.prn)
+                    order.bodyPart?.let { put("body_site", it) }
+                    order.laterality?.let { put("laterality", it) }
+                    order.contrast?.let { put("contrast", it) }
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/orders/push")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val body = response.body?.string()
+                val result = JSONObject(body ?: "{}")
+
+                if (result.optBoolean("success", false)) {
+                    // Remove from local queue after successful push
+                    runOnUiThread {
+                        orderQueue.removeAll { it.id == order.id }
+                        saveOrdersToPrefs()
+                    }
+                    Log.d(TAG, "Auto-pushed order: ${order.displayName}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Auto-push order failed: ${e.message}")
+            }
+        }.start()
     }
 
     /**
@@ -5931,6 +7776,483 @@ SOFA Score: [X]
         if (pendingPlanItems.isEmpty()) return ""
         val items = pendingPlanItems.joinToString("\n")
         return items
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PATIENT WORKLIST FUNCTIONS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    data class WorklistPatient(
+        val patientId: String,
+        val name: String,
+        val dateOfBirth: String,
+        val gender: String,
+        val mrn: String?,
+        val room: String?,
+        val appointmentTime: String?,
+        val appointmentType: String?,
+        val chiefComplaint: String?,
+        val status: String,
+        val hasCriticalAlerts: Boolean,
+        val priority: Int
+    )
+
+    private var worklistPatients = mutableListOf<WorklistPatient>()
+    private var pendingOrderUpdate: Order? = null  // Order being updated
+
+    /**
+     * Fetch and display today's patient worklist
+     */
+    private fun showWorklist() {
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Loading worklist")
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist").readText()
+                }
+                val json = org.json.JSONObject(response)
+                val patients = json.getJSONArray("patients")
+                worklistPatients.clear()
+
+                val sb = StringBuilder()
+                sb.appendLine("📋 TODAY'S WORKLIST")
+                sb.appendLine("═".repeat(40))
+                sb.appendLine("${json.optString("provider", "")} | ${json.optString("location", "")}")
+                sb.appendLine()
+
+                for (i in 0 until patients.length()) {
+                    val p = patients.getJSONObject(i)
+                    val patient = WorklistPatient(
+                        patientId = p.getString("patient_id"),
+                        name = p.getString("name"),
+                        dateOfBirth = p.getString("date_of_birth"),
+                        gender = p.getString("gender"),
+                        mrn = p.optString("mrn"),
+                        room = p.optString("room", null),
+                        appointmentTime = p.optString("appointment_time"),
+                        appointmentType = p.optString("appointment_type"),
+                        chiefComplaint = p.optString("chief_complaint", null),
+                        status = p.getString("status"),
+                        hasCriticalAlerts = p.optBoolean("has_critical_alerts"),
+                        priority = p.optInt("priority", 0)
+                    )
+                    worklistPatients.add(patient)
+
+                    // Status icon
+                    val statusIcon = when (patient.status) {
+                        "scheduled" -> "⏳"
+                        "checked_in" -> "✅"
+                        "in_room" -> "🚪"
+                        "in_progress" -> "👨‍⚕️"
+                        "completed" -> "✔️"
+                        else -> "•"
+                    }
+
+                    // Priority indicator
+                    val priorityIcon = when (patient.priority) {
+                        2 -> "🔴"  // STAT
+                        1 -> "🟡"  // Urgent
+                        else -> ""
+                    }
+
+                    // Alert indicator
+                    val alertIcon = if (patient.hasCriticalAlerts) "⚠️" else ""
+
+                    sb.appendLine("${i + 1}. $statusIcon $priorityIcon${patient.name} $alertIcon")
+                    sb.appendLine("   ${patient.appointmentTime ?: ""} | ${patient.appointmentType ?: ""}")
+                    if (!patient.room.isNullOrEmpty()) {
+                        sb.appendLine("   Room: ${patient.room}")
+                    }
+                    if (!patient.chiefComplaint.isNullOrEmpty()) {
+                        sb.appendLine("   CC: ${patient.chiefComplaint}")
+                    }
+                    sb.appendLine()
+                }
+
+                sb.appendLine("─".repeat(40))
+                sb.appendLine("📊 ${json.optInt("total_scheduled")} scheduled | ${json.optInt("checked_in")} waiting | ${json.optInt("completed")} done")
+                sb.appendLine()
+                sb.appendLine("Voice Commands:")
+                sb.appendLine("• \"Load 1\" - Load patient #1")
+                sb.appendLine("• \"Check in 2\" - Check in patient #2")
+                sb.appendLine("• \"Who's next\" - Next patient to see")
+
+                showDataOverlay("📋 Worklist", sb.toString())
+                speakFeedback("${patients.length()} patients on worklist")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch worklist: ${e.message}")
+                speakFeedback("Could not load worklist")
+            }
+        }
+    }
+
+    /**
+     * Check in a patient from the worklist
+     */
+    private fun checkInPatient(index: Int, room: String? = null) {
+        if (index < 1 || index > worklistPatients.size) {
+            speakFeedback("Invalid patient number")
+            return
+        }
+
+        val patient = worklistPatients[index - 1]
+
+        lifecycleScope.launch {
+            try {
+                val requestBody = org.json.JSONObject().apply {
+                    put("patient_id", patient.patientId)
+                    if (!room.isNullOrEmpty()) put("room", room)
+                }
+
+                val response = withContext(Dispatchers.IO) {
+                    val url = java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist/check-in")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    conn.outputStream.write(requestBody.toString().toByteArray())
+                    conn.inputStream.bufferedReader().readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                if (json.optBoolean("success", false)) {
+                    worklistPatients[index - 1] = patient.copy(status = "checked_in", room = room)
+                    speakFeedback("${patient.name} checked in" + if (!room.isNullOrEmpty()) " to $room" else "")
+                    showWorklist()  // Refresh
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to check in patient: ${e.message}")
+                speakFeedback("Could not check in patient")
+            }
+        }
+    }
+
+    /**
+     * Get the next patient to see
+     */
+    private fun getNextPatient() {
+        lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist/next").readText()
+                }
+                val json = org.json.JSONObject(response)
+                val nextPatient = json.optJSONObject("next_patient")
+
+                if (nextPatient == null) {
+                    speakFeedback("No patients waiting")
+                    return@launch
+                }
+
+                val name = nextPatient.getString("name")
+                val room = nextPatient.optString("room", "")
+                val cc = nextPatient.optString("chief_complaint", "")
+                val waitingCount = json.optInt("waiting_count", 0)
+
+                val message = buildString {
+                    append("Next patient: $name")
+                    if (room.isNotEmpty()) append(", room $room")
+                    if (cc.isNotEmpty()) append(". Chief complaint: $cc")
+                    if (waitingCount > 1) append(". ${waitingCount - 1} more waiting")
+                }
+
+                speakFeedback(message)
+
+                // Show brief overlay
+                val sb = StringBuilder()
+                sb.appendLine("👨‍⚕️ NEXT PATIENT")
+                sb.appendLine("═".repeat(30))
+                sb.appendLine(name)
+                if (room.isNotEmpty()) sb.appendLine("Room: $room")
+                if (cc.isNotEmpty()) sb.appendLine("CC: $cc")
+                sb.appendLine()
+                sb.appendLine("Say \"load patient\" to open chart")
+
+                showDataOverlay("Next Patient", sb.toString())
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to get next patient: ${e.message}")
+                speakFeedback("Could not get next patient")
+            }
+        }
+    }
+
+    /**
+     * Update patient status in worklist
+     */
+    private fun updateWorklistStatus(index: Int, newStatus: String) {
+        if (index < 1 || index > worklistPatients.size) {
+            speakFeedback("Invalid patient number")
+            return
+        }
+
+        val patient = worklistPatients[index - 1]
+
+        lifecycleScope.launch {
+            try {
+                val requestBody = org.json.JSONObject().apply {
+                    put("patient_id", patient.patientId)
+                    put("status", newStatus)
+                }
+
+                val response = withContext(Dispatchers.IO) {
+                    val url = java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist/status")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    conn.outputStream.write(requestBody.toString().toByteArray())
+                    conn.inputStream.bufferedReader().readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                if (json.optBoolean("success", false)) {
+                    worklistPatients[index - 1] = patient.copy(status = newStatus)
+                    speakFeedback("${patient.name} marked as ${newStatus.replace("_", " ")}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to update status: ${e.message}")
+                speakFeedback("Could not update status")
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ORDER UPDATE/MODIFY FUNCTIONS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Show orders with numbers for update/delete
+     */
+    private fun showOrdersForUpdate() {
+        if (orderQueue.isEmpty()) {
+            showOrderQueue()
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("📋 CURRENT ORDERS")
+        sb.appendLine("═".repeat(40))
+        sb.appendLine()
+
+        orderQueue.forEachIndexed { index, order ->
+            val typeIcon = when (order.type) {
+                OrderType.LAB -> "🔬"
+                OrderType.IMAGING -> "📷"
+                OrderType.MEDICATION -> "💊"
+            }
+
+            sb.appendLine("${index + 1}. $typeIcon ${order.displayName}")
+            if (order.details.isNotEmpty()) {
+                sb.appendLine("   ${order.details}")
+            }
+            sb.appendLine()
+        }
+
+        sb.appendLine("─".repeat(40))
+        sb.appendLine("Voice Commands:")
+        sb.appendLine("• \"Update 1 to 650mg every 4 hours\"")
+        sb.appendLine("• \"Delete 2\" - Remove order #2")
+        sb.appendLine("• \"Cancel order\" - Remove last order")
+        sb.appendLine("• \"Confirm\" - Push orders to EHR")
+
+        showDataOverlay("📋 Orders (${orderQueue.size})", sb.toString())
+        speakFeedback("${orderQueue.size} orders. Say update followed by number to modify")
+    }
+
+    /**
+     * Update an existing order
+     * Example: "update 1 to 500mg every 6 hours"
+     * Example: "update tylenol to 650mg PRN"
+     */
+    private fun updateOrder(input: String) {
+        val lower = input.lowercase()
+
+        // Parse order identifier (number or name)
+        var orderIndex = -1
+        var orderToUpdate: Order? = null
+
+        // Try to find by number: "update 1", "update order 1"
+        val numberPattern = Regex("update\\s*(?:order\\s*)?(\\d+)")
+        val numberMatch = numberPattern.find(lower)
+        if (numberMatch != null) {
+            orderIndex = numberMatch.groupValues[1].toIntOrNull()?.minus(1) ?: -1
+            if (orderIndex >= 0 && orderIndex < orderQueue.size) {
+                orderToUpdate = orderQueue[orderIndex]
+            }
+        }
+
+        // Try to find by medication name if not found by number
+        if (orderToUpdate == null) {
+            val medNames = listOf("tylenol", "acetaminophen", "ibuprofen", "advil", "motrin",
+                "aspirin", "amoxicillin", "metformin", "lisinopril", "atorvastatin",
+                "omeprazole", "amlodipine", "metoprolol", "losartan", "gabapentin",
+                "hydrocodone", "prednisone", "albuterol", "levothyroxine", "pantoprazole")
+
+            for (medName in medNames) {
+                if (lower.contains(medName)) {
+                    orderIndex = orderQueue.indexOfFirst {
+                        it.name.lowercase().contains(medName) ||
+                        it.displayName.lowercase().contains(medName)
+                    }
+                    if (orderIndex >= 0) {
+                        orderToUpdate = orderQueue[orderIndex]
+                        break
+                    }
+                }
+            }
+        }
+
+        if (orderToUpdate == null) {
+            speakFeedback("Order not found. Say show orders to see list")
+            return
+        }
+
+        // Parse the update details after "to"
+        val toIndex = lower.indexOf(" to ")
+        if (toIndex == -1) {
+            speakFeedback("Say update followed by order number, then to, then new details")
+            return
+        }
+
+        val newDetails = input.substring(toIndex + 4).trim()
+
+        // Parse dose, frequency, duration from new details
+        val dosePattern = Regex("(\\d+)\\s*(?:mg|mcg|ml|g|units?)")
+        val freqPattern = Regex("(?:every|q)\\s*(\\d+)\\s*(?:hours?|hrs?|h)|(?:once|twice|three times|four times)\\s*(?:daily|a day)|(?:bid|tid|qid|daily|prn|qhs|qam|qpm)", RegexOption.IGNORE_CASE)
+        val durationPattern = Regex("(?:for|x)\\s*(\\d+)\\s*(?:days?|weeks?|months?)")
+
+        val doseMatch = dosePattern.find(newDetails)
+        val freqMatch = freqPattern.find(newDetails)
+        val durationMatch = durationPattern.find(newDetails)
+        val isPRN = lower.contains("prn") || lower.contains("as needed")
+
+        val newDose = doseMatch?.value ?: orderToUpdate.dose
+        val newFreq = freqMatch?.value ?: orderToUpdate.frequency
+        val newDuration = durationMatch?.value ?: orderToUpdate.duration
+
+        // Build new details string
+        val updatedDetails = buildString {
+            if (!newDose.isNullOrEmpty()) append("$newDose ")
+            if (!newFreq.isNullOrEmpty()) append("$newFreq ")
+            if (!newDuration.isNullOrEmpty()) append("$newDuration")
+            if (isPRN && !contains("prn", ignoreCase = true)) append(" PRN")
+        }.trim()
+
+        // Create updated order
+        val updatedOrder = orderToUpdate.copy(
+            dose = newDose,
+            frequency = newFreq,
+            duration = newDuration,
+            prn = isPRN,
+            details = updatedDetails,
+            timestamp = System.currentTimeMillis()
+        )
+
+        // Store for confirmation
+        pendingOrderUpdate = updatedOrder
+
+        // Show confirmation
+        val sb = StringBuilder()
+        sb.appendLine("📝 CONFIRM ORDER UPDATE")
+        sb.appendLine("═".repeat(35))
+        sb.appendLine()
+        sb.appendLine("BEFORE:")
+        sb.appendLine("  ${orderToUpdate.displayName}")
+        sb.appendLine("  ${orderToUpdate.details}")
+        sb.appendLine()
+        sb.appendLine("AFTER:")
+        sb.appendLine("  ${updatedOrder.displayName}")
+        sb.appendLine("  ${updatedOrder.details}")
+        sb.appendLine()
+        sb.appendLine("─".repeat(35))
+        sb.appendLine("Say \"confirm\" or \"yes\" to update")
+        sb.appendLine("Say \"cancel\" or \"no\" to keep original")
+
+        showDataOverlay("Confirm Update", sb.toString())
+        speakFeedback("Updating ${orderToUpdate.displayName} to ${updatedDetails}. Say confirm or cancel")
+    }
+
+    /**
+     * Confirm pending order update
+     */
+    private fun confirmOrderUpdate() {
+        val update = pendingOrderUpdate ?: return
+
+        // Find and replace the order
+        val index = orderQueue.indexOfFirst { it.id == update.id }
+        if (index >= 0) {
+            orderQueue[index] = update
+            saveOrdersToPrefs()
+            speakFeedback("Order updated: ${update.displayName} ${update.details}")
+            pendingOrderUpdate = null
+            hideDataOverlay()
+        } else {
+            speakFeedback("Could not find order to update")
+            pendingOrderUpdate = null
+        }
+    }
+
+    /**
+     * Cancel pending order update
+     */
+    private fun cancelOrderUpdate() {
+        pendingOrderUpdate = null
+        speakFeedback("Update cancelled")
+        hideDataOverlay()
+    }
+
+    /**
+     * Delete order by number or medication name
+     * Example: "delete 2", "remove order 3", "delete tylenol", "remove amoxicillin"
+     */
+    private fun deleteOrderByNumber(input: String) {
+        val lower = input.lowercase()
+        var orderIndex = -1
+
+        // Try to find by number first: "delete 1", "remove order 2"
+        val numberPattern = Regex("(?:delete|remove)\\s*(?:order\\s*)?(\\d+)")
+        val numberMatch = numberPattern.find(lower)
+
+        if (numberMatch != null) {
+            val orderNum = numberMatch.groupValues[1].toIntOrNull() ?: -1
+            orderIndex = orderNum - 1
+        } else {
+            // Try to find by medication name
+            val medNames = listOf("tylenol", "acetaminophen", "ibuprofen", "advil", "motrin",
+                "aspirin", "amoxicillin", "metformin", "lisinopril", "atorvastatin",
+                "omeprazole", "amlodipine", "metoprolol", "losartan", "gabapentin",
+                "hydrocodone", "prednisone", "albuterol", "levothyroxine", "pantoprazole",
+                "cbc", "cmp", "bmp", "lipid", "tsh", "a1c", "troponin", "pt", "inr",
+                "chest x-ray", "ct head", "ct chest", "ct abdomen", "mri", "echo", "ekg")
+
+            for (medName in medNames) {
+                if (lower.contains(medName)) {
+                    orderIndex = orderQueue.indexOfFirst {
+                        it.name.lowercase().contains(medName) ||
+                        it.displayName.lowercase().contains(medName)
+                    }
+                    if (orderIndex >= 0) break
+                }
+            }
+        }
+
+        if (orderIndex < 0 || orderIndex >= orderQueue.size) {
+            speakFeedback("Order not found. Say show orders to see list")
+            return
+        }
+
+        val removed = orderQueue.removeAt(orderIndex)
+        saveOrdersToPrefs()
+        speakFeedback("Deleted ${removed.displayName}")
+
+        // Refresh display
+        if (orderQueue.isNotEmpty()) {
+            showOrdersForUpdate()
+        } else {
+            hideDataOverlay()
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -6506,13 +8828,70 @@ SOFA Score: [X]
     }
 
     /**
-     * Add a captured vital and update the display
+     * Add a captured vital, update the display, and auto-push to EHR
      */
     private fun addCapturedVital(vital: CapturedVital) {
         // Remove any existing vital of the same type (keep most recent)
         capturedVitals.removeAll { it.type == vital.type }
         capturedVitals.add(vital)
         Log.d(TAG, "Captured vital: ${vital.displayName} = ${vital.value} ${vital.unit}")
+
+        // Auto-push to EHR
+        pushSingleVitalToEhr(vital)
+    }
+
+    /**
+     * Push a single vital to EHR immediately
+     */
+    private fun pushSingleVitalToEhr(vital: CapturedVital) {
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isEmpty() || !isNetworkAvailable()) {
+            return
+        }
+
+        Thread {
+            try {
+                val vitalType = when (vital.type) {
+                    VitalType.BLOOD_PRESSURE -> "blood_pressure"
+                    VitalType.HEART_RATE -> "heart_rate"
+                    VitalType.TEMPERATURE -> "temperature"
+                    VitalType.OXYGEN_SATURATION -> "oxygen_saturation"
+                    VitalType.RESPIRATORY_RATE -> "respiratory_rate"
+                    VitalType.WEIGHT -> "weight"
+                    VitalType.HEIGHT -> "height"
+                    VitalType.PAIN_LEVEL -> "pain_level"
+                }
+
+                val requestBody = JSONObject().apply {
+                    put("patient_id", patientId)
+                    put("vital_type", vitalType)
+                    put("value", vital.value)
+                    put("unit", vital.unit)
+                    put("performer_name", clinicianName)
+                    put("device_type", "AR_GLASSES")
+
+                    if (vital.type == VitalType.BLOOD_PRESSURE && vital.value.contains("/")) {
+                        val parts = vital.value.split("/")
+                        if (parts.size == 2) {
+                            put("systolic", parts[0].trim().toIntOrNull() ?: 0)
+                            put("diastolic", parts[1].trim().toIntOrNull() ?: 0)
+                        }
+                    }
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/vitals/push")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    Log.d(TAG, "Auto-pushed vital: ${vital.displayName}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Auto-push vital failed: ${e.message}")
+            }
+        }.start()
     }
 
     /**
@@ -7243,7 +9622,7 @@ SOFA Score: [X]
             |• "Wipe data" - Securely erase all PHI
             |
             |🔧 OTHER
-            |• "Hey MDx [command]" - Wake word
+            |• Just speak naturally - no wake word needed
             |• "Close" - Dismiss overlay
             |• "Clear cache" - Clear offline data
             |• "Help" - Show this help
@@ -7346,25 +9725,34 @@ SOFA Score: [X]
     /**
      * Initialize Text-to-Speech for hands-free patient information
      * Allows clinicians to hear patient summary while walking to the room
+     * Supports multi-language TTS (English, Spanish, Mandarin, Portuguese)
      */
     private fun initTextToSpeech() {
         textToSpeech = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                val result = textToSpeech?.setLanguage(Locale.US)
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    Log.e(TAG, "TTS: Language not supported")
-                    isTtsReady = false
-                } else {
-                    isTtsReady = true
-                    // Set slightly slower speech rate for medical info clarity
-                    textToSpeech?.setSpeechRate(0.9f)
-                    Log.d(TAG, "TTS: Initialized successfully")
-                }
+                updateTtsLanguage()
             } else {
                 Log.e(TAG, "TTS: Initialization failed")
                 isTtsReady = false
             }
         }
+    }
+
+    /**
+     * Update TTS language to match current app language
+     */
+    private fun updateTtsLanguage() {
+        val result = textToSpeech?.setLanguage(currentLocale)
+        if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+            Log.e(TAG, "TTS: Language ${currentLocale.displayLanguage} not supported, falling back to US English")
+            textToSpeech?.setLanguage(Locale.US)
+            isTtsReady = true
+        } else {
+            isTtsReady = true
+            Log.d(TAG, "TTS: Language set to ${currentLocale.displayLanguage}")
+        }
+        // Set slightly slower speech rate for medical info clarity
+        textToSpeech?.setSpeechRate(0.9f)
     }
 
     /**
@@ -7383,6 +9771,180 @@ SOFA Score: [X]
      */
     private fun stopSpeaking() {
         textToSpeech?.stop()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MULTI-LANGUAGE SUPPORT - Language switching functions
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Get localized message for TTS feedback
+     */
+    private fun getLocalizedMessage(key: String): String? {
+        return ttsMessages[key]?.get(currentLanguage)
+    }
+
+    /**
+     * Switch app language (affects speech recognition and TTS)
+     * @param languageCode One of: "en", "es", "zh", "pt", "ru"
+     */
+    private fun switchLanguage(languageCode: String) {
+        currentLanguage = languageCode
+        currentLocale = when (languageCode) {
+            LANG_SPANISH -> Locale("es", "ES")
+            LANG_MANDARIN -> Locale.SIMPLIFIED_CHINESE
+            LANG_PORTUGUESE -> Locale("pt", "BR")
+            LANG_RUSSIAN -> Locale("ru", "RU")
+            else -> Locale.US
+        }
+
+        // Save preference
+        cachePrefs.edit().putString(PREF_LANGUAGE, languageCode).apply()
+
+        // Update TTS language
+        updateTtsLanguage()
+
+        // Provide feedback in the NEW language
+        val languageName = when (languageCode) {
+            LANG_SPANISH -> "español"
+            LANG_MANDARIN -> "中文"
+            LANG_PORTUGUESE -> "português"
+            LANG_RUSSIAN -> "русский"
+            else -> "English"
+        }
+
+        val feedback = when (languageCode) {
+            LANG_SPANISH -> "Idioma cambiado a español"
+            LANG_MANDARIN -> "语言已切换为中文"
+            LANG_PORTUGUESE -> "Idioma alterado para português"
+            LANG_RUSSIAN -> "Язык изменён на русский"
+            else -> "Language changed to English"
+        }
+
+        statusText.text = "Language: $languageName"
+        transcriptText.text = feedback
+        speakFeedback(feedback)
+
+        Log.d(TAG, "Language switched to $languageName ($languageCode)")
+    }
+
+    /**
+     * Load saved language preference
+     */
+    private fun loadLanguagePreference() {
+        currentLanguage = cachePrefs.getString(PREF_LANGUAGE, LANG_ENGLISH) ?: LANG_ENGLISH
+        currentLocale = when (currentLanguage) {
+            LANG_SPANISH -> Locale("es", "ES")
+            LANG_MANDARIN -> Locale.SIMPLIFIED_CHINESE
+            LANG_PORTUGUESE -> Locale("pt", "BR")
+            LANG_RUSSIAN -> Locale("ru", "RU")
+            else -> Locale.US
+        }
+        Log.d(TAG, "Loaded language preference: $currentLanguage")
+    }
+
+    /**
+     * Strip accents from text for fuzzy matching
+     * Handles Spanish accents: á→a, é→e, í→i, ó→o, ú→u, ñ→n
+     */
+    private fun stripAccents(text: String): String {
+        return text
+            .replace('á', 'a').replace('à', 'a').replace('ä', 'a')
+            .replace('é', 'e').replace('è', 'e').replace('ë', 'e')
+            .replace('í', 'i').replace('ì', 'i').replace('ï', 'i')
+            .replace('ó', 'o').replace('ò', 'o').replace('ö', 'o')
+            .replace('ú', 'u').replace('ù', 'u').replace('ü', 'u')
+            .replace('ñ', 'n')
+            .replace('Á', 'A').replace('À', 'A').replace('Ä', 'A')
+            .replace('É', 'E').replace('È', 'E').replace('Ë', 'E')
+            .replace('Í', 'I').replace('Ì', 'I').replace('Ï', 'I')
+            .replace('Ó', 'O').replace('Ò', 'O').replace('Ö', 'O')
+            .replace('Ú', 'U').replace('Ù', 'U').replace('Ü', 'U')
+            .replace('Ñ', 'N')
+    }
+
+    /**
+     * Translate non-English command to English for processing
+     * Supports Spanish (with accent-insensitive matching) and Russian
+     * Returns the English equivalent or the original if not found
+     */
+    private fun translateCommand(transcript: String): String {
+        val lower = transcript.lowercase()
+
+        // Handle Spanish translations
+        if (currentLanguage == LANG_SPANISH) {
+            val lowerNoAccents = stripAccents(lower)  // For fuzzy matching
+
+            // Check for Spanish command matches (with and without accents)
+            for ((spanish, english) in spanishCommands) {
+                val spanishNoAccents = stripAccents(spanish)
+                if (lower.contains(spanish) || lowerNoAccents.contains(spanishNoAccents)) {
+                    return if (lower.contains(spanish)) {
+                        lower.replace(spanish, english)
+                    } else {
+                        lowerNoAccents.replace(spanishNoAccents, english)
+                    }
+                }
+            }
+
+            // Check section aliases for Spanish
+            for ((section, aliases) in spanishSectionAliases) {
+                for (alias in aliases) {
+                    val aliasNoAccents = stripAccents(alias)
+                    if (lower.contains(alias) || lowerNoAccents.contains(aliasNoAccents)) {
+                        return if (lower.contains(alias)) {
+                            lower.replace(alias, section)
+                        } else {
+                            lowerNoAccents.replace(aliasNoAccents, section)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Handle Russian translations
+        if (currentLanguage == LANG_RUSSIAN) {
+            // Check for Russian command matches
+            for ((russian, english) in russianCommands) {
+                if (lower.contains(russian)) {
+                    return lower.replace(russian, english)
+                }
+            }
+
+            // Check section aliases for Russian
+            for ((section, aliases) in russianSectionAliases) {
+                for (alias in aliases) {
+                    if (lower.contains(alias)) {
+                        return lower.replace(alias, section)
+                    }
+                }
+            }
+        }
+
+        return transcript
+    }
+
+    /**
+     * Show available language options
+     */
+    private fun showLanguageOptions() {
+        val content = StringBuilder()
+        content.append("═══ LANGUAGE OPTIONS ═══\n\n")
+        content.append("Say:\n\n")
+        content.append("• \"Switch to English\"\n")
+        content.append("• \"Cambiar a español\"\n")
+        content.append("• \"Переключить на русский\"\n")
+        content.append("• \"切换到中文\"\n")
+        content.append("• \"Mudar para português\"\n\n")
+        content.append("Or say:\n")
+        content.append("• \"Language English\"\n")
+        content.append("• \"Language Spanish\"\n")
+        content.append("• \"Language Russian\"\n")
+        content.append("• \"Language Chinese\"\n")
+        content.append("• \"Language Portuguese\"\n\n")
+        content.append("Current: ${currentLocale.displayLanguage}")
+
+        showDataOverlay("Language Settings", content.toString())
     }
 
     /**
@@ -9617,6 +12179,8 @@ SOFA Score: [X]
     private var lastSavedNoteId: String? = null
 
     private fun fetchPatientData(patientId: String, forceOnline: Boolean = false) {
+        Log.d(TAG, "Fetching patient: $patientId")
+
         // Check if offline - use cache
         if (!forceOnline && !isNetworkAvailable()) {
             val cached = getCachedPatient(patientId)
@@ -9647,83 +12211,106 @@ SOFA Score: [X]
         statusText.text = "Loading patient..."
         transcriptText.text = "Connecting to EHR"
 
+        // Use quick endpoint for Samsung (returns minimal data instantly)
+        val urlStr = "$EHR_PROXY_URL/api/v1/patient/$patientId/quick"
+
+        // Use pure Java networking (Samsung blocks OkHttp large responses)
         Thread {
             try {
-                val request = Request.Builder()
-                    .url("$EHR_PROXY_URL/api/v1/patient/$patientId")
-                    .get()
-                    .build()
+                val url = java.net.URL(urlStr)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 30000
+                conn.readTimeout = 60000
+                conn.setRequestProperty("Accept", "application/json")
+                conn.setRequestProperty("User-Agent", "MDxVision/1.0")
 
-                httpClient.newCall(request).enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        Log.e(TAG, "EHR proxy error: ${e.message}")
-                        runOnUiThread {
-                            // Try to use cache on failure
-                            val cached = getCachedPatient(patientId)
-                            if (cached != null) {
-                                currentPatientData = cached
-                                val name = cached.optString("name", "Unknown")
-                                val displayText = cached.optString("display_text", "No data")
-                                showDataOverlay("📴 CACHED: $name", displayText + "\n\n⚠️ Network error - showing cached data")
-                                statusText.text = "Using cache"
-                                transcriptText.text = "Network unavailable"
-                                // Speech feedback and safety warnings from cache
-                                speakFeedback("Patient $name loaded from cache")
-                                speakCriticalVitalAlerts(cached)  // Vitals first (most urgent)
-                                speakAllergyWarnings(cached)
-                                speakCriticalLabAlerts(cached)
-                                speakMedicationInteractions(cached)
-                                speakLabTrends(cached)
-                                speakVitalTrends(cached)  // Trends last
-                            } else {
-                                statusText.text = "Connection failed"
-                                transcriptText.text = "Error: ${e.message}"
-                                speakFeedback("Failed to load patient")
-                            }
-                        }
-                    }
+                val responseCode = conn.responseCode
+                val body = if (responseCode == 200) {
+                    conn.inputStream.bufferedReader().use { it.readText() }
+                } else {
+                    conn.errorStream?.bufferedReader()?.use { it.readText() }
+                }
+                conn.disconnect()
 
-                    override fun onResponse(call: Call, response: Response) {
-                        val body = response.body?.string()
-                        Log.d(TAG, "Patient data: $body")
-
-                        runOnUiThread {
-                            try {
-                                val patient = JSONObject(body ?: "{}")
-                                currentPatientData = patient
-
-                                // Cache the patient data for offline use
-                                cachePatientData(patientId, body ?: "{}")
-
-                                val name = patient.optString("name", "Unknown")
-
-                                // Add to patient history for quick access
-                                addToPatientHistory(patientId, name)
-
-                                showPatientDataOverlay(patient)
-
-                                // Speech feedback
-                                speakFeedback("Patient $name loaded")
-
-                                // Safety-critical alerts (always spoken) - vitals first as most urgent
-                                speakCriticalVitalAlerts(patient)
-                                speakAllergyWarnings(patient)
-                                speakCriticalLabAlerts(patient)
-                                speakMedicationInteractions(patient)
-                                speakLabTrends(patient)
-                                speakVitalTrends(patient)  // Trends last
-                            } catch (e: Exception) {
-                                showDataOverlay("Error", body ?: "No response")
-                                speakFeedback("Error loading patient")
-                            }
-                        }
-                    }
-                })
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to fetch patient: ${e.message}")
                 runOnUiThread {
-                    statusText.text = "Error"
-                    transcriptText.text = e.message ?: "Unknown error"
+                    if (responseCode == 200 && body != null) {
+                        try {
+                            val patient = JSONObject(body)
+                            currentPatientData = patient
+                            cachePatientData(patientId, body)
+                            val name = patient.optString("name", "Unknown")
+                            addToPatientHistory(patientId, name)
+                            showPatientDataOverlay(patient)
+                            speakFeedback("Patient $name loaded")
+                            speakCriticalVitalAlerts(patient)
+                            speakAllergyWarnings(patient)
+                            speakCriticalLabAlerts(patient)
+                            speakMedicationInteractions(patient)
+                            speakLabTrends(patient)
+                            speakVitalTrends(patient)
+                        } catch (e: Exception) {
+                            showDataOverlay("Parse Error", body)
+                            speakFeedback("Error loading patient")
+                        }
+                    } else {
+                        statusText.text = "HTTP Error: $responseCode"
+                        transcriptText.text = body ?: "No response"
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    val cached = getCachedPatient(patientId)
+                    if (cached != null) {
+                        currentPatientData = cached
+                        val name = cached.optString("name", "Unknown")
+                        val displayText = cached.optString("display_text", "No data")
+                        showDataOverlay("📴 CACHED: $name", displayText + "\n\n⚠️ Network error")
+                        speakFeedback("Patient $name loaded from cache")
+                        speakCriticalVitalAlerts(cached)
+                        speakAllergyWarnings(cached)
+                        speakCriticalLabAlerts(cached)
+                    } else {
+                        statusText.text = "Connection failed"
+                        transcriptText.text = "Error: ${e.message}"
+                        speakFeedback("Failed to load patient")
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun testNetworkConnection() {
+        Thread {
+            try {
+                runOnUiThread {
+                    statusText.text = "Connecting..."
+                    transcriptText.text = "Testing network..."
+                }
+
+                val url = java.net.URL("$EHR_PROXY_URL/ping")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+                conn.requestMethod = "GET"
+
+                val code = conn.responseCode
+                conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+
+                runOnUiThread {
+                    if (code == 200) {
+                        // Network works, load patient
+                        fetchPatientData(TEST_PATIENT_ID)
+                    } else {
+                        statusText.text = "Network error"
+                        transcriptText.text = "HTTP $code"
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusText.text = "Offline"
+                    transcriptText.text = "Cannot reach server"
                 }
             }
         }.start()
@@ -9835,12 +12422,19 @@ SOFA Score: [X]
 
     /**
      * Lock the session - hide PHI and show lock screen.
+     * If device is paired, requires TOTP to unlock (not just tap/voice).
      */
     private fun lockSession() {
         if (isSessionLocked) return
 
         isSessionLocked = true
         Log.d(TAG, "Session locked for HIPAA compliance")
+
+        // Invalidate session token on lock
+        if (isDevicePaired) {
+            sessionToken = null
+            cachePrefs.edit().remove(PREF_SESSION_TOKEN).apply()
+        }
 
         // Stop any active transcription
         if (isLiveTranscribing) {
@@ -9854,12 +12448,18 @@ SOFA Score: [X]
         hideDataOverlay()
         hideLiveTranscriptionOverlay()
 
-        // Show lock screen
-        showLockScreenOverlay()
+        // Show appropriate lock screen
+        if (isDevicePaired) {
+            // Paired device: require TOTP to unlock
+            showTotpLockScreen()
+        } else {
+            // Unpaired device: simple lock (tap/voice to unlock)
+            showLockScreenOverlay()
+        }
 
         // Update status
         statusText.text = "Session Locked"
-        transcriptText.text = "Tap or say 'unlock' to continue"
+        transcriptText.text = if (isDevicePaired) "Say your 6-digit code to unlock" else "Tap or say 'unlock' to continue"
         patientDataText.text = ""
 
         // Speak lock notification
@@ -10007,6 +12607,1058 @@ SOFA Score: [X]
     private fun loadSessionTimeoutSetting() {
         sessionTimeoutMinutes = cachePrefs.getInt(PREF_SESSION_TIMEOUT, DEFAULT_SESSION_TIMEOUT_MINUTES)
         Log.d(TAG, "Loaded session timeout: $sessionTimeoutMinutes minutes")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DEVICE AUTHENTICATION (TOTP + QR Pairing + Proximity Lock)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Initialize device authentication - load saved auth state.
+     * Called during onCreate.
+     */
+    private fun initializeDeviceAuth() {
+        // Generate unique device ID if not exists
+        deviceId = cachePrefs.getString(PREF_DEVICE_ID, "") ?: ""
+        if (deviceId.isEmpty()) {
+            deviceId = java.util.UUID.randomUUID().toString()
+            cachePrefs.edit().putString(PREF_DEVICE_ID, deviceId).apply()
+            Log.d(TAG, "Generated new device ID: $deviceId")
+        }
+
+        // Load auth state
+        sessionToken = cachePrefs.getString(PREF_SESSION_TOKEN, null)
+        clinicianId = cachePrefs.getString(PREF_CLINICIAN_ID, null)
+        isDevicePaired = cachePrefs.getBoolean(PREF_DEVICE_PAIRED, false)
+        isVoiceprintEnrolled = cachePrefs.getBoolean(PREF_VOICEPRINT_ENROLLED, false)
+
+        Log.d(TAG, "Device auth initialized - paired: $isDevicePaired, hasSession: ${sessionToken != null}")
+
+        // Initialize proximity sensor for auto-lock
+        initializeProximitySensor()
+
+        // Check device status with backend
+        if (isDevicePaired && sessionToken != null) {
+            verifySessionWithBackend()
+        }
+    }
+
+    /**
+     * Start device pairing - launch QR scanner.
+     */
+    private fun startDevicePairing() {
+        speakFeedback("Starting device pairing. Please scan the QR code from your dashboard.")
+        val intent = Intent(this, QrPairingActivity::class.java)
+        startActivityForResult(intent, QR_SCAN_REQUEST_CODE)
+    }
+
+    /**
+     * Complete device pairing after QR scan.
+     */
+    private fun completePairing(token: String, apiUrl: String?) {
+        Log.d(TAG, "Completing pairing with token: $token")
+        statusText.text = "Pairing device..."
+
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("token", token)
+                    put("device_id", deviceId)
+                    put("device_name", "MDx Vision Glasses")
+                    put("device_type", android.os.Build.MODEL)
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/device/pair")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                runOnUiThread {
+                    if (result.optBoolean("success", false)) {
+                        val clinicianName = result.optString("clinician_name", "Clinician")
+                        clinicianId = result.optString("clinician_id", "")
+                        isDevicePaired = true
+
+                        // Save pairing state
+                        cachePrefs.edit()
+                            .putBoolean(PREF_DEVICE_PAIRED, true)
+                            .putString(PREF_CLINICIAN_ID, clinicianId)
+                            .apply()
+
+                        statusText.text = "Device paired to: $clinicianName"
+                        speakFeedback("Device paired successfully to $clinicianName. Please set up your authenticator app, then say your 6-digit code to unlock.")
+                        Toast.makeText(this, "Paired to: $clinicianName", Toast.LENGTH_LONG).show()
+
+                        // Now require TOTP to unlock
+                        showTotpLockScreen()
+
+                    } else {
+                        val error = result.optString("error", "Pairing failed")
+                        statusText.text = "Pairing failed"
+                        speakFeedback("Pairing failed: $error")
+                        Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Pairing error: ${e.message}")
+                runOnUiThread {
+                    statusText.text = "Pairing error"
+                    speakFeedback("Network error during pairing. Please try again.")
+                    Toast.makeText(this, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Show TOTP lock screen - requires voice code to unlock.
+     */
+    private fun showTotpLockScreen() {
+        isSessionLocked = true
+        isAwaitingTotpCode = true
+        totpDigitBuffer.clear()
+
+        // Hide any data overlays
+        hideDataOverlay()
+        hideLiveTranscriptionOverlay()
+
+        // Show TOTP lock screen
+        val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        lockScreenOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xF0121212.toInt())
+            isClickable = true
+            isFocusable = true
+        }
+
+        val lockContent = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(48, 48, 48, 48)
+        }
+
+        // Lock icon
+        val lockIcon = TextView(this).apply {
+            text = "🔐"
+            textSize = 64f
+            gravity = android.view.Gravity.CENTER
+        }
+
+        // Lock message
+        val lockMessage = TextView(this).apply {
+            text = "Voice Unlock Required"
+            textSize = 28f
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 24, 0, 16)
+        }
+
+        // Instructions
+        val instructions = TextView(this).apply {
+            text = "Say your 6-digit code from your authenticator app\n(e.g., \"4 7 2 9 1 5\")"
+            textSize = 16f
+            setTextColor(0xFFAAAAAA.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, 24)
+        }
+
+        // Code display (shows entered digits)
+        val codeDisplay = TextView(this).apply {
+            id = android.R.id.text1  // Use a known ID for updating
+            text = "● ● ● ● ● ●"
+            textSize = 32f
+            setTextColor(0xFF4CAF50.toInt())
+            gravity = android.view.Gravity.CENTER
+            typeface = android.graphics.Typeface.MONOSPACE
+            letterSpacing = 0.3f
+        }
+
+        // Pairing button for new devices
+        val pairButton = android.widget.Button(this).apply {
+            text = "Pair New Device"
+            setOnClickListener { startDevicePairing() }
+            visibility = if (isDevicePaired) android.view.View.GONE else android.view.View.VISIBLE
+        }
+
+        lockContent.addView(lockIcon)
+        lockContent.addView(lockMessage)
+        lockContent.addView(instructions)
+        lockContent.addView(codeDisplay)
+        if (!isDevicePaired) {
+            lockContent.addView(pairButton)
+        }
+
+        val contentParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.CENTER
+        }
+
+        lockScreenOverlay?.addView(lockContent, contentParams)
+
+        val overlayParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        )
+
+        rootView.addView(lockScreenOverlay, overlayParams)
+
+        // Start listening for voice
+        startVoiceRecognition()
+
+        Log.d(TAG, "TOTP lock screen shown")
+    }
+
+    /**
+     * Process spoken digits for TOTP code entry.
+     * Called from voice recognition when awaiting TOTP.
+     */
+    private fun processTotpVoiceInput(spokenText: String) {
+        val lower = spokenText.lowercase().trim()
+
+        // Map spoken words to digits
+        val digitMap = mapOf(
+            "zero" to "0", "oh" to "0", "o" to "0",
+            "one" to "1", "won" to "1",
+            "two" to "2", "to" to "2", "too" to "2",
+            "three" to "3", "tree" to "3",
+            "four" to "4", "for" to "4", "fore" to "4",
+            "five" to "5",
+            "six" to "6", "sex" to "6",
+            "seven" to "7",
+            "eight" to "8", "ate" to "8",
+            "nine" to "9", "niner" to "9"
+        )
+
+        // Extract digits from spoken text
+        val words = lower.split(" ", ",", "-", ".")
+        for (word in words) {
+            val cleaned = word.filter { it.isLetterOrDigit() }
+
+            // Check if it's a direct digit
+            if (cleaned.length == 1 && cleaned[0].isDigit()) {
+                totpDigitBuffer.append(cleaned)
+            }
+            // Check if it's a spoken digit word
+            else if (digitMap.containsKey(cleaned)) {
+                totpDigitBuffer.append(digitMap[cleaned])
+            }
+            // Check if it contains multiple digits (e.g., "472")
+            else {
+                for (char in cleaned) {
+                    if (char.isDigit()) {
+                        totpDigitBuffer.append(char)
+                    }
+                }
+            }
+        }
+
+        // Update display
+        updateTotpDisplay()
+
+        // Check if we have 6 digits
+        if (totpDigitBuffer.length >= 6) {
+            val code = totpDigitBuffer.substring(0, 6)
+            totpDigitBuffer.clear()
+            verifyTotpCode(code)
+        } else if (totpDigitBuffer.length > 0) {
+            // Keep listening
+            startVoiceRecognition()
+        }
+    }
+
+    /**
+     * Update the TOTP code display with entered digits.
+     */
+    private fun updateTotpDisplay() {
+        lockScreenOverlay?.findViewById<TextView>(android.R.id.text1)?.let { display ->
+            val entered = totpDigitBuffer.toString()
+            val displayText = StringBuilder()
+            for (i in 0 until 6) {
+                if (i < entered.length) {
+                    displayText.append(entered[i])
+                } else {
+                    displayText.append("●")
+                }
+                if (i < 5) displayText.append(" ")
+            }
+            display.text = displayText.toString()
+        }
+    }
+
+    /**
+     * Verify TOTP code with backend.
+     */
+    private fun verifyTotpCode(code: String) {
+        Log.d(TAG, "Verifying TOTP code: $code")
+        speakFeedback("Verifying code")
+
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("device_id", deviceId)
+                    put("totp_code", code)
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/device/unlock")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                runOnUiThread {
+                    if (result.optBoolean("success", false)) {
+                        // Save session token
+                        sessionToken = result.optString("session_token", "")
+                        val clinicianName = result.optString("clinician_name", "Clinician")
+
+                        cachePrefs.edit()
+                            .putString(PREF_SESSION_TOKEN, sessionToken)
+                            .apply()
+
+                        // Unlock session
+                        isAwaitingTotpCode = false
+                        isSessionLocked = false
+                        hideLockScreenOverlay()
+                        updateLastActivity()
+
+                        statusText.text = "Welcome, $clinicianName"
+                        speakFeedback("Welcome, $clinicianName. Session unlocked.")
+                        Toast.makeText(this, "Session unlocked", Toast.LENGTH_SHORT).show()
+
+                        Log.d(TAG, "TOTP verified - session unlocked")
+
+                    } else {
+                        val error = result.optString("error", "Invalid code")
+                        speakFeedback("Invalid code. Please try again.")
+                        Toast.makeText(this, error, Toast.LENGTH_SHORT).show()
+                        totpDigitBuffer.clear()
+                        updateTotpDisplay()
+                        startVoiceRecognition()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "TOTP verification error: ${e.message}")
+                runOnUiThread {
+                    speakFeedback("Network error. Please try again.")
+                    totpDigitBuffer.clear()
+                    updateTotpDisplay()
+                    startVoiceRecognition()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Verify session with backend (check if still valid).
+     */
+    private fun verifySessionWithBackend() {
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("device_id", deviceId)
+                    put("session_token", sessionToken)
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/device/verify-session")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                runOnUiThread {
+                    if (result.optBoolean("valid", false)) {
+                        Log.d(TAG, "Session verified with backend")
+                        isSessionLocked = false
+                    } else {
+                        Log.d(TAG, "Session invalid - requiring TOTP")
+                        sessionToken = null
+                        cachePrefs.edit().remove(PREF_SESSION_TOKEN).apply()
+                        showTotpLockScreen()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Session verify error: ${e.message}")
+                // On network error, allow offline use if previously verified
+            }
+        }.start()
+    }
+
+    /**
+     * Initialize proximity sensor for auto-lock when glasses removed.
+     */
+    private fun initializeProximitySensor() {
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as android.hardware.SensorManager
+        proximitySensor = sensorManager?.getDefaultSensor(android.hardware.Sensor.TYPE_PROXIMITY)
+
+        if (proximitySensor != null) {
+            Log.d(TAG, "Proximity sensor available - enabling auto-lock")
+        } else {
+            Log.w(TAG, "No proximity sensor - auto-lock disabled")
+        }
+    }
+
+    /**
+     * Proximity sensor listener for auto-lock.
+     */
+    private val proximitySensorListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(event: android.hardware.SensorEvent) {
+            if (event.sensor.type == android.hardware.Sensor.TYPE_PROXIMITY) {
+                val distance = event.values[0]
+                val maxRange = event.sensor.maximumRange
+
+                // Object close = glasses on face, far = glasses removed
+                val wasOnFace = isGlassesOnFace
+                isGlassesOnFace = distance < maxRange
+
+                if (wasOnFace && !isGlassesOnFace) {
+                    // Glasses removed - auto-lock after short delay
+                    Log.d(TAG, "Proximity: Glasses removed - locking in 3 seconds")
+                    android.os.Handler(mainLooper).postDelayed({
+                        if (!isGlassesOnFace && !isSessionLocked) {
+                            lockSession()
+                            speakFeedback("Session locked. Glasses removed.")
+                        }
+                    }, 3000)
+                } else if (!wasOnFace && isGlassesOnFace) {
+                    Log.d(TAG, "Proximity: Glasses back on face")
+                }
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: android.hardware.Sensor, accuracy: Int) {}
+    }
+
+    /**
+     * Start proximity sensor monitoring.
+     */
+    private fun startProximityMonitoring() {
+        proximitySensor?.let { sensor ->
+            sensorManager?.registerListener(
+                proximitySensorListener,
+                sensor,
+                android.hardware.SensorManager.SENSOR_DELAY_NORMAL
+            )
+            Log.d(TAG, "Proximity monitoring started")
+        }
+    }
+
+    /**
+     * Stop proximity sensor monitoring.
+     */
+    private fun stopProximityMonitoring() {
+        sensorManager?.unregisterListener(proximitySensorListener)
+        Log.d(TAG, "Proximity monitoring stopped")
+    }
+
+    /**
+     * Check if device should show TOTP lock on startup.
+     */
+    private fun shouldRequireTotpOnStartup(): Boolean {
+        // Require TOTP if:
+        // 1. Device is paired but no valid session
+        // 2. Device is not paired (show pairing option)
+        return isDevicePaired && sessionToken == null
+    }
+
+    /**
+     * Remote wipe - clear all local data.
+     * Called when backend signals device is wiped.
+     */
+    private fun performLocalWipe() {
+        Log.w(TAG, "Performing local data wipe")
+
+        // Clear all cached data
+        cachePrefs.edit().clear().apply()
+
+        // Reset state
+        deviceId = ""
+        sessionToken = null
+        clinicianId = null
+        isDevicePaired = false
+        isVoiceprintEnrolled = false
+        currentPatientData = null
+
+        // Show message
+        runOnUiThread {
+            Toast.makeText(this, "Device wiped by administrator", Toast.LENGTH_LONG).show()
+            speakFeedback("Device has been remotely wiped. Please contact your administrator.")
+
+            // Re-initialize with new device ID
+            initializeDeviceAuth()
+            showTotpLockScreen()
+        }
+    }
+
+    /**
+     * Show device authentication status.
+     */
+    private fun showDeviceStatus() {
+        val status = StringBuilder("Device Authentication Status:\n\n")
+
+        status.append("Device ID: ${deviceId.take(8)}...\n")
+        status.append("Paired: ${if (isDevicePaired) "Yes" else "No"}\n")
+        status.append("Session: ${if (sessionToken != null) "Active" else "Locked"}\n")
+        status.append("Voiceprint: ${if (isVoiceprintEnrolled) "Enrolled" else "Not enrolled"}\n")
+        status.append("Proximity Lock: ${if (proximitySensor != null) "Enabled" else "Disabled"}\n")
+
+        if (!isDevicePaired) {
+            status.append("\nSay 'pair device' to set up authentication.")
+        }
+
+        patientDataText.text = status.toString()
+        speakFeedback("Device ${if (isDevicePaired) "is paired and ${if (sessionToken != null) "session is active" else "requires unlock"}" else "is not paired"}")
+
+        Log.d(TAG, "Device status displayed")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VOICEPRINT ENROLLMENT & VERIFICATION (Speaker Recognition)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Start voiceprint enrollment process.
+     * Fetches enrollment phrases from backend, then prompts user to record each phrase.
+     */
+    private fun startVoiceprintEnrollment() {
+        if (!isDevicePaired) {
+            speakFeedback("Please pair your device first before enrolling voiceprint.")
+            return
+        }
+
+        speakFeedback("Starting voiceprint enrollment. Please wait.")
+        statusText.text = "Loading enrollment phrases..."
+
+        Thread {
+            try {
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/voiceprint/phrases")
+                    .get()
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                val phrasesArray = result.optJSONArray("phrases") ?: org.json.JSONArray()
+                val phrases = mutableListOf<String>()
+                for (i in 0 until phrasesArray.length()) {
+                    phrases.add(phrasesArray.getString(i))
+                }
+
+                runOnUiThread {
+                    if (phrases.isNotEmpty()) {
+                        voiceprintEnrollmentPhrases = phrases
+                        voiceprintRecordingIndex = 0
+                        voiceprintAudioSamples.clear()
+                        showVoiceprintEnrollmentUI()
+                    } else {
+                        statusText.text = "Failed to load phrases"
+                        speakFeedback("Failed to load enrollment phrases. Please try again.")
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching enrollment phrases: ${e.message}")
+                runOnUiThread {
+                    statusText.text = "Enrollment error"
+                    speakFeedback("Network error. Please try again.")
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Show voiceprint enrollment UI with phrases to record.
+     */
+    private fun showVoiceprintEnrollmentUI() {
+        isRecordingVoiceprint = true
+
+        val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        voiceprintEnrollmentOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xF0121212.toInt())
+            isClickable = true
+            isFocusable = true
+        }
+
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(48, 48, 48, 48)
+        }
+
+        // Title
+        val title = TextView(this).apply {
+            text = "🎤 Voiceprint Enrollment"
+            textSize = 28f
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.CENTER
+        }
+
+        // Progress indicator
+        val progress = TextView(this).apply {
+            id = android.R.id.text2
+            text = "Recording ${voiceprintRecordingIndex + 1} of ${voiceprintEnrollmentPhrases.size}"
+            textSize = 16f
+            setTextColor(0xFF4CAF50.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 16, 0, 24)
+        }
+
+        // Phrase to speak
+        val phraseBox = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setBackgroundColor(0xFF1E1E1E.toInt())
+            setPadding(32, 24, 32, 24)
+        }
+
+        val phraseLabel = TextView(this).apply {
+            text = "Please say:"
+            textSize = 14f
+            setTextColor(0xFFAAAAAA.toInt())
+        }
+
+        val phraseText = TextView(this).apply {
+            id = android.R.id.text1
+            text = "\"${voiceprintEnrollmentPhrases.getOrNull(voiceprintRecordingIndex) ?: ""}\""
+            textSize = 22f
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 8, 0, 0)
+        }
+
+        phraseBox.addView(phraseLabel)
+        phraseBox.addView(phraseText)
+
+        // Instructions
+        val instructions = TextView(this).apply {
+            text = "Speak clearly into the microphone.\nRecording will capture automatically."
+            textSize = 14f
+            setTextColor(0xFFAAAAAA.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 24, 0, 24)
+        }
+
+        // Recording indicator
+        val recordingIndicator = TextView(this).apply {
+            id = R.id.text1  // Using a different ID for recording status
+            text = "🔴 Listening..."
+            textSize = 18f
+            setTextColor(0xFFE53935.toInt())
+            gravity = android.view.Gravity.CENTER
+        }
+
+        // Cancel button
+        val cancelButton = android.widget.Button(this).apply {
+            text = "Cancel"
+            setOnClickListener { cancelVoiceprintEnrollment() }
+        }
+
+        content.addView(title)
+        content.addView(progress)
+        content.addView(phraseBox)
+        content.addView(instructions)
+        content.addView(recordingIndicator)
+        content.addView(cancelButton)
+
+        val contentParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.CENTER
+        }
+
+        voiceprintEnrollmentOverlay?.addView(content, contentParams)
+
+        val overlayParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        )
+
+        rootView.addView(voiceprintEnrollmentOverlay, overlayParams)
+
+        // Speak the first phrase prompt
+        val phrase = voiceprintEnrollmentPhrases.getOrNull(voiceprintRecordingIndex) ?: ""
+        speakFeedback("Please say: $phrase")
+
+        // Start recording
+        startVoiceprintRecording()
+
+        Log.d(TAG, "Voiceprint enrollment UI shown")
+    }
+
+    /**
+     * Start recording audio for voiceprint enrollment.
+     * Uses MediaRecorder to capture audio, then converts to base64.
+     */
+    private fun startVoiceprintRecording() {
+        // Use the existing voice recognition but capture audio data
+        // For simplicity, we'll use a simulated approach here
+        // In production, implement proper audio recording with MediaRecorder
+
+        // Start voice recognition to capture the phrase
+        startVoiceRecognition()
+
+        // After user speaks, the voice recognition callback will process it
+        // We need to modify the voice callback to handle voiceprint mode
+        Log.d(TAG, "Voiceprint recording started for phrase ${voiceprintRecordingIndex + 1}")
+    }
+
+    /**
+     * Process voice input during voiceprint enrollment.
+     * Called from the voice recognition callback when isRecordingVoiceprint is true.
+     */
+    private fun processVoiceprintRecording(spokenText: String, audioBase64: String) {
+        if (!isRecordingVoiceprint) return
+
+        Log.d(TAG, "Voiceprint audio captured for phrase ${voiceprintRecordingIndex + 1}")
+
+        // For now, we'll create a simulated audio sample
+        // In production, capture actual audio from MediaRecorder
+        val simulatedAudio = android.util.Base64.encodeToString(
+            spokenText.toByteArray(),
+            android.util.Base64.NO_WRAP
+        )
+
+        voiceprintAudioSamples.add(if (audioBase64.isNotEmpty()) audioBase64 else simulatedAudio)
+
+        voiceprintRecordingIndex++
+
+        if (voiceprintRecordingIndex < voiceprintEnrollmentPhrases.size) {
+            // Update UI for next phrase
+            updateVoiceprintEnrollmentUI()
+
+            val nextPhrase = voiceprintEnrollmentPhrases.getOrNull(voiceprintRecordingIndex) ?: ""
+            speakFeedback("Good. Now say: $nextPhrase")
+
+            // Continue recording
+            android.os.Handler(mainLooper).postDelayed({
+                startVoiceprintRecording()
+            }, 500)
+        } else {
+            // All phrases recorded - submit to backend
+            submitVoiceprintEnrollment()
+        }
+    }
+
+    /**
+     * Update the voiceprint enrollment UI for the next phrase.
+     */
+    private fun updateVoiceprintEnrollmentUI() {
+        voiceprintEnrollmentOverlay?.let { overlay ->
+            overlay.findViewById<TextView>(android.R.id.text1)?.text =
+                "\"${voiceprintEnrollmentPhrases.getOrNull(voiceprintRecordingIndex) ?: ""}\""
+            overlay.findViewById<TextView>(android.R.id.text2)?.text =
+                "Recording ${voiceprintRecordingIndex + 1} of ${voiceprintEnrollmentPhrases.size}"
+        }
+    }
+
+    /**
+     * Submit collected audio samples to backend for voiceprint enrollment.
+     */
+    private fun submitVoiceprintEnrollment() {
+        speakFeedback("Processing voiceprint. Please wait.")
+
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("device_id", deviceId)
+                    put("audio_samples", org.json.JSONArray(voiceprintAudioSamples))
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/voiceprint/enroll")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                runOnUiThread {
+                    dismissVoiceprintEnrollmentUI()
+
+                    if (result.optBoolean("success", false)) {
+                        isVoiceprintEnrolled = true
+                        cachePrefs.edit().putBoolean(PREF_VOICEPRINT_ENROLLED, true).apply()
+
+                        val consistency = result.optDouble("consistency_score", 0.0)
+                        statusText.text = "Voiceprint enrolled successfully"
+                        speakFeedback("Voiceprint enrolled successfully. Your voice will be used for additional security on sensitive operations.")
+
+                        Toast.makeText(this, "✓ Voiceprint enrolled", Toast.LENGTH_LONG).show()
+                        Log.d(TAG, "Voiceprint enrolled - consistency: $consistency")
+                    } else {
+                        val error = result.optString("error", "Enrollment failed")
+                        statusText.text = "Voiceprint enrollment failed"
+                        speakFeedback("Voiceprint enrollment failed: $error")
+                        Toast.makeText(this, "Failed: $error", Toast.LENGTH_LONG).show()
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Voiceprint enrollment error: ${e.message}")
+                runOnUiThread {
+                    dismissVoiceprintEnrollmentUI()
+                    statusText.text = "Enrollment error"
+                    speakFeedback("Network error during enrollment. Please try again.")
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Cancel voiceprint enrollment.
+     */
+    private fun cancelVoiceprintEnrollment() {
+        isRecordingVoiceprint = false
+        voiceprintRecordingIndex = 0
+        voiceprintAudioSamples.clear()
+        dismissVoiceprintEnrollmentUI()
+        speakFeedback("Voiceprint enrollment cancelled.")
+        Log.d(TAG, "Voiceprint enrollment cancelled")
+    }
+
+    /**
+     * Dismiss voiceprint enrollment UI.
+     */
+    private fun dismissVoiceprintEnrollmentUI() {
+        voiceprintEnrollmentOverlay?.let {
+            val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+            rootView.removeView(it)
+        }
+        voiceprintEnrollmentOverlay = null
+        isRecordingVoiceprint = false
+    }
+
+    /**
+     * Show voiceprint enrollment status.
+     */
+    private fun showVoiceprintStatus() {
+        if (isVoiceprintEnrolled) {
+            speakFeedback("Voiceprint is enrolled and active.")
+            patientDataText.text = "🎤 Voiceprint Status: Enrolled\n\nYour voice will be verified for sensitive operations like pushing notes to EHR or ordering medications."
+        } else {
+            speakFeedback("Voiceprint is not enrolled. Say 'enroll my voice' to set up.")
+            patientDataText.text = "🎤 Voiceprint Status: Not Enrolled\n\nSay 'enroll my voice' to register your voiceprint for additional security."
+        }
+    }
+
+    /**
+     * Delete voiceprint enrollment.
+     */
+    private fun deleteVoiceprintEnrollment() {
+        if (!isVoiceprintEnrolled) {
+            speakFeedback("No voiceprint is enrolled.")
+            return
+        }
+
+        speakFeedback("Deleting voiceprint. Please wait.")
+
+        Thread {
+            try {
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/voiceprint/$deviceId")
+                    .delete()
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                runOnUiThread {
+                    if (result.optBoolean("success", false)) {
+                        isVoiceprintEnrolled = false
+                        cachePrefs.edit().putBoolean(PREF_VOICEPRINT_ENROLLED, false).apply()
+                        statusText.text = "Voiceprint deleted"
+                        speakFeedback("Voiceprint has been deleted.")
+                        Toast.makeText(this, "Voiceprint deleted", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val error = result.optString("error", "Delete failed")
+                        speakFeedback("Failed to delete voiceprint: $error")
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Voiceprint delete error: ${e.message}")
+                runOnUiThread {
+                    speakFeedback("Network error. Please try again.")
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Verify voiceprint before sensitive operations.
+     * Returns true if verified, false if failed or not enrolled.
+     */
+    private fun verifyVoiceprintForOperation(operation: String, onResult: (Boolean) -> Unit) {
+        if (!isVoiceprintEnrolled) {
+            // No voiceprint enrolled - allow operation
+            onResult(true)
+            return
+        }
+
+        speakFeedback("Please verify your identity by speaking.")
+        isAwaitingVoiceprintVerify = true
+        voiceprintVerifyCallback = onResult
+
+        // Show verification UI
+        val rootView = findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        voiceprintEnrollmentOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xE0121212.toInt())
+            isClickable = true
+        }
+
+        val content = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(48, 48, 48, 48)
+        }
+
+        val icon = TextView(this).apply {
+            text = "🎤"
+            textSize = 64f
+            gravity = android.view.Gravity.CENTER
+        }
+
+        val title = TextView(this).apply {
+            text = "Voice Verification Required"
+            textSize = 24f
+            setTextColor(0xFFFFFFFF.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 16, 0, 8)
+        }
+
+        val operationText = TextView(this).apply {
+            text = "For: $operation"
+            textSize = 16f
+            setTextColor(0xFF4CAF50.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, 0, 0, 24)
+        }
+
+        val instructions = TextView(this).apply {
+            text = "Say anything to verify your voice"
+            textSize = 14f
+            setTextColor(0xFFAAAAAA.toInt())
+            gravity = android.view.Gravity.CENTER
+        }
+
+        val cancelButton = android.widget.Button(this).apply {
+            text = "Cancel"
+            setOnClickListener {
+                cancelVoiceprintVerification()
+                onResult(false)
+            }
+        }
+
+        content.addView(icon)
+        content.addView(title)
+        content.addView(operationText)
+        content.addView(instructions)
+        content.addView(cancelButton)
+
+        val contentParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = android.view.Gravity.CENTER
+        }
+
+        voiceprintEnrollmentOverlay?.addView(content, contentParams)
+
+        val overlayParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+        )
+
+        rootView.addView(voiceprintEnrollmentOverlay, overlayParams)
+
+        // Start listening for voice
+        startVoiceRecognition()
+    }
+
+    /**
+     * Process voice verification result.
+     * Called from voice recognition when isAwaitingVoiceprintVerify is true.
+     */
+    private fun processVoiceprintVerification(audioBase64: String) {
+        if (!isAwaitingVoiceprintVerify) return
+
+        speakFeedback("Verifying voice...")
+
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("device_id", deviceId)
+                    put("audio_sample", audioBase64)
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/voiceprint/verify")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = JSONObject(responseBody)
+
+                runOnUiThread {
+                    dismissVoiceprintEnrollmentUI()
+                    isAwaitingVoiceprintVerify = false
+
+                    val verified = result.optBoolean("verified", false)
+                    val confidence = result.optDouble("confidence", 0.0)
+
+                    if (verified) {
+                        speakFeedback("Voice verified. Proceeding.")
+                        Log.d(TAG, "Voiceprint verified - confidence: $confidence")
+                    } else {
+                        speakFeedback("Voice verification failed. Access denied.")
+                        Log.d(TAG, "Voiceprint verification failed - confidence: $confidence")
+                    }
+
+                    voiceprintVerifyCallback?.invoke(verified)
+                    voiceprintVerifyCallback = null
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Voiceprint verify error: ${e.message}")
+                runOnUiThread {
+                    dismissVoiceprintEnrollmentUI()
+                    isAwaitingVoiceprintVerify = false
+                    speakFeedback("Verification error. Operation cancelled.")
+                    voiceprintVerifyCallback?.invoke(false)
+                    voiceprintVerifyCallback = null
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Cancel voiceprint verification.
+     */
+    private fun cancelVoiceprintVerification() {
+        isAwaitingVoiceprintVerify = false
+        voiceprintVerifyCallback = null
+        dismissVoiceprintEnrollmentUI()
     }
 
     // ============ Patient History Methods ============
@@ -10309,13 +13961,17 @@ SOFA Score: [X]
 
         networkCallback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
-                Log.d(TAG, "Network available - checking for pending drafts")
+                Log.d(TAG, "Network available - checking for pending data")
                 runOnUiThread {
+                    // Sync pending note drafts
                     val draftCount = getPendingDraftCount()
                     if (draftCount > 0 && !isSyncing) {
                         Toast.makeText(this@MainActivity, "Network restored - $draftCount draft(s) pending", Toast.LENGTH_SHORT).show()
                         syncPendingDrafts()
                     }
+
+                    // Sync all pending CRUD data (vitals, orders, allergies, medication updates)
+                    syncAllPendingCrudData()
                 }
             }
 
@@ -10610,6 +14266,871 @@ SOFA Score: [X]
                 }
             }
         }.start()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CRUD WRITE-BACK TO EHR - Push vitals, orders, allergies to EHR
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Push all captured vitals to EHR as FHIR Observations
+     * Each vital becomes a separate Observation resource
+     */
+    private fun pushCapturedVitalsToEhr() {
+        if (capturedVitals.isEmpty()) {
+            Toast.makeText(this, "No vitals to push", Toast.LENGTH_SHORT).show()
+            speakFeedback("No captured vitals to push. Record vitals first.")
+            return
+        }
+
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isEmpty()) {
+            Toast.makeText(this, "Load a patient first", Toast.LENGTH_SHORT).show()
+            speakFeedback("Load a patient before pushing vitals.")
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            saveVitalsForOfflineSync(patientId)
+            Toast.makeText(this, "No network - vitals saved for later sync", Toast.LENGTH_SHORT).show()
+            speakFeedback("No network. Vitals saved for offline sync.")
+            return
+        }
+
+        val vitalCount = capturedVitals.size
+        statusText.text = "Pushing $vitalCount vitals to EHR..."
+        speakFeedback("Pushing $vitalCount vitals to EHR")
+
+        var successCount = 0
+        var failCount = 0
+
+        Thread {
+            for (vital in capturedVitals.toList()) {
+                try {
+                    val vitalType = when (vital.type) {
+                        VitalType.BLOOD_PRESSURE -> "blood_pressure"
+                        VitalType.HEART_RATE -> "heart_rate"
+                        VitalType.TEMPERATURE -> "temperature"
+                        VitalType.OXYGEN_SATURATION -> "oxygen_saturation"
+                        VitalType.RESPIRATORY_RATE -> "respiratory_rate"
+                        VitalType.WEIGHT -> "weight"
+                        VitalType.HEIGHT -> "height"
+                        VitalType.PAIN_LEVEL -> "pain_level"
+                    }
+
+                    val requestBody = JSONObject().apply {
+                        put("patient_id", patientId)
+                        put("vital_type", vitalType)
+                        put("value", vital.value)
+                        put("unit", vital.unit)
+                        put("performer_name", clinicianName)
+                        put("device_type", "AR_GLASSES")
+
+                        // Parse systolic/diastolic for BP
+                        if (vital.type == VitalType.BLOOD_PRESSURE && vital.value.contains("/")) {
+                            val parts = vital.value.split("/")
+                            if (parts.size == 2) {
+                                put("systolic", parts[0].trim().toIntOrNull() ?: 0)
+                                put("diastolic", parts[1].trim().toIntOrNull() ?: 0)
+                            }
+                        }
+                    }
+
+                    val request = Request.Builder()
+                        .url("$EHR_PROXY_URL/api/v1/vitals/push")
+                        .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val response = httpClient.newCall(request).execute()
+                    val body = response.body?.string()
+                    val result = JSONObject(body ?: "{}")
+
+                    if (result.optBoolean("success", false)) {
+                        successCount++
+                        Log.d(TAG, "Pushed vital: ${vital.displayName}")
+                    } else {
+                        failCount++
+                        Log.e(TAG, "Failed to push vital ${vital.displayName}: ${result.optString("error")}")
+                    }
+                } catch (e: Exception) {
+                    failCount++
+                    Log.e(TAG, "Error pushing vital ${vital.displayName}: ${e.message}")
+                }
+            }
+
+            runOnUiThread {
+                if (failCount == 0) {
+                    Toast.makeText(this@MainActivity, "$successCount vitals pushed to EHR", Toast.LENGTH_SHORT).show()
+                    speakFeedback("$successCount vitals successfully pushed to EHR")
+                    statusText.text = "Vitals pushed"
+                    capturedVitals.clear()  // Clear after successful push
+                } else {
+                    Toast.makeText(this@MainActivity, "$successCount pushed, $failCount failed", Toast.LENGTH_LONG).show()
+                    speakFeedback("$successCount vitals pushed. $failCount failed.")
+                    statusText.text = "$failCount vitals failed"
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Push confirmed orders to EHR as FHIR ServiceRequest/MedicationRequest
+     */
+    private fun pushOrdersToEhr() {
+        val confirmedOrders = orderQueue.filter { it.status == OrderStatus.CONFIRMED }
+
+        if (confirmedOrders.isEmpty()) {
+            Toast.makeText(this, "No confirmed orders to push", Toast.LENGTH_SHORT).show()
+            speakFeedback("No confirmed orders to push. Confirm orders first.")
+            return
+        }
+
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isEmpty()) {
+            Toast.makeText(this, "Load a patient first", Toast.LENGTH_SHORT).show()
+            speakFeedback("Load a patient before pushing orders.")
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            saveOrdersForOfflineSync(patientId)
+            Toast.makeText(this, "No network - orders saved for later sync", Toast.LENGTH_SHORT).show()
+            speakFeedback("No network. Orders saved for offline sync.")
+            return
+        }
+
+        val orderCount = confirmedOrders.size
+        statusText.text = "Pushing $orderCount orders to EHR..."
+        speakFeedback("Pushing $orderCount orders to EHR")
+
+        var successCount = 0
+        var failCount = 0
+        val pushedOrderIds = mutableListOf<String>()
+
+        Thread {
+            for (order in confirmedOrders) {
+                try {
+                    val requestBody = JSONObject().apply {
+                        put("patient_id", patientId)
+                        put("order_type", order.type.name)
+                        put("code", order.name)  // Use order name to match CPT/LOINC in proxy
+                        put("display_name", order.displayName)
+                        put("status", "active")
+                        put("priority", "routine")
+                        put("requester_name", clinicianName)
+                        put("notes", order.details)
+
+                        // Medication-specific fields
+                        order.dose?.let { put("dose", it) }
+                        order.frequency?.let { put("frequency", it) }
+                        order.duration?.let { put("duration", it) }
+                        order.route?.let { put("route", it) }
+                        put("prn", order.prn)
+
+                        // Imaging-specific fields
+                        order.bodyPart?.let { put("body_site", it) }
+                        order.laterality?.let { put("laterality", it) }
+                        order.contrast?.let { put("contrast", it) }
+                    }
+
+                    val request = Request.Builder()
+                        .url("$EHR_PROXY_URL/api/v1/orders/push")
+                        .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                        .build()
+
+                    val response = httpClient.newCall(request).execute()
+                    val body = response.body?.string()
+                    val result = JSONObject(body ?: "{}")
+
+                    if (result.optBoolean("success", false)) {
+                        successCount++
+                        pushedOrderIds.add(order.id)
+                        Log.d(TAG, "Pushed order: ${order.displayName}")
+                    } else {
+                        failCount++
+                        Log.e(TAG, "Failed to push order ${order.displayName}: ${result.optString("error")}")
+                    }
+                } catch (e: Exception) {
+                    failCount++
+                    Log.e(TAG, "Error pushing order ${order.displayName}: ${e.message}")
+                }
+            }
+
+            runOnUiThread {
+                // Remove successfully pushed orders from queue
+                orderQueue.removeAll { it.id in pushedOrderIds }
+                saveOrdersToPrefs()
+
+                if (failCount == 0) {
+                    Toast.makeText(this@MainActivity, "$successCount orders pushed to EHR", Toast.LENGTH_SHORT).show()
+                    speakFeedback("$successCount orders successfully pushed to EHR")
+                    statusText.text = "Orders pushed"
+                } else {
+                    Toast.makeText(this@MainActivity, "$successCount pushed, $failCount failed", Toast.LENGTH_LONG).show()
+                    speakFeedback("$successCount orders pushed. $failCount failed.")
+                    statusText.text = "$failCount orders failed"
+                }
+            }
+        }.start()
+    }
+
+    // Pending allergy for confirmation workflow
+    private var pendingAllergySubstance: String? = null
+    private var pendingAllergyCriticality: String = "unable-to-assess"
+    private var pendingAllergyReactions: MutableList<String> = mutableListOf()
+
+    /**
+     * Start allergy recording workflow - prompt for details
+     */
+    private fun promptAllergyDetails(substance: String) {
+        pendingAllergySubstance = substance
+        pendingAllergyCriticality = "unable-to-assess"
+        pendingAllergyReactions.clear()
+
+        val message = """
+            |Recording allergy to: $substance
+            |
+            |Say the severity:
+            |• "high" for anaphylaxis/severe
+            |• "low" for mild/rash
+            |• "unknown" if unsure
+            |
+            |Then say "confirm allergy" to save
+        """.trimMargin()
+
+        transcriptText.text = message
+        Toast.makeText(this, "Recording allergy to $substance", Toast.LENGTH_SHORT).show()
+        speakFeedback("Recording allergy to $substance. Say high, low, or unknown for severity. Then say confirm allergy.")
+    }
+
+    /**
+     * Set allergy criticality from voice command
+     */
+    private fun setAllergyCriticality(severity: String) {
+        if (pendingAllergySubstance == null) {
+            speakFeedback("No pending allergy. Say add allergy followed by the substance name.")
+            return
+        }
+
+        pendingAllergyCriticality = when (severity.lowercase()) {
+            "high", "severe", "anaphylaxis" -> "high"
+            "low", "mild", "rash" -> "low"
+            else -> "unable-to-assess"
+        }
+
+        val severityText = when (pendingAllergyCriticality) {
+            "high" -> "High (severe/anaphylaxis)"
+            "low" -> "Low (mild/rash)"
+            else -> "Unknown"
+        }
+
+        transcriptText.text = "Allergy: ${pendingAllergySubstance}\nSeverity: $severityText\n\nSay 'confirm allergy' to save to EHR"
+        speakFeedback("Severity set to $severityText. Say confirm allergy to save.")
+    }
+
+    /**
+     * Add reaction to pending allergy
+     */
+    private fun addAllergyReaction(reaction: String) {
+        if (pendingAllergySubstance == null) {
+            speakFeedback("No pending allergy. Say add allergy followed by the substance name.")
+            return
+        }
+
+        pendingAllergyReactions.add(reaction)
+        transcriptText.text = "Allergy: ${pendingAllergySubstance}\nReactions: ${pendingAllergyReactions.joinToString(", ")}\n\nSay 'confirm allergy' to save"
+        speakFeedback("Added reaction: $reaction")
+    }
+
+    /**
+     * Confirm and push allergy to EHR
+     */
+    private fun confirmAndPushAllergy() {
+        val substance = pendingAllergySubstance
+        if (substance == null) {
+            speakFeedback("No pending allergy to confirm. Say add allergy followed by the substance name.")
+            return
+        }
+
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isEmpty()) {
+            Toast.makeText(this, "Load a patient first", Toast.LENGTH_SHORT).show()
+            speakFeedback("Load a patient before adding allergies.")
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            saveAllergyForOfflineSync(patientId, substance, pendingAllergyCriticality, pendingAllergyReactions.toList())
+            Toast.makeText(this, "No network - allergy saved for later sync", Toast.LENGTH_SHORT).show()
+            speakFeedback("No network. Allergy saved for offline sync.")
+            clearPendingAllergy()
+            return
+        }
+
+        statusText.text = "Adding allergy to EHR..."
+        speakFeedback("Adding allergy to EHR")
+
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("patient_id", patientId)
+                    put("substance", substance)
+                    put("criticality", pendingAllergyCriticality)
+                    put("category", "medication")  // Default to medication
+                    put("recorder_name", clinicianName)
+                    if (pendingAllergyReactions.isNotEmpty()) {
+                        put("reactions", JSONArray(pendingAllergyReactions))
+                    }
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/allergies/push")
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Push allergy failed: ${e.message}")
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Failed to add allergy", Toast.LENGTH_LONG).show()
+                            statusText.text = "Allergy push failed"
+                            speakFeedback("Failed to add allergy to EHR")
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        val result = JSONObject(body ?: "{}")
+
+                        runOnUiThread {
+                            if (result.optBoolean("success", false)) {
+                                Toast.makeText(this@MainActivity, "Allergy added to EHR", Toast.LENGTH_SHORT).show()
+                                speakFeedback("Allergy to $substance added to EHR")
+                                statusText.text = "Allergy added"
+
+                                // Add to local patient allergies if loaded
+                                addToLocalPatientAllergies(substance)
+                                clearPendingAllergy()
+                            } else {
+                                val statusCode = result.optInt("status_code", 0)
+                                if (statusCode == 403) {
+                                    Toast.makeText(this@MainActivity, "EHR sandbox is read-only", Toast.LENGTH_LONG).show()
+                                    speakFeedback("EHR sandbox is read-only. Allergy recorded locally.")
+                                    addToLocalPatientAllergies(substance)
+                                    clearPendingAllergy()
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Failed to add allergy", Toast.LENGTH_SHORT).show()
+                                    speakFeedback("Failed to add allergy to EHR")
+                                }
+                                statusText.text = "Allergy push failed"
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Error adding allergy: ${e.message}")
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Error adding allergy", Toast.LENGTH_LONG).show()
+                    statusText.text = "Error"
+                    speakFeedback("Error adding allergy")
+                }
+            }
+        }.start()
+    }
+
+    private fun clearPendingAllergy() {
+        pendingAllergySubstance = null
+        pendingAllergyCriticality = "unable-to-assess"
+        pendingAllergyReactions.clear()
+    }
+
+    private fun addToLocalPatientAllergies(substance: String) {
+        // Add to cached patient data if available
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isNotEmpty()) {
+            try {
+                val cachedJson = cachePrefs.getString("patient_$patientId", null)
+                if (cachedJson != null) {
+                    val patient = JSONObject(cachedJson)
+                    val allergies = patient.optJSONArray("allergies") ?: JSONArray()
+                    allergies.put(substance)
+                    patient.put("allergies", allergies)
+                    cachePrefs.edit().putString("patient_$patientId", patient.toString()).apply()
+                    Log.d(TAG, "Added allergy to local cache: $substance")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating local allergy cache: ${e.message}")
+            }
+        }
+    }
+
+    // Pending medication update for confirmation
+    private var pendingMedicationUpdate: Pair<String, String>? = null  // (medicationId/name, newStatus)
+
+    /**
+     * Initiate medication discontinuation workflow
+     */
+    private fun promptDiscontinueMedication(medicationName: String) {
+        // Find medication in current patient's med list
+        val medId = findMedicationId(medicationName)
+        if (medId == null) {
+            speakFeedback("Medication $medicationName not found in patient's medication list.")
+            return
+        }
+
+        pendingMedicationUpdate = Pair(medId, "stopped")
+
+        transcriptText.text = """
+            |Discontinue: $medicationName
+            |
+            |Say "confirm" to discontinue
+            |Say "cancel" to cancel
+            |
+            |Optional: Say "reason [your reason]" to add a reason
+        """.trimMargin()
+
+        speakFeedback("Discontinuing $medicationName. Say confirm to proceed or cancel to abort.")
+    }
+
+    /**
+     * Initiate medication hold workflow
+     */
+    private fun promptHoldMedication(medicationName: String) {
+        val medId = findMedicationId(medicationName)
+        if (medId == null) {
+            speakFeedback("Medication $medicationName not found in patient's medication list.")
+            return
+        }
+
+        pendingMedicationUpdate = Pair(medId, "on-hold")
+
+        transcriptText.text = """
+            |Hold: $medicationName
+            |
+            |Say "confirm" to hold medication
+            |Say "cancel" to cancel
+        """.trimMargin()
+
+        speakFeedback("Holding $medicationName. Say confirm to proceed or cancel to abort.")
+    }
+
+    private var pendingMedicationReason: String = ""
+
+    /**
+     * Set reason for medication update
+     */
+    private fun setMedicationUpdateReason(reason: String) {
+        if (pendingMedicationUpdate == null) {
+            speakFeedback("No pending medication update.")
+            return
+        }
+
+        pendingMedicationReason = reason
+        speakFeedback("Reason noted: $reason")
+    }
+
+    /**
+     * Confirm and execute medication status update
+     */
+    private fun confirmMedicationUpdate() {
+        val update = pendingMedicationUpdate
+        if (update == null) {
+            speakFeedback("No pending medication update to confirm.")
+            return
+        }
+
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isEmpty()) {
+            Toast.makeText(this, "Load a patient first", Toast.LENGTH_SHORT).show()
+            speakFeedback("Load a patient first.")
+            return
+        }
+
+        if (!isNetworkAvailable()) {
+            saveMedicationUpdateForOfflineSync(patientId, update.first, update.second, pendingMedicationReason)
+            Toast.makeText(this, "No network - update saved for later sync", Toast.LENGTH_SHORT).show()
+            speakFeedback("No network. Medication update saved for offline sync.")
+            clearPendingMedicationUpdate()
+            return
+        }
+
+        val (medId, newStatus) = update
+        val statusVerb = when (newStatus) {
+            "stopped" -> "Discontinuing"
+            "on-hold" -> "Holding"
+            "cancelled" -> "Cancelling"
+            else -> "Updating"
+        }
+
+        statusText.text = "$statusVerb medication..."
+        speakFeedback("$statusVerb medication")
+
+        Thread {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("patient_id", patientId)
+                    put("medication_id", medId)
+                    put("new_status", newStatus)
+                    put("reason", pendingMedicationReason)
+                    put("performer_name", clinicianName)
+                }
+
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/medications/$medId/status")
+                    .put(requestBody.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Medication update failed: ${e.message}")
+                        runOnUiThread {
+                            Toast.makeText(this@MainActivity, "Failed to update medication", Toast.LENGTH_LONG).show()
+                            statusText.text = "Update failed"
+                            speakFeedback("Failed to update medication")
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        val result = JSONObject(body ?: "{}")
+
+                        runOnUiThread {
+                            if (result.optBoolean("success", false)) {
+                                val action = when (newStatus) {
+                                    "stopped" -> "discontinued"
+                                    "on-hold" -> "held"
+                                    "cancelled" -> "cancelled"
+                                    else -> "updated"
+                                }
+                                Toast.makeText(this@MainActivity, "Medication $action", Toast.LENGTH_SHORT).show()
+                                speakFeedback("Medication $action")
+                                statusText.text = "Medication $action"
+                                clearPendingMedicationUpdate()
+                            } else {
+                                val statusCode = result.optInt("status_code", 0)
+                                if (statusCode == 403) {
+                                    Toast.makeText(this@MainActivity, "EHR sandbox is read-only", Toast.LENGTH_LONG).show()
+                                    speakFeedback("EHR sandbox is read-only.")
+                                } else {
+                                    Toast.makeText(this@MainActivity, "Failed to update medication", Toast.LENGTH_SHORT).show()
+                                    speakFeedback("Failed to update medication")
+                                }
+                                statusText.text = "Update failed"
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating medication: ${e.message}")
+                runOnUiThread {
+                    Toast.makeText(this@MainActivity, "Error updating medication", Toast.LENGTH_LONG).show()
+                    statusText.text = "Error"
+                    speakFeedback("Error updating medication")
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Cancel pending medication update
+     */
+    private fun cancelMedicationUpdate() {
+        if (pendingMedicationUpdate == null) {
+            speakFeedback("No pending medication update to cancel.")
+            return
+        }
+
+        clearPendingMedicationUpdate()
+        transcriptText.text = "Medication update cancelled"
+        speakFeedback("Medication update cancelled")
+    }
+
+    private fun clearPendingMedicationUpdate() {
+        pendingMedicationUpdate = null
+        pendingMedicationReason = ""
+    }
+
+    /**
+     * Find medication ID from patient's current medication list
+     */
+    private fun findMedicationId(medicationName: String): String? {
+        // Search in cached patient data
+        val patientId = currentPatientData?.optString("patient_id", "") ?: ""
+        if (patientId.isEmpty()) return null
+
+        try {
+            val cachedJson = cachePrefs.getString("patient_$patientId", null) ?: return null
+            val patient = JSONObject(cachedJson)
+            val medications = patient.optJSONArray("medications") ?: return null
+
+            for (i in 0 until medications.length()) {
+                val med = medications.optJSONObject(i)
+                val name = med?.optString("name", "") ?: ""
+                val id = med?.optString("id", "") ?: med?.optString("fhir_id", "") ?: ""
+
+                if (name.contains(medicationName, ignoreCase = true) ||
+                    medicationName.contains(name, ignoreCase = true)) {
+                    return if (id.isNotEmpty()) id else name  // Use name as fallback ID
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finding medication: ${e.message}")
+        }
+
+        return medicationName  // Return name as ID if not found (proxy will handle)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // OFFLINE SYNC QUEUES - Store pending writes for later sync
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    private val OFFLINE_VITALS_KEY = "offline_vitals_queue"
+    private val OFFLINE_ORDERS_KEY = "offline_orders_queue"
+    private val OFFLINE_ALLERGIES_KEY = "offline_allergies_queue"
+    private val OFFLINE_MED_UPDATES_KEY = "offline_medication_updates"
+
+    private fun saveVitalsForOfflineSync(patientId: String) {
+        try {
+            val vitalsArray = JSONArray()
+            for (vital in capturedVitals) {
+                vitalsArray.put(JSONObject().apply {
+                    put("patient_id", patientId)
+                    put("vital_type", vital.type.name)
+                    put("value", vital.value)
+                    put("unit", vital.unit)
+                    put("display_name", vital.displayName)
+                    put("timestamp", vital.timestamp)
+                })
+            }
+            cachePrefs.edit().putString(OFFLINE_VITALS_KEY, vitalsArray.toString()).apply()
+            Log.d(TAG, "Saved ${capturedVitals.size} vitals for offline sync")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving vitals for offline sync: ${e.message}")
+        }
+    }
+
+    private fun saveOrdersForOfflineSync(patientId: String) {
+        try {
+            val ordersArray = JSONArray()
+            for (order in orderQueue.filter { it.status == OrderStatus.CONFIRMED }) {
+                ordersArray.put(order.toJson().apply {
+                    put("patient_id", patientId)
+                })
+            }
+            cachePrefs.edit().putString(OFFLINE_ORDERS_KEY, ordersArray.toString()).apply()
+            Log.d(TAG, "Saved ${ordersArray.length()} orders for offline sync")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving orders for offline sync: ${e.message}")
+        }
+    }
+
+    private fun saveAllergyForOfflineSync(patientId: String, substance: String, criticality: String, reactions: List<String>) {
+        try {
+            val existingJson = cachePrefs.getString(OFFLINE_ALLERGIES_KEY, "[]")
+            val allergiesArray = JSONArray(existingJson)
+            allergiesArray.put(JSONObject().apply {
+                put("patient_id", patientId)
+                put("substance", substance)
+                put("criticality", criticality)
+                put("reactions", JSONArray(reactions))
+                put("timestamp", System.currentTimeMillis())
+            })
+            cachePrefs.edit().putString(OFFLINE_ALLERGIES_KEY, allergiesArray.toString()).apply()
+            Log.d(TAG, "Saved allergy for offline sync: $substance")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving allergy for offline sync: ${e.message}")
+        }
+    }
+
+    private fun saveMedicationUpdateForOfflineSync(patientId: String, medId: String, newStatus: String, reason: String) {
+        try {
+            val existingJson = cachePrefs.getString(OFFLINE_MED_UPDATES_KEY, "[]")
+            val updatesArray = JSONArray(existingJson)
+            updatesArray.put(JSONObject().apply {
+                put("patient_id", patientId)
+                put("medication_id", medId)
+                put("new_status", newStatus)
+                put("reason", reason)
+                put("timestamp", System.currentTimeMillis())
+            })
+            cachePrefs.edit().putString(OFFLINE_MED_UPDATES_KEY, updatesArray.toString()).apply()
+            Log.d(TAG, "Saved medication update for offline sync: $medId -> $newStatus")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving medication update for offline sync: ${e.message}")
+        }
+    }
+
+    /**
+     * Sync all pending offline data when network becomes available
+     */
+    private fun syncAllPendingCrudData() {
+        if (!isNetworkAvailable()) {
+            Log.d(TAG, "Network not available, skipping CRUD sync")
+            return
+        }
+
+        Log.d(TAG, "Syncing all pending CRUD data...")
+
+        // Sync vitals
+        syncOfflineVitals()
+
+        // Sync orders
+        syncOfflineOrders()
+
+        // Sync allergies
+        syncOfflineAllergies()
+
+        // Sync medication updates
+        syncOfflineMedicationUpdates()
+    }
+
+    private fun syncOfflineVitals() {
+        try {
+            val vitalsJson = cachePrefs.getString(OFFLINE_VITALS_KEY, "[]")
+            val vitalsArray = JSONArray(vitalsJson)
+            if (vitalsArray.length() == 0) return
+
+            Log.d(TAG, "Syncing ${vitalsArray.length()} offline vitals...")
+
+            Thread {
+                var successCount = 0
+                for (i in 0 until vitalsArray.length()) {
+                    val vital = vitalsArray.getJSONObject(i)
+                    try {
+                        val request = Request.Builder()
+                            .url("$EHR_PROXY_URL/api/v1/vitals/push")
+                            .post(vital.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                        val response = httpClient.newCall(request).execute()
+                        if (response.isSuccessful) {
+                            successCount++
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error syncing vital: ${e.message}")
+                    }
+                }
+
+                if (successCount == vitalsArray.length()) {
+                    cachePrefs.edit().remove(OFFLINE_VITALS_KEY).apply()
+                }
+                Log.d(TAG, "Synced $successCount/${vitalsArray.length()} vitals")
+            }.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing offline vitals: ${e.message}")
+        }
+    }
+
+    private fun syncOfflineOrders() {
+        try {
+            val ordersJson = cachePrefs.getString(OFFLINE_ORDERS_KEY, "[]")
+            val ordersArray = JSONArray(ordersJson)
+            if (ordersArray.length() == 0) return
+
+            Log.d(TAG, "Syncing ${ordersArray.length()} offline orders...")
+
+            Thread {
+                var successCount = 0
+                for (i in 0 until ordersArray.length()) {
+                    val order = ordersArray.getJSONObject(i)
+                    try {
+                        val request = Request.Builder()
+                            .url("$EHR_PROXY_URL/api/v1/orders/push")
+                            .post(order.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                        val response = httpClient.newCall(request).execute()
+                        if (response.isSuccessful) {
+                            successCount++
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error syncing order: ${e.message}")
+                    }
+                }
+
+                if (successCount == ordersArray.length()) {
+                    cachePrefs.edit().remove(OFFLINE_ORDERS_KEY).apply()
+                }
+                Log.d(TAG, "Synced $successCount/${ordersArray.length()} orders")
+            }.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing offline orders: ${e.message}")
+        }
+    }
+
+    private fun syncOfflineAllergies() {
+        try {
+            val allergiesJson = cachePrefs.getString(OFFLINE_ALLERGIES_KEY, "[]")
+            val allergiesArray = JSONArray(allergiesJson)
+            if (allergiesArray.length() == 0) return
+
+            Log.d(TAG, "Syncing ${allergiesArray.length()} offline allergies...")
+
+            Thread {
+                var successCount = 0
+                for (i in 0 until allergiesArray.length()) {
+                    val allergy = allergiesArray.getJSONObject(i)
+                    try {
+                        val request = Request.Builder()
+                            .url("$EHR_PROXY_URL/api/v1/allergies/push")
+                            .post(allergy.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                        val response = httpClient.newCall(request).execute()
+                        if (response.isSuccessful) {
+                            successCount++
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error syncing allergy: ${e.message}")
+                    }
+                }
+
+                if (successCount == allergiesArray.length()) {
+                    cachePrefs.edit().remove(OFFLINE_ALLERGIES_KEY).apply()
+                }
+                Log.d(TAG, "Synced $successCount/${allergiesArray.length()} allergies")
+            }.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing offline allergies: ${e.message}")
+        }
+    }
+
+    private fun syncOfflineMedicationUpdates() {
+        try {
+            val updatesJson = cachePrefs.getString(OFFLINE_MED_UPDATES_KEY, "[]")
+            val updatesArray = JSONArray(updatesJson)
+            if (updatesArray.length() == 0) return
+
+            Log.d(TAG, "Syncing ${updatesArray.length()} offline medication updates...")
+
+            Thread {
+                var successCount = 0
+                for (i in 0 until updatesArray.length()) {
+                    val update = updatesArray.getJSONObject(i)
+                    try {
+                        val medId = update.getString("medication_id")
+                        val request = Request.Builder()
+                            .url("$EHR_PROXY_URL/api/v1/medications/$medId/status")
+                            .put(update.toString().toRequestBody("application/json".toMediaType()))
+                            .build()
+
+                        val response = httpClient.newCall(request).execute()
+                        if (response.isSuccessful) {
+                            successCount++
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error syncing medication update: ${e.message}")
+                    }
+                }
+
+                if (successCount == updatesArray.length()) {
+                    cachePrefs.edit().remove(OFFLINE_MED_UPDATES_KEY).apply()
+                }
+                Log.d(TAG, "Synced $successCount/${updatesArray.length()} medication updates")
+            }.start()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing offline medication updates: ${e.message}")
+        }
     }
 
     /**
@@ -10990,7 +15511,12 @@ SOFA Score: [X]
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
             speechRecognizer.setRecognitionListener(recognitionListener)
             Log.d(TAG, "Speech recognizer initialized")
-            transcriptText.text = "Ready - Tap button or say command"
+
+            // Auto-enable continuous listening for hands-free AR glasses operation
+            isContinuousListening = true
+            statusText.text = "Listening..."
+            transcriptText.text = "Just speak naturally"
+            startVoiceRecognition()
         } else {
             Log.e(TAG, "Speech recognition not available")
             transcriptText.text = "Speech recognition not available"
@@ -11002,12 +15528,16 @@ SOFA Score: [X]
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            // Multi-language support: use current locale for speech recognition
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, currentLocale.toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, currentLocale.toLanguageTag())
         }
 
         try {
             speechRecognizer.startListening(intent)
-            statusText.text = "Listening..."
-            Log.d(TAG, "Voice recognition started")
+            val listeningText = getLocalizedMessage("listening") ?: "Listening..."
+            statusText.text = listeningText
+            Log.d(TAG, "Voice recognition started in ${currentLocale.displayLanguage}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start voice recognition: ${e.message}")
         }
@@ -11046,15 +15576,23 @@ SOFA Score: [X]
             }
             Log.e(TAG, "Speech error: $errorMessage")
 
-            // Continue listening in documentation or continuous mode
-            if (isDocumentationMode) {
+            // Continue listening in ambient mode
+            if (isAmbientMode) {
+                transcriptText.postDelayed({
+                    if (isAmbientMode) startAmbientVoiceRecognition()
+                }, 1000)
+            } else if (isDocumentationMode) {
                 statusText.text = "DOCUMENTING"
                 transcriptText.text = "Listening..."
-                transcriptText.postDelayed({ startVoiceRecognition() }, 1000)
+                transcriptText.postDelayed({
+                    if (isDocumentationMode) startVoiceRecognition()
+                }, 2000)
             } else if (isContinuousListening) {
-                statusText.text = "Hey MDx - Listening"
-                transcriptText.text = "Say 'Hey MDx'..."
-                transcriptText.postDelayed({ startVoiceRecognition() }, 1000)
+                statusText.text = "Listening..."
+                transcriptText.text = "Speak a command..."
+                transcriptText.postDelayed({
+                    if (isContinuousListening) startVoiceRecognition()
+                }, 2000)
             } else {
                 statusText.text = "MDx Vision"
                 // Reset to default message after 2 seconds
@@ -11070,47 +15608,80 @@ SOFA Score: [X]
             val transcript = matches?.firstOrNull() ?: ""
 
             Log.d(TAG, "Transcript: $transcript")
-            val lower = transcript.lowercase()
 
-            if (isContinuousListening) {
-                // Check for wake word "Hey MDx"
-                if (lower.contains(WAKE_WORD) || lower.contains("hey m d x") || lower.contains("a]mdx")) {
-                    // Extract command after wake word
-                    val wakeIndex = maxOf(
-                        lower.indexOf(WAKE_WORD).let { if (it >= 0) it + WAKE_WORD.length else -1 },
-                        lower.indexOf("hey m d x").let { if (it >= 0) it + 9 else -1 },
-                        lower.indexOf("a]mdx").let { if (it >= 0) it + 5 else -1 }
-                    )
+            // ═══ AMBIENT MODE HANDLING ═══
+            if (isAmbientMode && transcript.isNotBlank()) {
+                val lower = transcript.lowercase()
 
-                    if (wakeIndex > 0 && wakeIndex < transcript.length) {
-                        // Command follows wake word
-                        val command = transcript.substring(wakeIndex).trim()
-                        statusText.text = "Command: $command"
-                        transcriptText.text = "Processing..."
-                        processTranscript(command)
-                    } else {
-                        // Just wake word, waiting for command
-                        statusText.text = "Yes? Say command..."
-                        awaitingCommand = true
+                // Check for stop commands
+                when {
+                    lower.contains("stop ambient") || lower.contains("end ambient") ||
+                    lower.contains("finish ambient") || lower.contains("stop listening") -> {
+                        Log.d(TAG, "ACI: Stop command detected via local recognition")
+                        stopAmbientMode(true)
+                        return
                     }
-                } else if (awaitingCommand) {
-                    // Process as command (wake word was in previous phrase)
-                    statusText.text = "MDx Vision"
-                    transcriptText.text = "\"$transcript\""
-                    processTranscript(transcript)
-                    awaitingCommand = false
-                } else {
-                    // No wake word detected, keep listening
-                    transcriptText.text = "Say 'Hey MDx'..."
+                    lower.contains("cancel ambient") || lower.contains("discard") ||
+                    lower.contains("never mind") -> {
+                        Log.d(TAG, "ACI: Cancel command detected via local recognition")
+                        stopAmbientMode(false)
+                        return
+                    }
+                    lower.contains("generate note") || lower.contains("create note") ||
+                    lower.contains("make note") || lower.contains("document this") -> {
+                        Log.d(TAG, "ACI: Generate note command detected via local recognition")
+                        stopAmbientMode(true)
+                        return
+                    }
                 }
 
-                // Continue listening in continuous mode
+                // Filter voice commands from transcript before adding to buffer
+                val cleanedTranscript = filterVoiceCommandsFromTranscript(transcript)
+
+                if (cleanedTranscript != null) {
+                    // Add cleaned transcript to ambient buffer
+                    if (ambientTranscriptBuffer.isNotEmpty()) {
+                        ambientTranscriptBuffer.append(" ")
+                    }
+
+                    // Identify speaker and add segment
+                    val speaker = identifySpeaker(cleanedTranscript)
+                    val segment = SpeakerSegment(speaker, cleanedTranscript, System.currentTimeMillis())
+                    extractedEntities.speakerSegments.add(segment)
+                    ambientTranscriptBuffer.append("[$speaker] $cleanedTranscript")
+
+                    // Extract clinical entities from cleaned transcript
+                    extractClinicalEntities(cleanedTranscript)
+                } else {
+                    Log.d(TAG, "ACI: Skipped voice command segment")
+                }
+
+                // Update display
+                updateAciDisplay()
+                aciTranscriptText?.text = ambientTranscriptBuffer.toString().takeLast(500)
+
+                // Continue listening
+                transcriptText.postDelayed({
+                    if (isAmbientMode) startAmbientVoiceRecognition()
+                }, 500)
+                return
+            }
+
+            if (isContinuousListening) {
+                // NLP mode - process all speech as commands directly (no wake word needed)
+                if (transcript.isNotBlank()) {
+                    statusText.text = "Processing..."
+                    transcriptText.text = "\"$transcript\""
+                    processTranscript(transcript)
+                }
+
+                // Continue listening in continuous mode (longer delay to avoid client errors)
                 transcriptText.postDelayed({
                     if (isContinuousListening) {
-                        statusText.text = "Hey MDx - Listening"
+                        statusText.text = "Listening..."
                         startVoiceRecognition()
                     }
-                }, 500)
+                }, 1500)
             } else {
                 // Normal mode - process transcript directly
                 transcriptText.text = "\"$transcript\""
@@ -11122,7 +15693,13 @@ SOFA Score: [X]
         override fun onPartialResults(partialResults: Bundle?) {
             val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val partial = matches?.firstOrNull() ?: ""
-            transcriptText.text = "\"$partial\"..."
+
+            if (isAmbientMode) {
+                // Show partial in ACI overlay
+                aciTranscriptText?.text = "${ambientTranscriptBuffer.toString().takeLast(400)}\n🎤 $partial"
+            } else {
+                transcriptText.text = "\"$partial\"..."
+            }
         }
 
         override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -11141,19 +15718,107 @@ SOFA Score: [X]
             return
         }
 
+        // Multi-language: Translate Spanish commands to English for processing
+        val translatedTranscript = translateCommand(transcript)
+
         // Parse voice commands for patient lookup
-        val lower = transcript.lowercase()
+        val lower = translatedTranscript.lowercase()
+        val originalLower = transcript.lowercase()  // Keep original for language detection
+
+        // ═══ LANGUAGE SWITCHING (works in any language) ═══
+        when {
+            // English language switch commands
+            originalLower.contains("switch to english") || originalLower.contains("language english") ||
+            originalLower.contains("speak english") || originalLower.contains("english mode") -> {
+                switchLanguage(LANG_ENGLISH)
+                startVoiceRecognition()
+                return
+            }
+            // Spanish language switch commands
+            originalLower.contains("cambiar a español") || originalLower.contains("language spanish") ||
+            originalLower.contains("español") || originalLower.contains("spanish mode") ||
+            originalLower.contains("hablar español") || originalLower.contains("switch to spanish") -> {
+                switchLanguage(LANG_SPANISH)
+                startVoiceRecognition()
+                return
+            }
+            // Mandarin language switch commands
+            originalLower.contains("切换到中文") || originalLower.contains("language chinese") ||
+            originalLower.contains("chinese mode") || originalLower.contains("中文") ||
+            originalLower.contains("mandarin") || originalLower.contains("switch to chinese") -> {
+                switchLanguage(LANG_MANDARIN)
+                startVoiceRecognition()
+                return
+            }
+            // Portuguese language switch commands
+            originalLower.contains("mudar para português") || originalLower.contains("language portuguese") ||
+            originalLower.contains("portuguese mode") || originalLower.contains("português") ||
+            originalLower.contains("switch to portuguese") -> {
+                switchLanguage(LANG_PORTUGUESE)
+                startVoiceRecognition()
+                return
+            }
+            // Russian language switch commands
+            originalLower.contains("переключить на русский") || originalLower.contains("language russian") ||
+            originalLower.contains("russian mode") || originalLower.contains("русский") ||
+            originalLower.contains("говорить по-русски") || originalLower.contains("switch to russian") ||
+            originalLower.contains("по-русски") -> {
+                switchLanguage(LANG_RUSSIAN)
+                startVoiceRecognition()
+                return
+            }
+            // Show language options
+            originalLower.contains("language options") || originalLower.contains("change language") ||
+            originalLower.contains("idioma") || originalLower.contains("语言") ||
+            originalLower.contains("язык") -> {
+                showLanguageOptions()
+                startVoiceRecognition()
+                return
+            }
+        }
 
         // Update activity on any voice command
         updateLastActivity()
 
-        // If session is locked, only process unlock command
+        // If session is locked, handle unlock
         if (isSessionLocked) {
-            if (lower.contains("unlock")) {
-                unlockSession()
+            // If awaiting TOTP code (device is paired), process spoken digits
+            if (isAwaitingTotpCode) {
+                // DEBUG: "test unlock" bypasses TOTP in debug mode
+                if (DEBUG_SKIP_AUTH && (lower.contains("test unlock") || lower.contains("debug unlock") || lower.contains("skip auth"))) {
+                    Log.w(TAG, "⚠️ DEBUG: Bypassing TOTP authentication")
+                    isAwaitingTotpCode = false
+                    isSessionLocked = false
+                    hideLockScreenOverlay()
+                    updateLastActivity()
+                    speakFeedback("Debug mode. Authentication bypassed.")
+                    Toast.makeText(this, "⚠️ DEBUG: Auth bypassed", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                // Handle "pair device" command even when locked
+                if (lower.contains("pair device") || lower.contains("pair glasses")) {
+                    startDevicePairing()
+                    return
+                }
+                // Handle "clear" to reset entered digits
+                if (lower.contains("clear") || lower.contains("reset") || lower.contains("start over")) {
+                    totpDigitBuffer.clear()
+                    updateTotpDisplay()
+                    speakFeedback("Cleared. Say your 6-digit code.")
+                    startVoiceRecognition()
+                    return
+                }
+                // Process spoken digits for TOTP
+                processTotpVoiceInput(lower)
+                return
+            } else {
+                // Unpaired device: simple unlock
+                if (lower.contains("unlock")) {
+                    unlockSession()
+                }
+                startVoiceRecognition()
+                return
             }
-            startVoiceRecognition()
-            return
         }
 
         // If in dictation mode, handle dictation-specific commands or capture text
@@ -11177,17 +15842,21 @@ SOFA Score: [X]
             return
         }
 
+        // Fuzzy match for "patient" - common misrecognitions
+        val hasPatient = lower.contains("patient") || lower.contains("patine") ||
+                         lower.contains("patience") || lower.contains("patent")
+
         when {
-            lower.contains("patient") && lower.contains("load") -> {
+            hasPatient && lower.contains("load") -> {
                 // Extract patient ID if mentioned
                 val words = transcript.split(" ")
                 val idIndex = words.indexOfFirst { it.all { c -> c.isDigit() } }
                 val patientId = if (idIndex >= 0) words[idIndex] else TEST_PATIENT_ID
                 fetchPatientData(patientId)
             }
-            lower.contains("find") || lower.contains("search") -> {
+            (hasPatient && lower.contains("find")) || lower.contains("search") -> {
                 // Patient search by name
-                val name = transcript.replace(Regex("(?i)(find|search|patient)"), "").trim()
+                val name = transcript.replace(Regex("(?i)(find|search|patient|patine|patience)"), "").trim()
                 if (name.isNotEmpty()) {
                     searchPatients(name)
                 }
@@ -11205,8 +15874,150 @@ SOFA Score: [X]
                 saveCurrentNote()
             }
             lower.contains("push note") || lower.contains("send to ehr") || lower.contains("push to ehr") || lower.contains("upload note") -> {
-                // Voice command to push saved note to EHR
-                pushNoteToEhr()
+                // Voice command to push saved note to EHR - requires voiceprint verification
+                verifyVoiceprintForOperation("Push Note to EHR") { verified ->
+                    if (verified) {
+                        pushNoteToEhr()
+                    } else {
+                        speakFeedback("Note push cancelled. Voice verification failed.")
+                    }
+                }
+            }
+            // ═══ CRUD WRITE-BACK VOICE COMMANDS ═══
+            lower.contains("push vitals") || lower.contains("send vitals") || lower.contains("upload vitals") -> {
+                // Push captured vitals to EHR - requires voiceprint verification
+                verifyVoiceprintForOperation("Push Vitals to EHR") { verified ->
+                    if (verified) {
+                        pushCapturedVitalsToEhr()
+                    } else {
+                        speakFeedback("Vitals push cancelled. Voice verification failed.")
+                    }
+                }
+            }
+            lower.contains("push orders") || lower.contains("send orders") || lower.contains("submit orders") -> {
+                // Push confirmed orders to EHR - requires voiceprint verification
+                verifyVoiceprintForOperation("Push Orders to EHR") { verified ->
+                    if (verified) {
+                        pushOrdersToEhr()
+                    } else {
+                        speakFeedback("Orders push cancelled. Voice verification failed.")
+                    }
+                }
+            }
+            lower.contains("sync all") || lower.contains("sync data") || lower.contains("sync everything") -> {
+                // Sync all pending offline data
+                syncAllPendingCrudData()
+                speakFeedback("Syncing all pending data")
+            }
+            lower.startsWith("add allergy to ") || lower.startsWith("add allergy ") ||
+            lower.startsWith("patient allergic to ") || lower.startsWith("allergic to ") -> {
+                // Start allergy recording: "add allergy to penicillin", "allergic to sulfa"
+                val substance = when {
+                    lower.startsWith("add allergy to ") -> transcript.substringAfter("add allergy to ").trim()
+                    lower.startsWith("add allergy ") -> transcript.substringAfter("add allergy ").trim()
+                    lower.startsWith("patient allergic to ") -> transcript.substringAfter("patient allergic to ").trim()
+                    lower.startsWith("allergic to ") -> transcript.substringAfter("allergic to ").trim()
+                    else -> ""
+                }
+                if (substance.isNotEmpty()) {
+                    promptAllergyDetails(substance)
+                } else {
+                    speakFeedback("Say add allergy to, followed by the substance name.")
+                }
+            }
+            lower == "high" || lower == "severe" || lower == "high severity" || lower == "anaphylaxis" -> {
+                // Set allergy severity (if pending allergy)
+                if (pendingAllergySubstance != null) {
+                    setAllergyCriticality("high")
+                }
+            }
+            lower == "low" || lower == "mild" || lower == "low severity" || lower == "rash" -> {
+                // Set allergy severity (if pending allergy)
+                if (pendingAllergySubstance != null) {
+                    setAllergyCriticality("low")
+                }
+            }
+            lower == "unknown" || lower == "unknown severity" -> {
+                // Set allergy severity (if pending allergy)
+                if (pendingAllergySubstance != null) {
+                    setAllergyCriticality("unknown")
+                }
+            }
+            lower.startsWith("reaction ") || lower.startsWith("causes ") -> {
+                // Add reaction to pending allergy: "reaction hives", "causes swelling"
+                val reaction = when {
+                    lower.startsWith("reaction ") -> transcript.substringAfter("reaction ").trim()
+                    lower.startsWith("causes ") -> transcript.substringAfter("causes ").trim()
+                    else -> ""
+                }
+                if (reaction.isNotEmpty() && pendingAllergySubstance != null) {
+                    addAllergyReaction(reaction)
+                }
+            }
+            lower.contains("confirm allergy") || lower.contains("save allergy") || lower.contains("submit allergy") -> {
+                // Confirm and push allergy - requires voiceprint verification
+                verifyVoiceprintForOperation("Add Allergy to EHR") { verified ->
+                    if (verified) {
+                        confirmAndPushAllergy()
+                    } else {
+                        speakFeedback("Allergy recording cancelled. Voice verification failed.")
+                        clearPendingAllergy()
+                    }
+                }
+            }
+            lower.contains("cancel allergy") || lower.contains("clear allergy") -> {
+                // Cancel pending allergy
+                clearPendingAllergy()
+                speakFeedback("Allergy cancelled")
+                transcriptText.text = "Allergy recording cancelled"
+            }
+            lower.startsWith("discontinue ") || lower.startsWith("stop medication ") || lower.startsWith("d c ") || lower.startsWith("dc ") -> {
+                // Discontinue medication: "discontinue metformin", "stop medication lisinopril"
+                val medName = when {
+                    lower.startsWith("discontinue ") -> transcript.substringAfter("discontinue ").trim()
+                    lower.startsWith("stop medication ") -> transcript.substringAfter("stop medication ").trim()
+                    lower.startsWith("d c ") -> transcript.substringAfter("d c ").trim()
+                    lower.startsWith("dc ") -> transcript.substringAfter("dc ").trim()
+                    else -> ""
+                }
+                if (medName.isNotEmpty()) {
+                    promptDiscontinueMedication(medName)
+                }
+            }
+            lower.startsWith("hold ") && !lower.contains("hold off") -> {
+                // Hold medication: "hold metformin", "hold lisinopril"
+                val medName = transcript.substringAfter("hold ").trim()
+                if (medName.isNotEmpty() && medName.length > 2) {  // Avoid false positives
+                    promptHoldMedication(medName)
+                }
+            }
+            lower.startsWith("reason ") && pendingMedicationUpdate != null -> {
+                // Set reason for medication update: "reason patient intolerance"
+                val reason = transcript.substringAfter("reason ").trim()
+                if (reason.isNotEmpty()) {
+                    setMedicationUpdateReason(reason)
+                }
+            }
+            (lower == "confirm" || lower.contains("confirm medication") || lower.contains("yes discontinue") || lower.contains("yes hold")) && pendingMedicationUpdate != null -> {
+                // Confirm medication update - requires voiceprint verification
+                val medUpdate = pendingMedicationUpdate
+                verifyVoiceprintForOperation("Update Medication Status") { verified ->
+                    if (verified && medUpdate != null) {
+                        confirmMedicationUpdate()
+                    } else {
+                        speakFeedback("Medication update cancelled. Voice verification failed.")
+                        clearPendingMedicationUpdate()
+                    }
+                }
+            }
+            (lower == "cancel" || lower.contains("cancel medication") || lower.contains("no discontinue") || lower.contains("don't discontinue")) && pendingMedicationUpdate != null -> {
+                // Cancel medication update
+                cancelMedicationUpdate()
+            }
+            lower.contains("view transcript") || lower.contains("show transcript") ||
+            lower.contains("full transcript") || lower.contains("see transcript") -> {
+                // Voice command to view full ambient transcript (for records)
+                viewFullTranscript()
             }
             lower.contains("reset note") || lower.contains("undo changes") || lower.contains("undo edit") || lower.contains("restore note") -> {
                 // Voice command to reset edited note to original
@@ -11300,6 +16111,36 @@ SOFA Score: [X]
                 // Voice command to stop live transcription
                 if (isLiveTranscribing) stopLiveTranscription()
             }
+            // ═══ AMBIENT CLINICAL INTELLIGENCE COMMANDS ═══
+            lower.contains("ambient mode") || lower.contains("start ambient") ||
+            lower.contains("ambient listening") || lower.contains("clinical intelligence") ||
+            lower.contains("auto document") || lower.contains("auto-document") -> {
+                // Start Ambient Clinical Intelligence mode
+                if (!isAmbientMode) {
+                    startAmbientMode()
+                } else {
+                    Toast.makeText(this, "Ambient mode already active", Toast.LENGTH_SHORT).show()
+                }
+            }
+            lower.contains("stop ambient") || lower.contains("end ambient") ||
+            lower.contains("finish ambient") || (isAmbientMode && lower.contains("generate note")) -> {
+                // Stop ambient mode and generate note
+                if (isAmbientMode) {
+                    stopAmbientMode(true)
+                }
+            }
+            lower.contains("cancel ambient") || lower.contains("discard ambient") -> {
+                // Cancel ambient mode without generating
+                if (isAmbientMode) {
+                    stopAmbientMode(false)
+                    hideAciOverlay()
+                }
+            }
+            lower.contains("show entities") || lower.contains("what did you detect") ||
+            lower.contains("aci status") || lower.contains("ambient status") -> {
+                // Show detected entities
+                showAciEntities()
+            }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
                 // Generate note from pending transcript
@@ -11363,7 +16204,8 @@ SOFA Score: [X]
             }
             // Patient summary commands - spoken and visual
             lower.contains("tell me about") || lower.contains("read summary") || lower.contains("speak summary") ||
-            lower.contains("brief me") || lower.contains("briefing") || lower.contains("tell me about patient") -> {
+            lower.contains("brief me") || lower.contains("briefing") || lower.contains("tell me about patient") ||
+            lower.contains("patient brief") || lower.contains("read patient") || lower.contains("summarize") -> {
                 // Hands-free spoken summary while walking to patient
                 speakPatientSummary()
             }
@@ -11512,7 +16354,15 @@ SOFA Score: [X]
                 stopSpeaking()
                 transcriptText.text = "Speech stopped"
             }
-            lower.contains("close") || lower.contains("dismiss") || lower.contains("back") -> {
+            lower.contains("stop listening") || lower.contains("stop voice") || lower.contains("mute") -> {
+                // Turn off continuous listening mode
+                isContinuousListening = false
+                speechRecognizer.stopListening()
+                statusText.text = "MDx Vision"
+                transcriptText.text = "Voice commands off. Tap MDX MODE to re-enable."
+                speakFeedback("Voice commands disabled")
+            }
+            lower.contains("close") || lower.contains("dismiss") || lower.contains("back") || lower.contains("go away") -> {
                 // Close any open overlay
                 if (isLiveTranscribing) {
                     stopLiveTranscription()
@@ -11534,6 +16384,65 @@ SOFA Score: [X]
                 clearPatientHistory()
                 hideDataOverlay()
             }
+
+            // ═══════════════════════════════════════════════════════════════════════════
+            // PATIENT WORKLIST - Daily schedule commands
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Show worklist: "show worklist", "worklist", "today's patients", "my schedule"
+            lower.contains("worklist") || lower.contains("today's patient") || lower.contains("todays patient") ||
+            lower.contains("my schedule") || lower.contains("patient schedule") || lower.contains("daily schedule") -> {
+                showWorklist()
+            }
+            // Who's next: "who's next", "next patient", "who is next"
+            lower.contains("who's next") || lower.contains("whos next") || lower.contains("who is next") ||
+            (lower.contains("next") && lower.contains("patient")) -> {
+                getNextPatient()
+            }
+            // Check in patient: "check in 1", "check in patient 2", "check in 3 to room 5"
+            lower.contains("check in") && (lower.contains(Regex("\\d"))) -> {
+                val numberMatch = Regex("check in\\s*(?:patient\\s*)?(\\d+)").find(lower)
+                val roomMatch = Regex("(?:to\\s+)?room\\s*(\\w+)").find(lower)
+                if (numberMatch != null) {
+                    val patientNum = numberMatch.groupValues[1].toIntOrNull() ?: 0
+                    val room = roomMatch?.groupValues?.get(1)
+                    checkInPatient(patientNum, room)
+                }
+            }
+            // Mark patient status: "mark 1 completed", "patient 2 done", "start seeing 3"
+            lower.contains("mark") && lower.contains(Regex("\\d")) &&
+            (lower.contains("complete") || lower.contains("done") || lower.contains("finished")) -> {
+                val numMatch = Regex("(\\d+)").find(lower)
+                if (numMatch != null) {
+                    val patientNum = numMatch.groupValues[1].toIntOrNull() ?: 0
+                    updateWorklistStatus(patientNum, "completed")
+                }
+            }
+            // Start encounter: "start seeing 1", "begin encounter 2", "seeing patient 3"
+            (lower.contains("start seeing") || lower.contains("begin encounter") ||
+             lower.contains("seeing patient")) && lower.contains(Regex("\\d")) -> {
+                val numMatch = Regex("(\\d+)").find(lower)
+                if (numMatch != null) {
+                    val patientNum = numMatch.groupValues[1].toIntOrNull() ?: 0
+                    updateWorklistStatus(patientNum, "in_progress")
+                }
+            }
+            // Load from worklist: "load 1", "load patient 2", "open 3"
+            (lower.startsWith("load ") || lower.startsWith("open ")) &&
+            lower.contains(Regex("\\d")) && !lower.contains("patient id") -> {
+                val numMatch = Regex("(\\d+)").find(lower)
+                if (numMatch != null) {
+                    val patientNum = numMatch.groupValues[1].toIntOrNull()?.minus(1) ?: -1
+                    if (patientNum >= 0 && patientNum < worklistPatients.size) {
+                        val patient = worklistPatients[patientNum]
+                        loadPatientById(patient.patientId)
+                    } else {
+                        // Check patient history instead
+                        loadPatientFromHistory(patientNum + 1)
+                    }
+                }
+            }
+
             // ═══════════════════════════════════════════════════════════════════════════
             // VOICE ORDERS - Order commands
             // ═══════════════════════════════════════════════════════════════════════════
@@ -11541,7 +16450,7 @@ SOFA Score: [X]
             // Show orders: "show orders", "list orders", "pending orders"
             lower.contains("show order") || lower.contains("list order") || lower.contains("pending order") ||
             lower.contains("what are the order") -> {
-                showOrderQueue()
+                showOrdersForUpdate()  // Show with update/delete options
             }
             // List order sets: "list order sets", "show order sets", "available order sets"
             lower.contains("order set") && (lower.contains("list") || lower.contains("show") || lower.contains("available") || lower.contains("what")) -> {
@@ -11557,7 +16466,18 @@ SOFA Score: [X]
                     speakFeedback("Say what's in followed by the order set name, like what's in chest pain.")
                 }
             }
-            // Cancel order: "cancel order", "remove order", "remove last order"
+            // Update order: "update 1 to 500mg every 6 hours", "update tylenol to 650mg PRN"
+            lower.startsWith("update ") && (lower.contains(" to ") || lower.contains(Regex("\\d"))) -> {
+                updateOrder(transcript)
+            }
+            // Delete specific order by number or medication name:
+            // "delete 1", "delete 2", "remove 3", "delete tylenol", "remove metformin"
+            (lower.startsWith("delete ") || lower.startsWith("remove ")) &&
+            (lower.contains(Regex("^(?:delete|remove)\\s*\\d")) ||
+             lower.contains(Regex("^(?:delete|remove)\\s+[a-z]"))) -> {
+                deleteOrderByNumber(transcript)
+            }
+            // Cancel order (last one): "cancel order", "remove order", "remove last order"
             lower.contains("cancel order") || lower.contains("remove order") ||
             lower.contains("remove last order") || lower.contains("delete order") -> {
                 cancelLastOrder()
@@ -11566,15 +16486,23 @@ SOFA Score: [X]
             lower.contains("clear all order") || lower.contains("delete all order") -> {
                 clearAllOrders()
             }
-            // Confirmation: "yes", "confirm" (when order pending)
+            // Confirmation: "yes", "confirm" (when order pending or order update pending)
             (lower == "yes" || lower == "confirm" || lower.contains("confirm order") ||
-             lower.contains("place order") || lower.contains("go ahead")) && pendingConfirmationOrder != null -> {
-                confirmPendingOrder()
+             lower.contains("place order") || lower.contains("go ahead")) -> {
+                when {
+                    pendingOrderUpdate != null -> confirmOrderUpdate()
+                    pendingConfirmationOrder != null -> confirmPendingOrder()
+                    else -> speakFeedback("Nothing to confirm")
+                }
             }
-            // Rejection: "no", "cancel" (when order pending)
+            // Rejection: "no", "cancel" (when order pending or update pending)
             (lower == "no" || lower == "reject" || lower.contains("don't order") ||
-             lower.contains("do not order")) && pendingConfirmationOrder != null -> {
-                rejectPendingOrder()
+             lower.contains("do not order") || lower == "cancel") -> {
+                when {
+                    pendingOrderUpdate != null -> cancelOrderUpdate()
+                    pendingConfirmationOrder != null -> rejectPendingOrder()
+                    else -> {} // Do nothing
+                }
             }
             // Prescribe medication: "prescribe amoxicillin 500mg three times daily for 10 days"
             lower.startsWith("prescribe ") -> {
@@ -11665,6 +16593,23 @@ SOFA Score: [X]
                     val minutes = match.groupValues[1].toIntOrNull() ?: DEFAULT_SESSION_TIMEOUT_MINUTES
                     setSessionTimeout(minutes)
                 }
+            }
+            // Device authentication commands
+            lower.contains("pair device") || lower.contains("pair glasses") || lower.contains("pair this device") -> {
+                startDevicePairing()
+            }
+            lower.contains("device status") || lower.contains("pairing status") -> {
+                showDeviceStatus()
+            }
+            // Voiceprint enrollment commands
+            lower.contains("enroll my voice") || lower.contains("enroll voiceprint") || lower.contains("setup voiceprint") -> {
+                startVoiceprintEnrollment()
+            }
+            lower.contains("voiceprint status") || lower.contains("voice print status") -> {
+                showVoiceprintStatus()
+            }
+            lower.contains("delete voiceprint") || lower.contains("remove voiceprint") -> {
+                deleteVoiceprintEnrollment()
             }
             lower.contains("load ") && Regex("load\\s+(\\d+)").containsMatchIn(lower) -> {
                 // Load patient from history by number (e.g., "load 1", "load 2")
@@ -12428,12 +17373,48 @@ SOFA Score: [X]
         if (sessionCheckHandler == null) {
             startSessionTimeoutChecker()
         }
+        // Start proximity monitoring for auto-lock (skip in debug mode)
+        if (!DEBUG_SKIP_AUTH) {
+            startProximityMonitoring()
+        }
+
+        // Check if TOTP is required (skip in debug mode)
+        if (!DEBUG_SKIP_AUTH && isDevicePaired && sessionToken == null && !isSessionLocked) {
+            showTotpLockScreen()
+        }
+
+        // Debug mode indicator
+        if (DEBUG_SKIP_AUTH) {
+            Log.w(TAG, "⚠️ DEBUG_SKIP_AUTH is enabled - authentication bypassed!")
+        }
     }
 
     override fun onPause() {
         super.onPause()
         // Stop timeout checker when app is in background
         stopSessionTimeoutChecker()
+        // Stop proximity monitoring
+        stopProximityMonitoring()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        // Handle QR pairing result
+        if (requestCode == QR_SCAN_REQUEST_CODE && resultCode == RESULT_OK) {
+            val token = data?.getStringExtra(QrPairingActivity.EXTRA_PAIRING_TOKEN)
+            val apiUrl = data?.getStringExtra(QrPairingActivity.EXTRA_API_URL)
+            if (token != null) {
+                completePairing(token, apiUrl)
+            }
+        }
+        // Handle barcode scanner result (existing)
+        else if (requestCode == 1002 && resultCode == RESULT_OK) {
+            val mrn = data?.getStringExtra(BarcodeScannerActivity.EXTRA_MRN)
+            if (mrn != null) {
+                fetchPatientByMrn(mrn)
+            }
+        }
     }
 
     override fun onDestroy() {

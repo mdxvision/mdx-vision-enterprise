@@ -353,13 +353,15 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 64. **Device Authentication (TOTP + Proximity Lock)** - Multi-layer security for AR glasses: QR code device pairing from web dashboard; TOTP (Google Authenticator/Authy) voice code entry ("4 7 2 9 1 5"); proximity sensor auto-lock when glasses removed from face; 12-hour session tokens; remote wipe from dashboard; spoken digit recognition with homophones (won/one, two/too/to, for/four, etc.); voice commands ("pair device", "device status", say 6-digit TOTP code to unlock); prevents unauthorized access if glasses lost/stolen
 65. **Device Management Dashboard** - Web UI for managing AR glasses: view all paired devices with status (active/locked/wiped); pair new devices via QR code; setup TOTP authenticator with QR code; remote wipe lost/stolen devices; device stats (total, active sessions, idle, wiped); last seen timestamps; security info panel; accessible at /dashboard/devices
 66. **Voiceprint Speaker Recognition** - SpeechBrain ECAPA-TDNN model for biometric voice authentication; enrollment via 3 spoken phrases ("My voice is my password", "MDx Vision unlock my session", "I authorize this clinical action"); server-side embedding extraction with cosine similarity matching (threshold 0.70); verification required for sensitive operations (push notes to EHR, push vitals/orders, add allergies, discontinue medications); voice commands ("enroll my voice", "voiceprint status", "delete voiceprint"); prevents unauthorized EHR writes even with stolen device
+67. **Patient Worklist** - Daily patient schedule with check-in workflow; scheduled/checked_in/in_room/in_progress/completed statuses; priority levels (normal, urgent, STAT); room assignment; chief complaint tracking; critical alert indicators; "who's next" queue management; voice commands ("show worklist", "check in 1", "check in 2 to room 5", "who's next", "mark 1 completed", "start seeing 2", "load 1"); API endpoints (/api/v1/worklist, /api/v1/worklist/check-in, /api/v1/worklist/status, /api/v1/worklist/next)
+68. **Order Update/Modify** - Full inpatient order management workflow; show numbered order list; update by number or medication name ("update 1 to 500mg every 6 hours", "update tylenol to 650mg PRN"); delete by number ("delete 2", "remove 3"); confirmation workflow before applying changes; parses dose, frequency, duration, PRN status; integrates with existing order placement and push to EHR
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 66 features implemented |
+| All medium effort items completed! | 68 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)
