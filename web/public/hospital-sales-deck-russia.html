@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDx Vision - Презентация для Российских Больниц</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #0071BC;
+            --primary-dark: #003366;
+            --accent: #86BC25;
+            --success: #86BC25;
+            --warning: #ED8B00;
+            --danger: #DA291C;
+            --dark: #1D1D1F;
+            --light: #FFFFFF;
+            --gray: #6E6E73;
+            --gray-light: #F5F5F7;
+            --border: #D2D2D7;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+            background: var(--light);
+            color: var(--dark);
+            overflow: hidden;
+            height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 60px 100px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(50px);
+            transition: all 0.5s ease;
+            background: var(--light);
+        }
+
+        .slide::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
+        }
+
+        .slide-logo {
+            position: absolute;
+            top: 30px; left: 80px;
+            height: 28px;
+            filter: brightness(0);
+        }
+
+        .slide-number {
+            position: absolute;
+            bottom: 30px; right: 80px;
+            font-size: 0.85rem;
+            color: var(--gray);
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--dark);
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        h2 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+        }
+
+        h2 strong { font-weight: 700; color: var(--primary); }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--dark);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: var(--gray);
+            max-width: 800px;
+        }
+
+        .subtitle {
+            font-size: 1.3rem;
+            color: var(--gray);
+            font-weight: 300;
+        }
+
+        .section-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            margin-top: 40px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .stat {
+            text-align: left;
+            border-left: 3px solid var(--accent);
+            padding-left: 20px;
+        }
+
+        .stat.danger { border-left-color: var(--danger); }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 300;
+            color: var(--dark);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--gray);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 8px;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+            margin-top: 40px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .card {
+            background: transparent;
+            border-left: 3px solid var(--border);
+            padding: 25px;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover { border-left-color: var(--primary); }
+
+        .card-icon { margin-bottom: 15px; }
+
+        .card h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--dark);
+        }
+
+        .card p {
+            font-size: 0.9rem;
+            color: var(--gray);
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            width: 100%;
+            max-width: 1100px;
+            align-items: center;
+        }
+
+        .feature-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95rem;
+            color: var(--gray);
+        }
+
+        .check { color: var(--accent); font-weight: 600; }
+
+        .comparison-table {
+            width: 100%;
+            max-width: 1000px;
+            border-collapse: collapse;
+            margin-top: 30px;
+        }
+
+        .comparison-table th, .comparison-table td {
+            padding: 16px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .comparison-table th {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--gray);
+            font-weight: 500;
+        }
+
+        .comparison-table td { font-size: 0.95rem; color: var(--gray); }
+
+        .roi-box {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            width: 100%;
+            max-width: 600px;
+            margin-top: 40px;
+        }
+
+        .roi-box h3 { color: white; margin-bottom: 20px; }
+        .roi-box .stat-number { color: white; font-size: 4rem; }
+        .roi-box .stat-label { color: rgba(255,255,255,0.8); }
+
+        .timeline {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 900px;
+            margin-top: 50px;
+            position: relative;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            top: 25px; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+
+        .timeline-item { text-align: center; position: relative; z-index: 1; }
+
+        .timeline-dot {
+            width: 14px; height: 14px;
+            background: var(--accent);
+            border-radius: 50%;
+            margin: 18px auto;
+            border: 3px solid white;
+            box-shadow: 0 0 0 2px var(--accent);
+        }
+
+        .timeline-label {
+            font-size: 0.8rem;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .timeline-content {
+            font-size: 0.85rem;
+            color: var(--gray);
+            line-height: 1.5;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            margin-top: 40px;
+            max-width: 1000px;
+        }
+
+        .pricing-card {
+            border: 2px solid var(--border);
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .pricing-card.featured {
+            border-color: var(--primary);
+            position: relative;
+        }
+
+        .pricing-card.featured::before {
+            content: 'РЕКОМЕНДУЕМ';
+            position: absolute;
+            top: -12px; left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            color: white;
+            font-size: 0.7rem;
+            padding: 4px 12px;
+            letter-spacing: 1px;
+        }
+
+        .pricing-card h4 {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            color: var(--dark);
+        }
+
+        .pricing-card .price {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: var(--primary);
+        }
+
+        .pricing-card .price span {
+            font-size: 1rem;
+            color: var(--gray);
+        }
+
+        .pricing-card ul {
+            list-style: none;
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .pricing-card li {
+            padding: 8px 0;
+            font-size: 0.9rem;
+            color: var(--gray);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 16px 36px;
+            background: var(--accent);
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .cta:hover { background: var(--primary); }
+
+        .nav {
+            position: fixed;
+            bottom: 30px; left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+            z-index: 100;
+        }
+
+        .nav-dot {
+            width: 8px; height: 8px;
+            background: var(--border);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .nav-dot.active { background: var(--accent); width: 20px; }
+
+        .nav-arrows {
+            position: fixed;
+            bottom: 25px; right: 80px;
+            display: flex;
+            gap: 5px;
+            z-index: 100;
+        }
+
+        .nav-arrow {
+            width: 40px; height: 40px;
+            border: 1px solid var(--border);
+            background: white;
+            color: var(--gray);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .nav-arrow:hover { border-color: var(--primary); color: var(--primary); }
+
+        .quote {
+            font-size: 1.8rem;
+            font-weight: 300;
+            color: var(--dark);
+            text-align: center;
+            max-width: 800px;
+            line-height: 1.5;
+            font-style: italic;
+        }
+
+        .staff-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 15px;
+            margin-top: 30px;
+            max-width: 900px;
+        }
+
+        .staff-item {
+            text-align: center;
+            padding: 15px 10px;
+            border: 1px solid var(--border);
+        }
+
+        .staff-item i { margin-bottom: 10px; }
+        .staff-item span { font-size: 0.75rem; color: var(--gray); display: block; }
+
+        .highlight-box {
+            background: transparent;
+            border-left: 4px solid var(--accent);
+            padding: 25px 30px;
+            margin-top: 30px;
+            max-width: 800px;
+        }
+
+        .highlight-box h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .contact-grid {
+            display: flex;
+            gap: 50px;
+            margin-top: 30px;
+        }
+
+        .contact-item { text-align: center; }
+        .contact-item .label { font-size: 0.8rem; color: var(--gray); margin-bottom: 5px; }
+        .contact-item .value { font-size: 1rem; color: var(--dark); }
+
+        .russia-badge {
+            display: inline-block;
+            background: var(--primary);
+            color: white;
+            padding: 8px 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="deck">
+        <!-- Слайд 1: Титульный -->
+        <div class="slide active" data-slide="1">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx Vision" style="height: 100px; filter: brightness(0);">
+            <h1 style="margin-top: 30px;">Голосовые AR-очки для<br>Российского Здравоохранения</h1>
+            <p class="subtitle">Документирование без рук. Глаза на пациенте.</p>
+            <div class="russia-badge">🇷🇺 Полная поддержка русского языка</div>
+            <div class="stat-grid" style="margin-top: 50px;">
+                <div class="stat">
+                    <div class="stat-number">5 167</div>
+                    <div class="stat-label">Больниц в России</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">500+</div>
+                    <div class="stat-label">Языков</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">3</div>
+                    <div class="stat-label">Интеграции с МИС</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">100%</div>
+                    <div class="stat-label">Соответствие ФЗ-152</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Слайд 2: Проблема -->
+        <div class="slide" data-slide="2">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Проблема</div>
+            <h2>Документирование <strong>замедляет</strong> работу</h2>
+            <p class="quote" style="margin-top: 30px;">«Я стал врачом, чтобы помогать пациентам, а не печатать на компьютере весь день.»</p>
+            <div class="stat-grid" style="margin-top: 50px;">
+                <div class="stat danger">
+                    <div class="stat-number">17 500</div>
+                    <div class="stat-label">Населённых пунктов без медицины</div>
+                </div>
+                <div class="stat danger">
+                    <div class="stat-number">2+ ч</div>
+                    <div class="stat-label">Ежедневно на документы</div>
+                </div>
+                <div class="stat danger">
+                    <div class="stat-number">$138 млрд</div>
+                    <div class="stat-label">Расходы на здравоохранение</div>
+                </div>
+                <div class="stat danger">
+                    <div class="stat-number">20%</div>
+                    <div class="stat-label">Рост частного сектора в год</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Слайд 3: Решение -->
+        <div class="slide" data-slide="3">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Решение</div>
+            <h2>AR-очки, которые <strong>работают на вас</strong></h2>
+            <div class="two-col" style="margin-top: 40px;">
+                <div>
+                    <h3>Возможности MDx Vision</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> Голосовой поиск пациентов на русском языке</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Транскрипция разговоров в реальном времени</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> ИИ-генерация медицинских записей</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Голосовые предупреждения (аллергии, взаимодействия)</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Голосовые назначения анализов и препаратов</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Запись документов напрямую в МИС</div>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <img src="mdx-glasses-navy-transparent.png" alt="MDx Vision Glasses" style="max-width: 400px; width: 100%;">
+                </div>
+            </div>
+        </div>
+
+        <!-- Слайд 4: Для кого -->
+        <div class="slide" data-slide="4">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Для всей больницы</div>
+            <h2>Создано для <strong>всего персонала</strong></h2>
+            <p>Не только для врачей. MDx Vision работает для всего клинического и операционного персонала.</p>
+            <div class="staff-grid">
+                <div class="staff-item">
+                    <i data-lucide="stethoscope" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Врачи</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="heart-pulse" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Медсёстры</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="truck" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Санитары</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="test-tube" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Лаборанты</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="pill" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Фармацевты</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="scan-line" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Радиологи</span>
+                </div>
+            </div>
+            <div class="highlight-box" style="margin-top: 40px;">
+                <h4>Одна платформа — все рабочие процессы</h4>
+                <p>Разверните один раз, расширяйте на все отделения. Одни очки, одно обучение, одна поддержка.</p>
+            </div>
+        </div>
+
+        <!-- Слайд 5: Интеграция с МИС -->
+        <div class="slide" data-slide="5">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Интеграция</div>
+            <h2>Работает с <strong>российскими МИС</strong></h2>
+            <div class="two-col" style="margin-top: 40px;">
+                <div>
+                    <h3>Для России</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>ЕМИАС</strong> (Москва) — В разработке</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>1С: Медицина</strong> — В разработке</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>IBM C-MIS</strong> — HL7 FHIR</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Частные МИС</strong> — API интеграция</div>
+                    </div>
+                </div>
+                <div>
+                    <h3>Уже работают (международные)</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Oracle Cerner</strong> — FHIR R4 чтение/запись</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Epic</strong> — FHIR R4 чтение/запись</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Veradigm</strong> — FHIR R4 чтение/запись</div>
+                    </div>
+                    <p style="margin-top: 20px; font-size: 0.9rem;">Опыт интеграции гарантирует быструю адаптацию для российских систем.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Слайд 6: Безопасность -->
+        <div class="slide" data-slide="6">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Безопасность</div>
+            <h2>Соответствует <strong>российским требованиям</strong></h2>
+            <div class="two-col" style="margin-top: 40px;">
+                <div>
+                    <h3>Функции безопасности</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> Биометрическая аутентификация по голосу</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Автоблокировка при снятии очков</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Шифрование AES-256</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Резервная аутентификация TOTP</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Удалённое стирание данных</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Полное журналирование действий</div>
+                    </div>
+                </div>
+                <div>
+                    <h3>Российское соответствие</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>ФЗ-152</strong> — Защита персональных данных</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Локализация данных</strong> — Размещение в РФ</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Сертифицированные ЦОД</strong> — Российские дата-центры</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>On-Premise</strong> — Установка на ваших серверах</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Аудит</strong> — Полное логирование доступа</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Слайд 7: ROI -->
+        <div class="slide" data-slide="7">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Ценность</div>
+            <h2>Возврат <strong>инвестиций</strong></h2>
+            <div class="stat-grid">
+                <div class="stat">
+                    <div class="stat-number">70%</div>
+                    <div class="stat-label">Сокращение времени на документы</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">2+ ч</div>
+                    <div class="stat-label">Экономия на врача в день</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">30%</div>
+                    <div class="stat-label">Улучшение закрытия записей</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">25%</div>
+                    <div class="stat-label">Снижение ошибок документации</div>
+                </div>
+            </div>
+            <div class="roi-box">
+                <h3>Ожидаемая годовая экономия</h3>
+                <div class="stat-number">$150 000+</div>
+                <div class="stat-label">На 10 врачей</div>
+            </div>
+            <p style="margin-top: 20px; font-size: 0.9rem;">*На основе международных данных. Результаты зависят от внедрения.</p>
+        </div>
+
+        <!-- Слайд 8: Языки -->
+        <div class="slide" data-slide="8">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Многоязычность</div>
+            <h2>Поддержка <strong>500+ языков</strong></h2>
+            <div class="two-col" style="margin-top: 40px;">
+                <div>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Русский</strong> — Полная медицинская терминология</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Языки СНГ</strong> — Казахский, узбекский, таджикский</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Мировые языки</strong> — Английский, китайский, арабский</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> <strong>Перевод в реальном времени</strong> — Общение с пациентами</div>
+                    </div>
+                </div>
+                <div>
+                    <h3>Преимущества для России</h3>
+                    <div class="card-grid" style="grid-template-columns: 1fr; gap: 15px; margin-top: 0;">
+                        <div class="card">
+                            <h4>Обслуживание всех пациентов</h4>
+                            <p>Мигранты, туристы, иностранные пациенты получают помощь на своём языке</p>
+                        </div>
+                        <div class="card">
+                            <h4>Медицинский туризм</h4>
+                            <p>Привлечение международных пациентов в ведущие российские клиники</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Слайд 9: Внедрение -->
+        <div class="slide" data-slide="9">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Внедрение</div>
+            <h2>График <strong>внедрения</strong></h2>
+            <p>Запуск за 4 недели с нашим проверенным процессом развёртывания.</p>
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-label">Неделя 1</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Анализ<br>Оценка МИС<br>Проверка сети</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-label">Неделя 2</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Интеграция<br>Подключение МИС<br>Настройка безопасности</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-label">Неделя 3</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Пилот<br>Обучение персонала<br>Настройка процессов</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-label">Неделя 4</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Запуск<br>Полное развёртывание<br>Передача в поддержку</div>
+                </div>
+            </div>
+            <div class="highlight-box" style="margin-top: 40px;">
+                <h4>Включено в каждое внедрение</h4>
+                <p>Выделенный менеджер проекта, обучение на месте (на русском), поддержка 24/7 в российских часовых поясах.</p>
+            </div>
+        </div>
+
+        <!-- Слайд 10: Цены -->
+        <div class="slide" data-slide="10">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Инвестиции</div>
+            <h2>Гибкие <strong>варианты внедрения</strong></h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h4>Пилот</h4>
+                    <div class="price">По запросу</div>
+                    <ul>
+                        <li>5-10 пользователей</li>
+                        <li>Одно отделение</li>
+                        <li>60 дней тестирования</li>
+                        <li>Отслеживание метрик</li>
+                        <li>Выделенная поддержка</li>
+                    </ul>
+                </div>
+                <div class="pricing-card featured">
+                    <h4>Отделение</h4>
+                    <div class="price">Свяжитесь</div>
+                    <ul>
+                        <li>25-100 пользователей</li>
+                        <li>Несколько отделений</li>
+                        <li>Полная интеграция с МИС</li>
+                        <li>Настройка процессов</li>
+                        <li>Обучение включено</li>
+                    </ul>
+                </div>
+                <div class="pricing-card">
+                    <h4>Клиника</h4>
+                    <div class="price">По запросу</div>
+                    <ul>
+                        <li>Без ограничений</li>
+                        <li>Вся больница / сеть</li>
+                        <li>On-premise опция</li>
+                        <li>Индивидуальная разработка</li>
+                        <li>Премиум SLA</li>
+                    </ul>
+                </div>
+            </div>
+            <p style="margin-top: 30px; text-align: center;">Работаем через локального дистрибьютора. Особые условия для государственных учреждений.</p>
+        </div>
+
+        <!-- Слайд 11: Контакты -->
+        <div class="slide" data-slide="11">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Начать</div>
+            <h2>Готовы к <strong>сотрудничеству</strong>?</h2>
+            <div class="card-grid" style="max-width: 900px;">
+                <div class="card" style="text-align: center; border-left: none; border-top: 3px solid var(--primary);">
+                    <div class="card-icon"><i data-lucide="calendar" style="width:32px;height:32px;color:var(--primary);"></i></div>
+                    <h4>1. Демонстрация</h4>
+                    <p>Посмотрите MDx Vision в действии с данными вашей МИС. Демо на русском языке.</p>
+                </div>
+                <div class="card" style="text-align: center; border-left: none; border-top: 3px solid var(--primary);">
+                    <div class="card-icon"><i data-lucide="clipboard-check" style="width:32px;height:32px;color:var(--primary);"></i></div>
+                    <h4>2. Пилотный проект</h4>
+                    <p>60 дней с 5-10 пользователями в одном отделении.</p>
+                </div>
+                <div class="card" style="text-align: center; border-left: none; border-top: 3px solid var(--primary);">
+                    <div class="card-icon"><i data-lucide="handshake" style="width:32px;height:32px;color:var(--primary);"></i></div>
+                    <h4>3. Партнёрство</h4>
+                    <p>Ищем стратегического партнёра для выхода на российский рынок.</p>
+                </div>
+            </div>
+            <a href="mailto:russia@mdxvision.com" class="cta">Связаться с нами &#10132;</a>
+            <div class="contact-grid">
+                <div class="contact-item">
+                    <div class="label">Email для России</div>
+                    <div class="value">russia@mdxvision.com</div>
+                </div>
+                <div class="contact-item">
+                    <div class="label">Международный</div>
+                    <div class="value">sales@mdxvision.com</div>
+                </div>
+                <div class="contact-item">
+                    <div class="label">Сайт</div>
+                    <div class="value">mdxvision.com</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Навигация -->
+    <div class="nav" id="nav"></div>
+    <div class="nav-arrows">
+        <button class="nav-arrow" onclick="prevSlide()">&#8592;</button>
+        <button class="nav-arrow" onclick="nextSlide()">&#8594;</button>
+    </div>
+
+    <script>
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        let currentSlide = 1;
+
+        const nav = document.getElementById('nav');
+        for (let i = 1; i <= totalSlides; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'nav-dot' + (i === 1 ? ' active' : '');
+            dot.onclick = () => goToSlide(i);
+            nav.appendChild(dot);
+        }
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                slide.classList.toggle('active', index + 1 === currentSlide);
+            });
+            document.querySelectorAll('.nav-dot').forEach((dot, index) => {
+                dot.classList.toggle('active', index + 1 === currentSlide);
+            });
+        }
+
+        function nextSlide() { if (currentSlide < totalSlides) { currentSlide++; updateSlide(); } }
+        function prevSlide() { if (currentSlide > 1) { currentSlide--; updateSlide(); } }
+        function goToSlide(n) { currentSlide = n; updateSlide(); }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+        });
+
+        let touchStartX = 0;
+        document.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; });
+        document.addEventListener('touchend', (e) => {
+            const diff = touchStartX - e.changedTouches[0].screenX;
+            if (Math.abs(diff) > 50) { diff > 0 ? nextSlide() : prevSlide(); }
+        });
+
+        lucide.createIcons();
+    </script>
+</body>
+</html>

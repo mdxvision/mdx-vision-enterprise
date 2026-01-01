@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDx Vision - Capability Statement</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0071BC;
+            --accent: #86BC25;
+            --dark: #1D1D1F;
+            --gray: #6E6E73;
+            --light: #FFFFFF;
+            --border: #D2D2D7;
+            --bg: #F5F5F7;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page { box-shadow: none; page-break-after: always; }
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--dark);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        .page {
+            width: 8.5in;
+            min-height: 11in;
+            margin: 20px auto;
+            background: white;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 0.5in;
+            position: relative;
+        }
+        .page::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 20px;
+        }
+        .header-left { }
+        .logo { height: 35px; filter: brightness(0); margin-bottom: 8px; display: block; }
+        .company-info { font-size: 0.7rem; color: var(--gray); }
+        .header-right { text-align: right; }
+        .doc-title { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
+        .doc-subtitle { font-size: 0.75rem; color: var(--gray); }
+        .section { margin-bottom: 16px; }
+        .section-title {
+            font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 2px; color: var(--accent); margin-bottom: 8px;
+            padding-bottom: 4px; border-bottom: 1px solid var(--border);
+        }
+        h2 { font-size: 0.9rem; font-weight: 600; color: var(--dark); margin-bottom: 6px; }
+        p { font-size: 0.75rem; color: var(--gray); line-height: 1.6; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.7rem; }
+        th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px; color: var(--gray); font-weight: 500; background: var(--bg); }
+        td { color: var(--gray); }
+        .highlight { background: var(--bg); padding: 12px 15px; border-left: 3px solid var(--primary); margin-bottom: 12px; }
+        .highlight h3 { font-size: 0.75rem; font-weight: 600; color: var(--dark); margin-bottom: 4px; }
+        .highlight p { font-size: 0.7rem; }
+        .competency-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .competency { background: var(--bg); padding: 10px 12px; border-left: 2px solid var(--accent); }
+        .competency h4 { font-size: 0.7rem; font-weight: 600; color: var(--dark); margin-bottom: 3px; }
+        .competency p { font-size: 0.65rem; }
+        .check { color: var(--accent); }
+        .footer { margin-top: 15px; padding-top: 12px; border-top: 2px solid var(--border); }
+        .footer-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        .footer-section h4 { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 6px; }
+        .footer-section p { font-size: 0.7rem; color: var(--gray); margin-bottom: 3px; }
+        .naics-codes { display: flex; flex-wrap: wrap; gap: 5px; }
+        .naics-code { background: var(--bg); padding: 3px 8px; font-size: 0.6rem; color: var(--gray); }
+        .badge { display: inline-block; padding: 2px 6px; font-size: 0.55rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .badge-success { background: var(--accent); color: white; }
+        .badge-warning { background: #ED8B00; color: white; }
+        .badge-primary { background: var(--primary); color: white; }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <div class="header-left">
+                <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx Vision" class="logo">
+                <div class="company-info">
+                    MDx Vision, Inc.<br>
+                    United States<br>
+                    US Patent 15/237,980
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="doc-title">Capability Statement</div>
+                <div class="doc-subtitle">Voice-First AR for Hospital Operations</div>
+            </div>
+        </div>
+
+        <div class="highlight">
+            <h3>Company Overview</h3>
+            <p>MDx Vision delivers voice-first augmented reality solutions for healthcare operations. Our patented AR smart glasses platform enables hands-free EHR access, real-time clinical documentation, and AI-powered workflow automation for the 22M+ healthcare workers in the United States.</p>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Core Competencies</div>
+            <div class="competency-grid">
+                <div class="competency">
+                    <h4>AR-Enabled Clinical Documentation</h4>
+                    <p>Voice-activated patient data, real-time transcription, AI-generated notes</p>
+                </div>
+                <div class="competency">
+                    <h4>EHR Integration & Interoperability</h4>
+                    <p>Native FHIR R4, bi-directional exchange, Cerner/Epic/Veradigm</p>
+                </div>
+                <div class="competency">
+                    <h4>Healthcare-Grade Security</h4>
+                    <p>HIPAA compliant, voiceprint auth, AES-256, audit logging</p>
+                </div>
+                <div class="competency">
+                    <h4>Clinical Decision Support</h4>
+                    <p>Drug interactions, allergy alerts, critical lab warnings</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="section">
+                <div class="section-title">Products & Services</div>
+                <table>
+                    <tr><td><strong>MDx Vision Platform</strong></td><td>AR glasses + software</td></tr>
+                    <tr><td><strong>EHR Connector</strong></td><td>FHIR R4 integration</td></tr>
+                    <tr><td><strong>AI Documentation</strong></td><td>Transcription + notes</td></tr>
+                    <tr><td><strong>Implementation</strong></td><td>4-week deployment</td></tr>
+                    <tr><td><strong>Training</strong></td><td>On-site + virtual</td></tr>
+                    <tr><td><strong>Support</strong></td><td>24/7 technical support</td></tr>
+                </table>
+            </div>
+            <div class="section">
+                <div class="section-title">Technical Capabilities</div>
+                <table>
+                    <tr><td>Oracle Cerner</td><td><span class="badge badge-success">Live</span></td></tr>
+                    <tr><td>Epic</td><td><span class="badge badge-success">Live</span></td></tr>
+                    <tr><td>Veradigm</td><td><span class="badge badge-success">Live</span></td></tr>
+                    <tr><td>Meditech</td><td><span class="badge badge-warning">Q2 2026</span></td></tr>
+                    <tr><td>500+ Languages</td><td><span class="badge badge-success">Live</span></td></tr>
+                    <tr><td>Offline Mode</td><td><span class="badge badge-success">Live</span></td></tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="section">
+                <div class="section-title">Security & Compliance</div>
+                <table>
+                    <tr><td>HIPAA</td><td><span class="check">&#10003;</span> Compliant</td></tr>
+                    <tr><td>BAA</td><td><span class="check">&#10003;</span> Available</td></tr>
+                    <tr><td>SOC 2 Type II</td><td>In Progress</td></tr>
+                    <tr><td>Encryption</td><td>AES-256</td></tr>
+                    <tr><td>Authentication</td><td>Voiceprint + TOTP + SSO</td></tr>
+                    <tr><td>Audit Logging</td><td><span class="check">&#10003;</span> Complete PHI tracking</td></tr>
+                </table>
+            </div>
+            <div class="section">
+                <div class="section-title">Differentiators</div>
+                <table>
+                    <tr><td>AR Glasses / HMD</td><td><span class="check">&#10003;</span> Only solution</td></tr>
+                    <tr><td>Hands-Free Operation</td><td><span class="check">&#10003;</span> 100% voice</td></tr>
+                    <tr><td>Hospital-Wide</td><td><span class="check">&#10003;</span> All staff roles</td></tr>
+                    <tr><td>Full EHR Write-Back</td><td><span class="check">&#10003;</span> CRUD operations</td></tr>
+                    <tr><td>Voiceprint Auth</td><td><span class="check">&#10003;</span> Biometric</td></tr>
+                    <tr><td>Proprietary Hardware</td><td>In Development</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Past Performance</div>
+            <table>
+                <thead><tr><th>Client Type</th><th>Scope</th><th>Outcome</th></tr></thead>
+                <tbody>
+                    <tr><td>Academic Medical Center</td><td>10-user pilot, ED</td><td>65% reduction in documentation time</td></tr>
+                    <tr><td>Community Hospital</td><td>15-user pilot, hospitalists</td><td>2.1 hours saved per clinician/day</td></tr>
+                    <tr><td>Outpatient Clinic</td><td>5-user pilot, primary care</td><td>40% improvement in same-day closure</td></tr>
+                </tbody>
+            </table>
+            <p style="font-size: 0.6rem; margin-top: 5px; font-style: italic;">Detailed references available upon request with signed NDA.</p>
+        </div>
+
+        <div class="footer">
+            <div class="footer-grid">
+                <div class="footer-section">
+                    <h4>Contact</h4>
+                    <p><strong>Sales:</strong> sales@mdxvision.com</p>
+                    <p><strong>Website:</strong> mdxvision.com</p>
+                    <p><strong>Phone:</strong> (888) MDX-VISION</p>
+                </div>
+                <div class="footer-section">
+                    <h4>NAICS Codes</h4>
+                    <div class="naics-codes">
+                        <span class="naics-code">334111</span>
+                        <span class="naics-code">511210</span>
+                        <span class="naics-code">541511</span>
+                        <span class="naics-code">541512</span>
+                        <span class="naics-code">541519</span>
+                    </div>
+                </div>
+                <div class="footer-section">
+                    <h4>Business Info</h4>
+                    <p><strong>Type:</strong> Small Business</p>
+                    <p><strong>Founded:</strong> 2024</p>
+                    <p><strong>Patent:</strong> US 15/237,980</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page 2 -->
+    <div class="page">
+        <div class="header">
+            <div class="header-left">
+                <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx Vision" class="logo">
+            </div>
+            <div class="header-right">
+                <div class="doc-title">Capability Statement</div>
+                <div class="doc-subtitle">Page 2 - Technical Details</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Hardware Compatibility</div>
+            <table>
+                <thead><tr><th>Device</th><th>Status</th><th>Notes</th></tr></thead>
+                <tbody>
+                    <tr><td>Vuzix Blade 2</td><td><span class="badge badge-success">Supported</span></td><td>Enterprise AR glasses</td></tr>
+                    <tr><td>Vuzix Shield</td><td><span class="badge badge-success">Supported</span></td><td>Industrial model</td></tr>
+                    <tr><td>Vuzix Z100</td><td><span class="badge badge-success">Supported</span></td><td>Lightweight consumer</td></tr>
+                    <tr><td>RealWear Navigator</td><td><span class="badge badge-success">Supported</span></td><td>Rugged environments</td></tr>
+                    <tr><td>Android XR Devices</td><td><span class="badge badge-warning">2026</span></td><td>Google platform</td></tr>
+                    <tr><td>MDX Glasses</td><td><span class="badge badge-primary">Development</span></td><td>Proprietary hardware</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Infrastructure Requirements</div>
+            <div class="grid-2">
+                <table>
+                    <tr><td><strong>Network</strong></td><td>802.11ac WiFi minimum</td></tr>
+                    <tr><td><strong>Bandwidth</strong></td><td>2 Mbps per device</td></tr>
+                    <tr><td><strong>Firewall</strong></td><td>HTTPS (443) outbound</td></tr>
+                </table>
+                <table>
+                    <tr><td><strong>Cloud Options</strong></td><td>AWS / Azure / GovCloud</td></tr>
+                    <tr><td><strong>On-Premise</strong></td><td>Available</td></tr>
+                    <tr><td><strong>Data Residency</strong></td><td>US, EU, UK, AU</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Contract Vehicles</div>
+            <table>
+                <thead><tr><th>Vehicle</th><th>Status</th></tr></thead>
+                <tbody>
+                    <tr><td>GSA Schedule</td><td>Planned</td></tr>
+                    <tr><td>SEWP V</td><td>Planned</td></tr>
+                    <tr><td>State/Local Cooperatives</td><td>Available</td></tr>
+                    <tr><td>GPO Contracts</td><td>In Discussion</td></tr>
+                    <tr><td>Direct Contract</td><td><span class="badge badge-success">Available</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-title">Certifications & Registrations</div>
+            <div class="grid-2">
+                <table>
+                    <tr><td>SAM.gov</td><td>Pending</td></tr>
+                    <tr><td>DUNS</td><td>Pending</td></tr>
+                    <tr><td>CAGE Code</td><td>Pending</td></tr>
+                </table>
+                <table>
+                    <tr><td>State Licenses</td><td><span class="check">&#10003;</span> Active</td></tr>
+                    <tr><td>Cyber Insurance</td><td><span class="check">&#10003;</span> Current</td></tr>
+                    <tr><td>E&O / GL Insurance</td><td><span class="check">&#10003;</span> Current</td></tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">PSC Codes</div>
+            <div class="naics-codes">
+                <span class="naics-code">7010 - IT Equipment</span>
+                <span class="naics-code">7030 - IT Software</span>
+                <span class="naics-code">DA10 - IT Services</span>
+                <span class="naics-code">Q201 - Medical Equipment</span>
+            </div>
+        </div>
+
+        <div class="highlight" style="margin-top: 20px;">
+            <h3>Ready to Get Started?</h3>
+            <p>Contact us for a personalized demonstration, pilot program details, or to discuss your specific requirements. We offer flexible deployment options and dedicated implementation support.</p>
+            <p style="margin-top: 10px;"><strong>Email:</strong> sales@mdxvision.com | <strong>Phone:</strong> (888) MDX-VISION | <strong>Web:</strong> mdxvision.com</p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid var(--border);">
+            <p style="font-size: 0.7rem; color: var(--gray);">MDx Vision, Inc. | Voice-First AR for Healthcare Operations | US Patent 15/237,980</p>
+            <p style="font-size: 0.6rem; color: var(--gray); margin-top: 5px;">This capability statement is provided for informational purposes. Confidential.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDx Vision - One Sheet</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #0071BC;
+            --accent: #86BC25;
+            --danger: #DA291C;
+            --dark: #1D1D1F;
+            --gray: #6E6E73;
+            --light: #FFFFFF;
+            --border: #D2D2D7;
+            --bg: #F5F5F7;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page { box-shadow: none; }
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--dark);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        .page {
+            width: 8.5in;
+            min-height: 11in;
+            margin: 20px auto;
+            background: white;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 0.5in;
+            position: relative;
+        }
+        .page::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 20px;
+        }
+        .logo { height: 40px; filter: brightness(0); }
+        .tagline { font-size: 0.85rem; color: var(--gray); text-align: right; }
+        .tagline strong { display: block; font-size: 1.1rem; color: var(--primary); font-weight: 600; }
+        .section { margin-bottom: 18px; }
+        .section-title {
+            font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 2px; color: var(--accent); margin-bottom: 8px;
+            padding-bottom: 5px; border-bottom: 1px solid var(--border);
+        }
+        p { font-size: 0.8rem; color: var(--gray); line-height: 1.6; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+        .stat-box { background: var(--bg); padding: 12px 15px; border-left: 3px solid var(--danger); }
+        .stat-box.success { border-left-color: var(--accent); }
+        .stat-number { font-size: 1.5rem; font-weight: 300; color: var(--dark); }
+        .stat-label { font-size: 0.65rem; color: var(--gray); text-transform: uppercase; letter-spacing: 1px; }
+        .feature-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .feature-item { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--gray); padding: 6px 0; border-bottom: 1px solid var(--border); }
+        .check { color: var(--accent); font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.75rem; }
+        th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+        th { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; color: var(--gray); font-weight: 500; background: var(--bg); }
+        td { color: var(--gray); }
+        .card { background: var(--bg); padding: 12px 15px; border-left: 3px solid var(--primary); }
+        .card h4 { font-size: 0.8rem; font-weight: 600; color: var(--dark); margin-bottom: 5px; }
+        .card p { font-size: 0.7rem; }
+        .role-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+        .role-item { text-align: center; padding: 10px 5px; background: var(--bg); font-size: 0.65rem; color: var(--gray); }
+        .role-item i { display: block; margin-bottom: 5px; }
+        .roi-box { background: linear-gradient(135deg, var(--primary), var(--accent)); color: white; padding: 15px 20px; text-align: center; }
+        .roi-box .stat-number { color: white; font-size: 2rem; }
+        .roi-box .stat-label { color: rgba(255,255,255,0.8); }
+        .footer { margin-top: 20px; padding-top: 15px; border-top: 2px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .contact-info { display: flex; gap: 30px; }
+        .contact-item { font-size: 0.75rem; }
+        .contact-item .label { font-size: 0.6rem; color: var(--gray); text-transform: uppercase; letter-spacing: 1px; }
+        .contact-item .value { color: var(--dark); font-weight: 500; }
+        .patent { font-size: 0.7rem; color: var(--gray); }
+        .cta-box { background: var(--dark); color: white; padding: 12px 20px; text-align: center; margin-top: 15px; }
+        .cta-box p { color: rgba(255,255,255,0.8); font-size: 0.75rem; }
+        .cta-box strong { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="header">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx Vision" class="logo">
+            <div class="tagline">
+                <strong>Voice-First AR for Hospital Operations</strong>
+                Hands-free documentation. Eyes on your patients.
+            </div>
+        </div>
+        <div class="section">
+            <div class="section-title">The Challenge</div>
+            <div class="grid-4">
+                <div class="stat-box"><div class="stat-number">62%</div><div class="stat-label">Nurses report burnout</div></div>
+                <div class="stat-box"><div class="stat-number">49%</div><div class="stat-label">Physicians report burnout</div></div>
+                <div class="stat-box"><div class="stat-number">2+ hrs</div><div class="stat-label">Daily on documentation</div></div>
+                <div class="stat-box"><div class="stat-number">$4.6B</div><div class="stat-label">Lost productivity (US)</div></div>
+            </div>
+        </div>
+        <div class="section">
+            <div class="section-title">The Solution</div>
+            <p style="margin-bottom: 10px;">MDx Vision is AR smart glasses purpose-built for healthcare. Voice-first EHR access, real-time transcription, and AI-powered documentation - all while keeping eyes on the patient.</p>
+            <div class="feature-list">
+                <div class="feature-item"><span class="check">&#10003;</span> Voice-activated EHR access</div>
+                <div class="feature-item"><span class="check">&#10003;</span> Real-time transcription</div>
+                <div class="feature-item"><span class="check">&#10003;</span> AI-generated clinical notes</div>
+                <div class="feature-item"><span class="check">&#10003;</span> Drug interaction alerts</div>
+                <div class="feature-item"><span class="check">&#10003;</span> Voice orders (labs, meds)</div>
+                <div class="feature-item"><span class="check">&#10003;</span> Allergy warnings</div>
+                <div class="feature-item"><span class="check">&#10003;</span> EHR write-back</div>
+                <div class="feature-item"><span class="check">&#10003;</span> 500+ languages</div>
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="section">
+                <div class="section-title">Who Uses MDx Vision</div>
+                <div class="role-grid">
+                    <div class="role-item"><i data-lucide="stethoscope" style="width:18px;height:18px;color:var(--primary);"></i>Physicians</div>
+                    <div class="role-item"><i data-lucide="heart-pulse" style="width:18px;height:18px;color:var(--primary);"></i>Nurses</div>
+                    <div class="role-item"><i data-lucide="truck" style="width:18px;height:18px;color:var(--primary);"></i>Transport</div>
+                    <div class="role-item"><i data-lucide="test-tube" style="width:18px;height:18px;color:var(--primary);"></i>Phlebotomy</div>
+                    <div class="role-item"><i data-lucide="pill" style="width:18px;height:18px;color:var(--primary);"></i>Pharmacy</div>
+                    <div class="role-item"><i data-lucide="scan-line" style="width:18px;height:18px;color:var(--primary);"></i>Radiology</div>
+                </div>
+                <p style="margin-top: 8px; font-size: 0.7rem;"><strong>One platform for your entire hospital.</strong></p>
+            </div>
+            <div class="section">
+                <div class="section-title">Security & Compliance</div>
+                <div class="feature-list" style="grid-template-columns: 1fr;">
+                    <div class="feature-item"><span class="check">&#10003;</span> HIPAA Compliant (BAA available)</div>
+                    <div class="feature-item"><span class="check">&#10003;</span> Voiceprint biometric authentication</div>
+                    <div class="feature-item"><span class="check">&#10003;</span> AES-256 encryption</div>
+                    <div class="feature-item"><span class="check">&#10003;</span> Auto-lock when glasses removed</div>
+                    <div class="feature-item"><span class="check">&#10003;</span> Remote wipe capability</div>
+                    <div class="feature-item"><span class="check">&#10003;</span> Complete audit logging</div>
+                </div>
+            </div>
+        </div>
+        <div class="grid-2">
+            <div class="section">
+                <div class="section-title">EHR Integrations</div>
+                <table>
+                    <thead><tr><th>EHR</th><th>Status</th><th>Capabilities</th></tr></thead>
+                    <tbody>
+                        <tr><td>Oracle Cerner</td><td style="color: var(--accent);">Live</td><td>Read + Write</td></tr>
+                        <tr><td>Epic</td><td style="color: var(--accent);">Live</td><td>Read + Write</td></tr>
+                        <tr><td>Veradigm</td><td style="color: var(--accent);">Live</td><td>Read + Write</td></tr>
+                        <tr><td>Meditech</td><td>Q2 2026</td><td>FHIR R4</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="section">
+                <div class="section-title">ROI Summary</div>
+                <div class="grid-2" style="gap: 8px; margin-bottom: 10px;">
+                    <div class="stat-box success"><div class="stat-number">70%</div><div class="stat-label">Less documentation time</div></div>
+                    <div class="stat-box success"><div class="stat-number">2+ hrs</div><div class="stat-label">Saved per clinician/day</div></div>
+                </div>
+                <div class="roi-box"><div class="stat-number">$150K+</div><div class="stat-label">Annual savings per 10 clinicians</div></div>
+            </div>
+        </div>
+        <div class="section">
+            <div class="section-title">Implementation Timeline</div>
+            <div class="grid-4">
+                <div class="card"><h4>Week 1</h4><p>Discovery & EHR assessment</p></div>
+                <div class="card"><h4>Week 2</h4><p>Integration & security config</p></div>
+                <div class="card"><h4>Week 3</h4><p>Pilot training & workflow tuning</p></div>
+                <div class="card"><h4>Week 4</h4><p>Go live & support handoff</p></div>
+            </div>
+        </div>
+        <div class="cta-box"><p><strong>Schedule a Demo</strong> - See MDx Vision in action with your own EHR data.</p></div>
+        <div class="footer">
+            <div class="contact-info">
+                <div class="contact-item"><div class="label">Email</div><div class="value">sales@mdxvision.com</div></div>
+                <div class="contact-item"><div class="label">Website</div><div class="value">mdxvision.com</div></div>
+                <div class="contact-item"><div class="label">Phone</div><div class="value">(888) MDX-VISION</div></div>
+            </div>
+            <div class="patent">US Patent 15/237,980</div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

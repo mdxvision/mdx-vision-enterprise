@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDx Vision - Hospital Sales Deck</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #0071BC;
+            --primary-dark: #003366;
+            --accent: #86BC25;
+            --success: #86BC25;
+            --warning: #ED8B00;
+            --danger: #DA291C;
+            --dark: #1D1D1F;
+            --light: #FFFFFF;
+            --gray: #6E6E73;
+            --gray-light: #F5F5F7;
+            --border: #D2D2D7;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif;
+            background: var(--light);
+            color: var(--dark);
+            overflow: hidden;
+            height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 60px 100px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(50px);
+            transition: all 0.5s ease;
+            background: var(--light);
+        }
+
+        .slide::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
+        }
+
+        .slide-logo {
+            position: absolute;
+            top: 30px; left: 80px;
+            height: 28px;
+            filter: brightness(0);
+        }
+
+        .slide-number {
+            position: absolute;
+            bottom: 30px; right: 80px;
+            font-size: 0.85rem;
+            color: var(--gray);
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--dark);
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        h2 {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: var(--dark);
+            margin-bottom: 0.5rem;
+        }
+
+        h2 strong { font-weight: 700; color: var(--primary); }
+
+        h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--dark);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 1rem;
+        }
+
+        p {
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: var(--gray);
+            max-width: 800px;
+        }
+
+        .subtitle {
+            font-size: 1.3rem;
+            color: var(--gray);
+            font-weight: 300;
+        }
+
+        .section-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 10px;
+        }
+
+        /* Stats */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            margin-top: 40px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .stat {
+            text-align: left;
+            border-left: 3px solid var(--accent);
+            padding-left: 20px;
+        }
+
+        .stat.danger { border-left-color: var(--danger); }
+
+        .stat-number {
+            font-size: 3rem;
+            font-weight: 300;
+            color: var(--dark);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--gray);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 8px;
+        }
+
+        /* Cards */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+            margin-top: 40px;
+            width: 100%;
+            max-width: 1100px;
+        }
+
+        .card {
+            background: transparent;
+            border-left: 3px solid var(--border);
+            padding: 25px;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover { border-left-color: var(--primary); }
+
+        .card-icon { margin-bottom: 15px; }
+
+        .card h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--dark);
+        }
+
+        .card p {
+            font-size: 0.9rem;
+            color: var(--gray);
+        }
+
+        /* Two Column */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            width: 100%;
+            max-width: 1100px;
+            align-items: center;
+        }
+
+        /* Feature List */
+        .feature-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95rem;
+            color: var(--gray);
+        }
+
+        .check { color: var(--accent); font-weight: 600; }
+
+        /* Table */
+        .comparison-table {
+            width: 100%;
+            max-width: 1000px;
+            border-collapse: collapse;
+            margin-top: 30px;
+        }
+
+        .comparison-table th, .comparison-table td {
+            padding: 16px 20px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .comparison-table th {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--gray);
+            font-weight: 500;
+        }
+
+        .comparison-table td { font-size: 0.95rem; color: var(--gray); }
+
+        /* ROI Box */
+        .roi-box {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            width: 100%;
+            max-width: 600px;
+            margin-top: 40px;
+        }
+
+        .roi-box h3 { color: white; margin-bottom: 20px; }
+        .roi-box .stat-number { color: white; font-size: 4rem; }
+        .roi-box .stat-label { color: rgba(255,255,255,0.8); }
+
+        /* Timeline */
+        .timeline {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 900px;
+            margin-top: 50px;
+            position: relative;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            top: 25px; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+
+        .timeline-item { text-align: center; position: relative; z-index: 1; }
+
+        .timeline-dot {
+            width: 14px; height: 14px;
+            background: var(--accent);
+            border-radius: 50%;
+            margin: 18px auto;
+            border: 3px solid white;
+            box-shadow: 0 0 0 2px var(--accent);
+        }
+
+        .timeline-label {
+            font-size: 0.8rem;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .timeline-content {
+            font-size: 0.85rem;
+            color: var(--gray);
+            line-height: 1.5;
+        }
+
+        /* Pricing */
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            margin-top: 40px;
+            max-width: 1000px;
+        }
+
+        .pricing-card {
+            border: 2px solid var(--border);
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .pricing-card.featured {
+            border-color: var(--primary);
+            position: relative;
+        }
+
+        .pricing-card.featured::before {
+            content: 'RECOMMENDED';
+            position: absolute;
+            top: -12px; left: 50%;
+            transform: translateX(-50%);
+            background: var(--primary);
+            color: white;
+            font-size: 0.7rem;
+            padding: 4px 12px;
+            letter-spacing: 1px;
+        }
+
+        .pricing-card h4 {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            color: var(--dark);
+        }
+
+        .pricing-card .price {
+            font-size: 2.5rem;
+            font-weight: 300;
+            color: var(--primary);
+        }
+
+        .pricing-card .price span {
+            font-size: 1rem;
+            color: var(--gray);
+        }
+
+        .pricing-card ul {
+            list-style: none;
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .pricing-card li {
+            padding: 8px 0;
+            font-size: 0.9rem;
+            color: var(--gray);
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* CTA */
+        .cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 16px 36px;
+            background: var(--accent);
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-top: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .cta:hover { background: var(--primary); }
+
+        /* Navigation */
+        .nav {
+            position: fixed;
+            bottom: 30px; left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 6px;
+            z-index: 100;
+        }
+
+        .nav-dot {
+            width: 8px; height: 8px;
+            background: var(--border);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .nav-dot.active { background: var(--accent); width: 20px; }
+
+        .nav-arrows {
+            position: fixed;
+            bottom: 25px; right: 80px;
+            display: flex;
+            gap: 5px;
+            z-index: 100;
+        }
+
+        .nav-arrow {
+            width: 40px; height: 40px;
+            border: 1px solid var(--border);
+            background: white;
+            color: var(--gray);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .nav-arrow:hover { border-color: var(--primary); color: var(--primary); }
+
+        /* Quote */
+        .quote {
+            font-size: 1.8rem;
+            font-weight: 300;
+            color: var(--dark);
+            text-align: center;
+            max-width: 800px;
+            line-height: 1.5;
+            font-style: italic;
+        }
+
+        .quote-author {
+            font-size: 0.9rem;
+            color: var(--gray);
+            margin-top: 20px;
+            font-style: normal;
+        }
+
+        /* Staff Grid */
+        .staff-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 15px;
+            margin-top: 30px;
+            max-width: 900px;
+        }
+
+        .staff-item {
+            text-align: center;
+            padding: 15px 10px;
+            border: 1px solid var(--border);
+        }
+
+        .staff-item i { margin-bottom: 10px; }
+        .staff-item span { font-size: 0.75rem; color: var(--gray); display: block; }
+
+        /* Highlight */
+        .highlight-box {
+            background: transparent;
+            border-left: 4px solid var(--accent);
+            padding: 25px 30px;
+            margin-top: 30px;
+            max-width: 800px;
+        }
+
+        .highlight-box h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        /* Contact */
+        .contact-grid {
+            display: flex;
+            gap: 50px;
+            margin-top: 30px;
+        }
+
+        .contact-item { text-align: center; }
+        .contact-item .label { font-size: 0.8rem; color: var(--gray); margin-bottom: 5px; }
+        .contact-item .value { font-size: 1rem; color: var(--dark); }
+    </style>
+</head>
+<body>
+    <div class="deck">
+        <!-- Slide 1: Cover -->
+        <div class="slide active" data-slide="1">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx Vision" style="height: 100px; filter: brightness(0);">
+            <h1 style="margin-top: 30px;">Voice-First AR for<br>Hospital Operations</h1>
+            <p class="subtitle">Hands-free documentation. Eyes on your patients.</p>
+            <div class="stat-grid" style="margin-top: 50px;">
+                <div class="stat">
+                    <div class="stat-number">22M+</div>
+                    <div class="stat-label">Healthcare Workers</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">500+</div>
+                    <div class="stat-label">Languages</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">3</div>
+                    <div class="stat-label">EHR Integrations</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">100%</div>
+                    <div class="stat-label">HIPAA Compliant</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 2: The Problem -->
+        <div class="slide" data-slide="2">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">The Challenge</div>
+            <h2>Your Staff is <strong>Drowning</strong> in Documentation</h2>
+            <p class="quote" style="margin-top: 30px;">"I became a nurse to care for patients, not to stare at a computer screen."</p>
+            <div class="stat-grid" style="margin-top: 50px;">
+                <div class="stat danger">
+                    <div class="stat-number">62%</div>
+                    <div class="stat-label">Nurses report burnout</div>
+                </div>
+                <div class="stat danger">
+                    <div class="stat-number">49%</div>
+                    <div class="stat-label">Physicians report burnout</div>
+                </div>
+                <div class="stat danger">
+                    <div class="stat-number">2+ hrs</div>
+                    <div class="stat-label">Daily on documentation</div>
+                </div>
+                <div class="stat danger">
+                    <div class="stat-number">$4.6B</div>
+                    <div class="stat-label">Lost productivity (US)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Solution Overview -->
+        <div class="slide" data-slide="3">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">The Solution</div>
+            <h2>AR Glasses That <strong>Work For You</strong></h2>
+            <div class="two-col" style="margin-top: 40px;">
+                <div>
+                    <h3>What MDx Vision Does</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> Voice-activated patient lookup from your EHR</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Real-time transcription during encounters</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> AI-generated clinical notes (SOAP, H&P, etc.)</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Critical alerts spoken in your ear (allergies, interactions)</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Voice orders for labs, imaging, medications</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Push documentation directly to your EHR</div>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <img src="mdx-glasses-navy-transparent.png" alt="MDx Vision Glasses" style="max-width: 400px; width: 100%;">
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: Who Uses It -->
+        <div class="slide" data-slide="4">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Hospital-Wide</div>
+            <h2>Built for <strong>Every Role</strong></h2>
+            <p>Not just physicians. MDx Vision works for your entire clinical and operational staff.</p>
+            <div class="staff-grid">
+                <div class="staff-item">
+                    <i data-lucide="stethoscope" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Physicians</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="heart-pulse" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Nurses</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="truck" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Transporters</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="test-tube" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Phlebotomy</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="pill" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Pharmacy</span>
+                </div>
+                <div class="staff-item">
+                    <i data-lucide="scan-line" style="width:28px;height:28px;color:var(--primary);"></i>
+                    <span>Radiology</span>
+                </div>
+            </div>
+            <div class="highlight-box" style="margin-top: 40px;">
+                <h4>One Platform, All Workflows</h4>
+                <p>Deploy once, expand across departments. Same glasses, same training, same support.</p>
+            </div>
+        </div>
+
+        <!-- Slide 5: Key Features -->
+        <div class="slide" data-slide="5">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Capabilities</div>
+            <h2>Enterprise <strong>Features</strong></h2>
+            <div class="card-grid">
+                <div class="card">
+                    <div class="card-icon"><i data-lucide="mic" style="width:24px;height:24px;color:var(--primary);"></i></div>
+                    <h4>Voice-First Interface</h4>
+                    <p>"Hey MDx, show vitals for bed 4" - completely hands-free operation.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i data-lucide="shield-check" style="width:24px;height:24px;color:var(--accent);"></i></div>
+                    <h4>HIPAA Compliant</h4>
+                    <p>AES-256 encryption, voiceprint authentication, auto-lock, audit logging.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i data-lucide="database" style="width:24px;height:24px;color:var(--primary);"></i></div>
+                    <h4>EHR Integration</h4>
+                    <p>Native FHIR R4 with Cerner, Epic, Veradigm. Read and write-back.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i data-lucide="alert-triangle" style="width:24px;height:24px;color:var(--danger);"></i></div>
+                    <h4>Safety Alerts</h4>
+                    <p>Drug interactions, allergy warnings, critical labs - spoken in real-time.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i data-lucide="globe" style="width:24px;height:24px;color:var(--primary);"></i></div>
+                    <h4>500+ Languages</h4>
+                    <p>Serve diverse patient populations with real-time translation support.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon"><i data-lucide="wifi-off" style="width:24px;height:24px;color:var(--gray);"></i></div>
+                    <h4>Works Offline</h4>
+                    <p>Continue documenting during network outages. Auto-sync when restored.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 6: Security -->
+        <div class="slide" data-slide="6">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Security & Compliance</div>
+            <h2>Built for <strong>Healthcare IT</strong></h2>
+            <div class="two-col" style="margin-top: 40px;">
+                <div>
+                    <h3>Security Features</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> Voiceprint biometric authentication</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Proximity auto-lock (glasses removed = locked)</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> AES-256 encryption at rest and in transit</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> TOTP backup authentication</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Remote wipe capability</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Complete audit logging</div>
+                    </div>
+                </div>
+                <div>
+                    <h3>Compliance</h3>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> HIPAA compliant architecture</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> BAA available</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> SOC 2 Type II (in progress)</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> MDM integration ready</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> SSO/SAML support</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Role-based access control</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: ROI -->
+        <div class="slide" data-slide="7">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Value</div>
+            <h2>Return on <strong>Investment</strong></h2>
+            <div class="stat-grid">
+                <div class="stat">
+                    <div class="stat-number">70%</div>
+                    <div class="stat-label">Reduction in documentation time</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">2+ hrs</div>
+                    <div class="stat-label">Saved per clinician per day</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">30%</div>
+                    <div class="stat-label">Improvement in same-day note closure</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">25%</div>
+                    <div class="stat-label">Reduction in documentation errors</div>
+                </div>
+            </div>
+            <div class="roi-box">
+                <h3>Estimated Annual Savings</h3>
+                <div class="stat-number">$150K+</div>
+                <div class="stat-label">Per 10 clinicians deployed</div>
+            </div>
+            <p style="margin-top: 20px; font-size: 0.9rem;">*Based on industry benchmarks. Actual results vary by deployment.</p>
+        </div>
+
+        <!-- Slide 8: Implementation -->
+        <div class="slide" data-slide="8">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Deployment</div>
+            <h2>Implementation <strong>Timeline</strong></h2>
+            <p>Go live in as little as 4 weeks with our proven deployment process.</p>
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-label">Week 1</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Discovery<br>EHR assessment<br>Network review</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-label">Week 2</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Integration<br>EHR connection<br>Security config</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-label">Week 3</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Pilot<br>Champion training<br>Workflow tuning</div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-label">Week 4</div>
+                    <div class="timeline-dot"></div>
+                    <div class="timeline-content">Go Live<br>Staff rollout<br>Support handoff</div>
+                </div>
+            </div>
+            <div class="highlight-box" style="margin-top: 40px;">
+                <h4>Included in Every Deployment</h4>
+                <p>Dedicated implementation manager, on-site training, 24/7 support, quarterly business reviews.</p>
+            </div>
+        </div>
+
+        <!-- Slide 9: Pricing -->
+        <div class="slide" data-slide="9">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Investment</div>
+            <h2>Simple, Transparent <strong>Pricing</strong></h2>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h4>Pilot</h4>
+                    <div class="price">Custom<span></span></div>
+                    <ul>
+                        <li>5-10 users</li>
+                        <li>Single department</li>
+                        <li>60-day evaluation</li>
+                        <li>Success metrics tracking</li>
+                        <li>Dedicated support</li>
+                    </ul>
+                </div>
+                <div class="pricing-card featured">
+                    <h4>Department</h4>
+                    <div class="price">Contact<span> us</span></div>
+                    <ul>
+                        <li>25-100 users</li>
+                        <li>Multi-department</li>
+                        <li>Full EHR integration</li>
+                        <li>Custom workflows</li>
+                        <li>Training included</li>
+                    </ul>
+                </div>
+                <div class="pricing-card">
+                    <h4>Enterprise</h4>
+                    <div class="price">Custom<span></span></div>
+                    <ul>
+                        <li>Unlimited users</li>
+                        <li>Hospital-wide</li>
+                        <li>Multi-site support</li>
+                        <li>Custom development</li>
+                        <li>Executive SLA</li>
+                    </ul>
+                </div>
+            </div>
+            <p style="margin-top: 30px; text-align: center;">Hardware included or BYOD options available. No hidden fees.</p>
+        </div>
+
+        <!-- Slide 10: Why MDx -->
+        <div class="slide" data-slide="10">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Why Us</div>
+            <h2>Why <strong>MDx Vision</strong></h2>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Capability</th>
+                        <th>Traditional Scribes</th>
+                        <th>Phone/Tablet Apps</th>
+                        <th style="color: var(--primary);">MDx Vision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Hands-free operation</td>
+                        <td>&#10007;</td>
+                        <td>&#10007;</td>
+                        <td style="color: var(--accent);">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Eyes on patient</td>
+                        <td>&#10007;</td>
+                        <td>&#10007;</td>
+                        <td style="color: var(--accent);">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Hospital-wide (all staff)</td>
+                        <td>&#10007;</td>
+                        <td>&#10007;</td>
+                        <td style="color: var(--accent);">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Real-time safety alerts</td>
+                        <td>&#10007;</td>
+                        <td>Limited</td>
+                        <td style="color: var(--accent);">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Full EHR write-back</td>
+                        <td>Manual</td>
+                        <td>Limited</td>
+                        <td style="color: var(--accent);">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>500+ languages</td>
+                        <td>&#10007;</td>
+                        <td>Limited</td>
+                        <td style="color: var(--accent);">&#10003;</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Slide 11: Next Steps -->
+        <div class="slide" data-slide="11">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" class="slide-logo">
+            <div class="section-label">Get Started</div>
+            <h2>Ready to <strong>Transform</strong> Your Workflows?</h2>
+            <div class="card-grid" style="max-width: 900px;">
+                <div class="card" style="text-align: center; border-left: none; border-top: 3px solid var(--primary);">
+                    <div class="card-icon"><i data-lucide="calendar" style="width:32px;height:32px;color:var(--primary);"></i></div>
+                    <h4>1. Schedule Demo</h4>
+                    <p>See MDx Vision in action with your own EHR data.</p>
+                </div>
+                <div class="card" style="text-align: center; border-left: none; border-top: 3px solid var(--primary);">
+                    <div class="card-icon"><i data-lucide="clipboard-check" style="width:32px;height:32px;color:var(--primary);"></i></div>
+                    <h4>2. Pilot Program</h4>
+                    <p>60-day pilot with 5-10 users in one department.</p>
+                </div>
+                <div class="card" style="text-align: center; border-left: none; border-top: 3px solid var(--primary);">
+                    <div class="card-icon"><i data-lucide="rocket" style="width:32px;height:32px;color:var(--primary);"></i></div>
+                    <h4>3. Scale</h4>
+                    <p>Expand hospital-wide based on pilot success.</p>
+                </div>
+            </div>
+            <a href="mailto:sales@mdxvision.com" class="cta">Schedule a Demo &#10132;</a>
+            <div class="contact-grid">
+                <div class="contact-item">
+                    <div class="label">Email</div>
+                    <div class="value">sales@mdxvision.com</div>
+                </div>
+                <div class="contact-item">
+                    <div class="label">Website</div>
+                    <div class="value">mdxvision.com</div>
+                </div>
+                <div class="contact-item">
+                    <div class="label">Phone</div>
+                    <div class="value">(888) MDX-VISION</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav" id="nav"></div>
+    <div class="nav-arrows">
+        <button class="nav-arrow" onclick="prevSlide()">&#8592;</button>
+        <button class="nav-arrow" onclick="nextSlide()">&#8594;</button>
+    </div>
+
+    <script>
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        let currentSlide = 1;
+
+        const nav = document.getElementById('nav');
+        for (let i = 1; i <= totalSlides; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'nav-dot' + (i === 1 ? ' active' : '');
+            dot.onclick = () => goToSlide(i);
+            nav.appendChild(dot);
+        }
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                slide.classList.toggle('active', index + 1 === currentSlide);
+            });
+            document.querySelectorAll('.nav-dot').forEach((dot, index) => {
+                dot.classList.toggle('active', index + 1 === currentSlide);
+            });
+        }
+
+        function nextSlide() { if (currentSlide < totalSlides) { currentSlide++; updateSlide(); } }
+        function prevSlide() { if (currentSlide > 1) { currentSlide--; updateSlide(); } }
+        function goToSlide(n) { currentSlide = n; updateSlide(); }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+        });
+
+        let touchStartX = 0;
+        document.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; });
+        document.addEventListener('touchend', (e) => {
+            const diff = touchStartX - e.changedTouches[0].screenX;
+            if (Math.abs(diff) > 50) { diff > 0 ? nextSlide() : prevSlide(); }
+        });
+
+        lucide.createIcons();
+    </script>
+</body>
+</html>

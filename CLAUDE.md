@@ -24,6 +24,46 @@ MDx Vision is an AR smart glasses platform for healthcare documentation. It impl
 /web                        # Next.js admin dashboard
 ```
 
+## Sales & Marketing Materials
+
+See [SALES_MATERIALS.md](SALES_MATERIALS.md) for complete index.
+
+### Investor Decks
+| File | Description |
+|------|-------------|
+| `web/public/investor-deck.html` | Dark theme (11 slides) |
+| `web/public/investor-deck-light.html` | Light theme (11 slides) |
+
+### Hospital Sales Decks
+| File | Description |
+|------|-------------|
+| `web/public/hospital-sales-deck.html` | US market (English) |
+| `web/public/hospital-sales-deck-russia.html` | Russia market (Russian) |
+
+### One-Sheets & Capability Statements
+| File | Description |
+|------|-------------|
+| `web/public/onesheet.html` | Single-page overview (printable) |
+| `web/public/capability-statement.html` | Enterprise/government procurement |
+
+### Strategic Documents
+| File | Description |
+|------|-------------|
+| `MDX_GLASSES_PRD.md` | Proprietary hardware PRD |
+| `STRATEGIC_ROADMAP.md` | Product and business roadmap |
+| `GAP_CLOSURE_PLAN.md` | Competitive gap analysis |
+| `INTERNAL_COMPETITIVE_ANALYSIS.md` | Competitor analysis |
+| `INTERNATIONAL_EHR_EXPANSION.md` | International expansion strategy |
+
+### How to View HTML Decks
+```bash
+# Quick open in Chrome
+open -a "Google Chrome" web/public/investor-deck.html
+
+# Or via local server
+cd web && npm run dev  # Then visit http://localhost:5173/[filename].html
+```
+
 ## Current Development Focus
 
 ### Working Components
@@ -307,16 +347,21 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 58. **ICD-10-CM Database** - 150+ diagnostic codes with keyword mapping; categories include infectious diseases, neoplasms, endocrine, circulatory, respiratory, digestive, musculoskeletal, symptoms/signs, injury, and external causes; auto-suggest from transcript
 59. **CPT Database** - 100+ procedure codes covering E/M services (99201-99215, 99281-99285), preventive visits, labs (80048-80076, 85025), procedures (10060-69990), imaging (71045-74177); modifier support (-25, -59, LT/RT, etc.)
 60. **Data Encryption at Rest** - AES-256-GCM encryption via Android Keystore; EncryptedSharedPreferences for PHI storage; secure patient data caching; note drafts encryption; voice commands ("encryption status", "wipe data"); HIPAA compliant hardware-backed encryption
+61. **Multi-Language Support** - Voice recognition and TTS in English, Spanish, Russian, Mandarin Chinese, and Portuguese; 80+ Spanish translations, 70+ Russian translations; accent-insensitive matching (á→a, ñ→n, etc.); bilingual TTS feedback; persistent language preference; voice commands ("switch to Russian", "русский", "language options"); section name translations for SOAP editing
+62. **Ambient Clinical Intelligence (ACI)** - Passive room audio capture for auto-documentation; continuous background listening mode; multi-speaker diarization (clinician vs patient identification); clinical entity extraction (100+ symptoms, 50+ medications, 20+ allergies, vital signs, medical history, social/family history, ROS, physical exam findings, assessments, plans); real-time entity overlay display; auto-SOAP note generation from ambient transcript; speaker segment tracking with timestamps; voice commands ("ambient mode", "start ambient", "stop ambient", "show entities", "generate note")
+63. **CRUD Write-Back to EHR** - Full 2-way voice documentation; push vitals as FHIR Observations (LOINC codes); push orders as ServiceRequest/MedicationRequest (CPT/RxNorm codes); add allergies as AllergyIntolerance; discontinue/hold medications via status updates; HIPAA-compliant soft deletes (no hard deletes); offline sync queues for all data types; confirmation workflows for safety-critical operations; voice commands ("push vitals", "push orders", "add allergy to [substance]", "discontinue [med]", "hold [med]", "confirm", "sync all")
+64. **Device Authentication (TOTP + Proximity Lock)** - Multi-layer security for AR glasses: QR code device pairing from web dashboard; TOTP (Google Authenticator/Authy) voice code entry ("4 7 2 9 1 5"); proximity sensor auto-lock when glasses removed from face; 12-hour session tokens; remote wipe from dashboard; spoken digit recognition with homophones (won/one, two/too/to, for/four, etc.); voice commands ("pair device", "device status", say 6-digit TOTP code to unlock); prevents unauthorized access if glasses lost/stolen
+65. **Device Management Dashboard** - Web UI for managing AR glasses: view all paired devices with status (active/locked/wiped); pair new devices via QR code; setup TOTP authenticator with QR code; remote wipe lost/stolen devices; device stats (total, active sessions, idle, wiped); last seen timestamps; security info panel; accessible at /dashboard/devices
+66. **Voiceprint Speaker Recognition** - SpeechBrain ECAPA-TDNN model for biometric voice authentication; enrollment via 3 spoken phrases ("My voice is my password", "MDx Vision unlock my session", "I authorize this clinical action"); server-side embedding extraction with cosine similarity matching (threshold 0.70); verification required for sensitive operations (push notes to EHR, push vitals/orders, add allergies, discontinue medications); voice commands ("enroll my voice", "voiceprint status", "delete voiceprint"); prevents unauthorized EHR writes even with stolen device
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 60 features implemented |
+| All medium effort items completed! | 66 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)
-2. OAuth2/SMART on FHIR authentication
-3. Vuzix HUD native overlay
-4. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog
+2. Vuzix HUD native overlay
+3. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog
