@@ -589,6 +589,7 @@
 - [ ] Vuzix HUD native overlay (using standard Android UI)
 - [ ] AI Differential Diagnosis (symptom → DDx suggestions)
 - [ ] Image recognition (camera AI for wounds, rashes)
+- [ ] Billing/coding submission workflow
 
 ### Low Priority / Future
 - [ ] Android XR SDK (Jetpack Compose Glimmer, Gemini)
