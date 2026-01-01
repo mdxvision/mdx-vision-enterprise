@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Requ
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
 import uvicorn
 import os
 import re
@@ -754,6 +754,38 @@ class OrderUpdateRequest(BaseModel):
     frequency: Optional[str] = None
     notes: Optional[str] = None
     cancel: bool = False
+
+
+# Differential Diagnosis Models
+class DdxRequest(BaseModel):
+    """Request model for AI differential diagnosis generation"""
+    chief_complaint: str
+    symptoms: List[str] = []
+    vitals: Optional[Dict[str, str]] = None
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    medical_history: List[str] = []
+    medications: List[str] = []
+    allergies: List[str] = []
+
+
+class DifferentialDiagnosis(BaseModel):
+    """Single differential diagnosis with supporting data"""
+    rank: int
+    diagnosis: str
+    icd10_code: str
+    likelihood: str  # "high", "moderate", "low"
+    supporting_findings: List[str]
+    red_flags: List[str] = []
+    next_steps: List[str] = []
+
+
+class DdxResponse(BaseModel):
+    """Response model for differential diagnosis list"""
+    differentials: List[DifferentialDiagnosis]
+    clinical_reasoning: str
+    urgent_considerations: List[str] = []
+    timestamp: str
 
 
 # In-memory worklist storage (would be database in production)
@@ -3174,6 +3206,311 @@ async def quick_note(request: NoteRequest):
         response["detection_reason"] = note.get("detection_reason")
 
     return response
+
+
+# ============ Differential Diagnosis API ============
+
+async def generate_ddx_with_claude(request: DdxRequest) -> DdxResponse:
+    """Generate differential diagnosis using Claude API"""
+    # Build clinical prompt
+    clinical_data = f"""
+Chief Complaint: {request.chief_complaint}
+Symptoms: {', '.join(request.symptoms) if request.symptoms else 'Not specified'}
+Age: {request.age if request.age else 'Not specified'}
+Gender: {request.gender if request.gender else 'Not specified'}
+Vitals: {request.vitals if request.vitals else 'Not recorded'}
+Medical History: {', '.join(request.medical_history) if request.medical_history else 'Not specified'}
+Current Medications: {', '.join(request.medications) if request.medications else 'None'}
+Allergies: {', '.join(request.allergies) if request.allergies else 'NKDA'}
+"""
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 2048,
+                "messages": [{
+                    "role": "user",
+                    "content": f"""You are a clinical decision support system. Generate a differential diagnosis list based on the following patient presentation.
+
+{clinical_data}
+
+Return a JSON object with these exact fields:
+- differentials: Array of 5 diagnoses, each with:
+  - rank: 1-5 (1 = most likely)
+  - diagnosis: Name of condition
+  - icd10_code: ICD-10-CM code
+  - likelihood: "high", "moderate", or "low"
+  - supporting_findings: Array of findings that support this diagnosis
+  - red_flags: Array of warning signs to watch for
+  - next_steps: Array of recommended tests/actions
+- clinical_reasoning: 2-3 sentence explanation of diagnostic thinking
+- urgent_considerations: Array of conditions that should be urgently ruled out (if any)
+
+Example format:
+{{
+  "differentials": [
+    {{
+      "rank": 1,
+      "diagnosis": "Acute Bronchitis",
+      "icd10_code": "J20.9",
+      "likelihood": "high",
+      "supporting_findings": ["cough", "low-grade fever", "productive sputum"],
+      "red_flags": ["dyspnea", "high fever >39C", "hemoptysis"],
+      "next_steps": ["chest x-ray if symptoms >3 weeks", "supportive care"]
+    }}
+  ],
+  "clinical_reasoning": "The combination of cough with productive sputum and low-grade fever in an otherwise healthy patient suggests...",
+  "urgent_considerations": ["Pneumonia should be ruled out if hypoxia present"]
+}}
+
+Return ONLY valid JSON, no markdown or explanation."""
+                }]
+            }
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            content = result["content"][0]["text"]
+            # Clean up response if needed
+            content = content.strip()
+            if content.startswith("```"):
+                content = re.sub(r'^```json?\n?', '', content)
+                content = re.sub(r'\n?```$', '', content)
+
+            ddx_data = json.loads(content)
+
+            # Build response
+            differentials = [
+                DifferentialDiagnosis(
+                    rank=d["rank"],
+                    diagnosis=d["diagnosis"],
+                    icd10_code=d["icd10_code"],
+                    likelihood=d["likelihood"],
+                    supporting_findings=d.get("supporting_findings", []),
+                    red_flags=d.get("red_flags", []),
+                    next_steps=d.get("next_steps", [])
+                )
+                for d in ddx_data.get("differentials", [])
+            ]
+
+            return DdxResponse(
+                differentials=differentials,
+                clinical_reasoning=ddx_data.get("clinical_reasoning", ""),
+                urgent_considerations=ddx_data.get("urgent_considerations", []),
+                timestamp=datetime.now().isoformat()
+            )
+        else:
+            raise Exception(f"Claude API error: {response.status_code}")
+
+
+def generate_rule_based_ddx(request: DdxRequest) -> DdxResponse:
+    """Generate differential diagnosis using rule-based matching (fallback when Claude unavailable)"""
+
+    # Common symptom-to-diagnosis mappings with ICD-10 codes
+    symptom_patterns = {
+        # Respiratory
+        ("cough", "fever"): [
+            {"diagnosis": "Acute Bronchitis", "icd10": "J20.9", "likelihood": "high"},
+            {"diagnosis": "Pneumonia", "icd10": "J18.9", "likelihood": "moderate"},
+            {"diagnosis": "Upper Respiratory Infection", "icd10": "J06.9", "likelihood": "moderate"},
+        ],
+        ("cough", "shortness of breath"): [
+            {"diagnosis": "Pneumonia", "icd10": "J18.9", "likelihood": "high"},
+            {"diagnosis": "COPD Exacerbation", "icd10": "J44.1", "likelihood": "moderate"},
+            {"diagnosis": "Asthma", "icd10": "J45.909", "likelihood": "moderate"},
+        ],
+        ("sore throat", "fever"): [
+            {"diagnosis": "Pharyngitis", "icd10": "J02.9", "likelihood": "high"},
+            {"diagnosis": "Strep Pharyngitis", "icd10": "J02.0", "likelihood": "moderate"},
+            {"diagnosis": "Infectious Mononucleosis", "icd10": "B27.90", "likelihood": "low"},
+        ],
+        # Cardiovascular
+        ("chest pain",): [
+            {"diagnosis": "Chest Pain, Unspecified", "icd10": "R07.9", "likelihood": "high"},
+            {"diagnosis": "Acute Coronary Syndrome", "icd10": "I24.9", "likelihood": "moderate"},
+            {"diagnosis": "Costochondritis", "icd10": "M94.0", "likelihood": "moderate"},
+        ],
+        ("chest pain", "shortness of breath"): [
+            {"diagnosis": "Acute Coronary Syndrome", "icd10": "I24.9", "likelihood": "high"},
+            {"diagnosis": "Pulmonary Embolism", "icd10": "I26.99", "likelihood": "moderate"},
+            {"diagnosis": "Anxiety Disorder", "icd10": "F41.9", "likelihood": "low"},
+        ],
+        ("palpitations",): [
+            {"diagnosis": "Palpitations", "icd10": "R00.2", "likelihood": "high"},
+            {"diagnosis": "Atrial Fibrillation", "icd10": "I48.91", "likelihood": "moderate"},
+            {"diagnosis": "Anxiety Disorder", "icd10": "F41.9", "likelihood": "moderate"},
+        ],
+        # Gastrointestinal
+        ("abdominal pain", "nausea"): [
+            {"diagnosis": "Gastroenteritis", "icd10": "K52.9", "likelihood": "high"},
+            {"diagnosis": "Appendicitis", "icd10": "K35.80", "likelihood": "moderate"},
+            {"diagnosis": "Cholecystitis", "icd10": "K81.9", "likelihood": "low"},
+        ],
+        ("abdominal pain", "diarrhea"): [
+            {"diagnosis": "Gastroenteritis", "icd10": "K52.9", "likelihood": "high"},
+            {"diagnosis": "Inflammatory Bowel Disease", "icd10": "K50.90", "likelihood": "moderate"},
+            {"diagnosis": "Irritable Bowel Syndrome", "icd10": "K58.9", "likelihood": "moderate"},
+        ],
+        # Neurological
+        ("headache",): [
+            {"diagnosis": "Tension Headache", "icd10": "G44.209", "likelihood": "high"},
+            {"diagnosis": "Migraine", "icd10": "G43.909", "likelihood": "moderate"},
+            {"diagnosis": "Headache, Unspecified", "icd10": "R51.9", "likelihood": "moderate"},
+        ],
+        ("headache", "fever"): [
+            {"diagnosis": "Viral Syndrome", "icd10": "B34.9", "likelihood": "high"},
+            {"diagnosis": "Sinusitis", "icd10": "J32.9", "likelihood": "moderate"},
+            {"diagnosis": "Meningitis", "icd10": "G03.9", "likelihood": "low"},
+        ],
+        ("dizziness",): [
+            {"diagnosis": "Vertigo", "icd10": "R42", "likelihood": "high"},
+            {"diagnosis": "Benign Positional Vertigo", "icd10": "H81.10", "likelihood": "moderate"},
+            {"diagnosis": "Orthostatic Hypotension", "icd10": "I95.1", "likelihood": "moderate"},
+        ],
+        # Musculoskeletal
+        ("back pain",): [
+            {"diagnosis": "Low Back Pain", "icd10": "M54.5", "likelihood": "high"},
+            {"diagnosis": "Lumbar Strain", "icd10": "S39.012A", "likelihood": "moderate"},
+            {"diagnosis": "Sciatica", "icd10": "M54.30", "likelihood": "moderate"},
+        ],
+        ("joint pain",): [
+            {"diagnosis": "Joint Pain", "icd10": "M25.50", "likelihood": "high"},
+            {"diagnosis": "Osteoarthritis", "icd10": "M19.90", "likelihood": "moderate"},
+            {"diagnosis": "Rheumatoid Arthritis", "icd10": "M06.9", "likelihood": "low"},
+        ],
+        # General
+        ("fatigue",): [
+            {"diagnosis": "Fatigue", "icd10": "R53.83", "likelihood": "high"},
+            {"diagnosis": "Anemia", "icd10": "D64.9", "likelihood": "moderate"},
+            {"diagnosis": "Hypothyroidism", "icd10": "E03.9", "likelihood": "moderate"},
+        ],
+        ("fever",): [
+            {"diagnosis": "Fever, Unspecified", "icd10": "R50.9", "likelihood": "high"},
+            {"diagnosis": "Viral Infection", "icd10": "B34.9", "likelihood": "moderate"},
+            {"diagnosis": "Urinary Tract Infection", "icd10": "N39.0", "likelihood": "moderate"},
+        ],
+    }
+
+    # Combine symptoms from request
+    all_symptoms = [s.lower() for s in request.symptoms]
+    if request.chief_complaint:
+        all_symptoms.extend(request.chief_complaint.lower().split())
+
+    # Find matching patterns
+    matched_diagnoses = []
+    for pattern, diagnoses in symptom_patterns.items():
+        if all(p in ' '.join(all_symptoms) for p in pattern):
+            matched_diagnoses.extend(diagnoses)
+
+    # Deduplicate and limit to 5
+    seen = set()
+    unique_diagnoses = []
+    for d in matched_diagnoses:
+        if d["diagnosis"] not in seen:
+            seen.add(d["diagnosis"])
+            unique_diagnoses.append(d)
+
+    # If no matches, use generic
+    if not unique_diagnoses:
+        unique_diagnoses = [
+            {"diagnosis": "Symptoms, Unspecified", "icd10": "R69", "likelihood": "moderate"},
+        ]
+
+    # Build differential list
+    differentials = []
+    for i, d in enumerate(unique_diagnoses[:5], 1):
+        differentials.append(DifferentialDiagnosis(
+            rank=i,
+            diagnosis=d["diagnosis"],
+            icd10_code=d["icd10"],
+            likelihood=d["likelihood"],
+            supporting_findings=[s for s in all_symptoms[:3] if s],
+            red_flags=[],
+            next_steps=["Further evaluation recommended"]
+        ))
+
+    return DdxResponse(
+        differentials=differentials,
+        clinical_reasoning="Rule-based differential diagnosis generated from symptom patterns. AI analysis unavailable.",
+        urgent_considerations=[],
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.post("/api/v1/ddx/generate")
+async def generate_differential_diagnosis(request: DdxRequest, req: Request):
+    """
+    Generate AI-powered differential diagnosis from clinical findings.
+
+    Takes symptoms, chief complaint, vitals, and patient demographics to generate
+    a ranked list of possible diagnoses with ICD-10 codes, likelihood levels,
+    and supporting/refuting findings.
+
+    Returns top 5 differential diagnoses with clinical reasoning.
+
+    Safety: For clinical decision support only - not a diagnosis.
+    """
+    # Validate input
+    if not request.chief_complaint or not request.chief_complaint.strip():
+        raise HTTPException(status_code=400, detail="Chief complaint is required")
+
+    # Audit log (no PHI - only symptoms for clinical improvement)
+    ip_address = req.client.host if req.client else None
+    audit_logger.log_note_operation(
+        action=AuditAction.GENERATE_DDX,
+        note_type="DDX",
+        status="processing",
+        details=f"Chief complaint: {request.chief_complaint[:50]}",
+        ip_address=ip_address
+    )
+
+    try:
+        # Try Claude-powered DDx first
+        if CLAUDE_API_KEY:
+            ddx_response = await generate_ddx_with_claude(request)
+        else:
+            # Fallback to rule-based
+            ddx_response = generate_rule_based_ddx(request)
+
+        # Audit success
+        audit_logger.log_note_operation(
+            action=AuditAction.GENERATE_DDX,
+            note_type="DDX",
+            status="success",
+            details=f"Generated {len(ddx_response.differentials)} differentials",
+            ip_address=ip_address
+        )
+
+        return ddx_response
+
+    except Exception as e:
+        # Try fallback on error
+        try:
+            ddx_response = generate_rule_based_ddx(request)
+            audit_logger.log_note_operation(
+                action=AuditAction.GENERATE_DDX,
+                note_type="DDX",
+                status="fallback",
+                details=f"Claude failed, used rule-based: {str(e)[:50]}",
+                ip_address=ip_address
+            )
+            return ddx_response
+        except Exception as fallback_error:
+            audit_logger.log_note_operation(
+                action=AuditAction.GENERATE_DDX,
+                note_type="DDX",
+                status="failure",
+                details=str(fallback_error)[:100],
+                ip_address=ip_address
+            )
+            raise HTTPException(status_code=500, detail=f"DDx generation failed: {str(e)}")
 
 
 # ============ Note Storage (Simulated - Cerner sandbox is read-only) ============

@@ -25,6 +25,7 @@ class AuditAction:
 
     # Note Operations
     GENERATE_NOTE = "GENERATE_NOTE"
+    GENERATE_DDX = "GENERATE_DDX"
     SAVE_NOTE = "SAVE_NOTE"
     PUSH_NOTE = "PUSH_NOTE"
 

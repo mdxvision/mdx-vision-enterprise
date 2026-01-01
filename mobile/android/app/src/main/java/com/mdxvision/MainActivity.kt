@@ -2320,6 +2320,30 @@ SOFA Score: [X]
         val isControlled: Boolean = false
     )
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DIFFERENTIAL DIAGNOSIS - Data Classes
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    data class DifferentialDiagnosis(
+        val rank: Int,
+        val diagnosis: String,
+        val icd10Code: String,
+        val likelihood: String,  // "high", "moderate", "low"
+        val supportingFindings: List<String>,
+        val redFlags: List<String>,
+        val nextSteps: List<String>
+    )
+
+    data class DdxResponse(
+        val differentials: List<DifferentialDiagnosis>,
+        val clinicalReasoning: String,
+        val urgentConsiderations: List<String>,
+        val timestamp: String
+    )
+
+    // Store last DDx response for TTS readback
+    private var lastDdxResponse: DdxResponse? = null
+
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -3136,7 +3160,12 @@ SOFA Score: [X]
         }
 
         if (generateNote && (extractedEntities.hasEntities() || ambientTranscriptBuffer.isNotEmpty())) {
-            speakFeedback("Ambient mode ended. Note generated.")
+            // Suggest DDx if symptoms were detected
+            if (extractedEntities.symptoms.isNotEmpty()) {
+                speakFeedback("Note generated. Say differential diagnosis for possible diagnoses.")
+            } else {
+                speakFeedback("Ambient mode ended. Note generated.")
+            }
         } else {
             speakFeedback("Ambient mode ended")
         }
@@ -7776,6 +7805,399 @@ SOFA Score: [X]
         if (pendingPlanItems.isEmpty()) return ""
         val items = pendingPlanItems.joinToString("\n")
         return items
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DIFFERENTIAL DIAGNOSIS (DDx) FUNCTIONS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Generate AI-powered differential diagnosis from clinical data.
+     * Uses extracted entities from ambient mode, captured vitals, and patient chart.
+     */
+    private fun generateDifferentialDiagnosis() {
+        if (currentPatientData == null) {
+            speakFeedback("Please load a patient first")
+            showToast("No patient loaded")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Generating differential diagnosis")
+                showToast("🔍 Analyzing clinical data...")
+
+                // Build request from available data
+                val requestJson = org.json.JSONObject().apply {
+                    // Chief complaint - from ambient entities or patient
+                    val chiefComplaint = if (extractedEntities.symptoms.isNotEmpty()) {
+                        extractedEntities.symptoms.firstOrNull() ?: "Unspecified"
+                    } else {
+                        "General evaluation"
+                    }
+                    put("chief_complaint", chiefComplaint)
+
+                    // Symptoms from ambient mode
+                    if (extractedEntities.symptoms.isNotEmpty()) {
+                        put("symptoms", org.json.JSONArray(extractedEntities.symptoms))
+                    }
+
+                    // Vitals - from captured vitals or ambient
+                    val vitalsMap = org.json.JSONObject()
+                    capturedVitals.forEach { vital ->
+                        vitalsMap.put(vital.type, vital.value)
+                    }
+                    if (extractedEntities.vitals.isNotEmpty()) {
+                        extractedEntities.vitals.forEach { v ->
+                            vitalsMap.put(v.substringBefore(":").trim(), v.substringAfter(":").trim())
+                        }
+                    }
+                    if (vitalsMap.length() > 0) {
+                        put("vitals", vitalsMap)
+                    }
+
+                    // Age from patient data
+                    currentPatientData?.let { patient ->
+                        val dob = patient.optString("birthDate", "")
+                        if (dob.isNotEmpty()) {
+                            try {
+                                val birthYear = dob.substring(0, 4).toInt()
+                                val age = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) - birthYear
+                                put("age", age)
+                            } catch (e: Exception) { /* ignore */ }
+                        }
+                        put("gender", patient.optString("gender", ""))
+                    }
+
+                    // Medical history from conditions
+                    val conditions = currentPatientData?.optJSONArray("conditions")
+                    if (conditions != null && conditions.length() > 0) {
+                        val history = org.json.JSONArray()
+                        for (i in 0 until minOf(conditions.length(), 10)) {
+                            val cond = conditions.getJSONObject(i)
+                            history.put(cond.optString("display", ""))
+                        }
+                        put("medical_history", history)
+                    }
+
+                    // Medications
+                    val meds = currentPatientData?.optJSONArray("medications")
+                    if (meds != null && meds.length() > 0) {
+                        val medList = org.json.JSONArray()
+                        for (i in 0 until minOf(meds.length(), 10)) {
+                            val med = meds.getJSONObject(i)
+                            medList.put(med.optString("name", ""))
+                        }
+                        put("medications", medList)
+                    }
+
+                    // Allergies
+                    val allergies = currentPatientData?.optJSONArray("allergies")
+                    if (allergies != null && allergies.length() > 0) {
+                        val allergyList = org.json.JSONArray()
+                        for (i in 0 until minOf(allergies.length(), 10)) {
+                            val allergy = allergies.getJSONObject(i)
+                            allergyList.put(allergy.optString("substance", ""))
+                        }
+                        put("allergies", allergyList)
+                    }
+                }
+
+                // Make API call
+                val response = withContext(Dispatchers.IO) {
+                    val url = java.net.URL("$EHR_PROXY_BASE_URL/api/v1/ddx/generate")
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.doOutput = true
+
+                    connection.outputStream.use { os ->
+                        os.write(requestJson.toString().toByteArray())
+                    }
+
+                    if (connection.responseCode == 200) {
+                        connection.inputStream.bufferedReader().use { it.readText() }
+                    } else {
+                        val error = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "Unknown error"
+                        throw Exception("DDx failed: ${connection.responseCode} - $error")
+                    }
+                }
+
+                // Parse response
+                val json = org.json.JSONObject(response)
+                val differentials = mutableListOf<DifferentialDiagnosis>()
+                val diffsArray = json.getJSONArray("differentials")
+                for (i in 0 until diffsArray.length()) {
+                    val d = diffsArray.getJSONObject(i)
+                    differentials.add(DifferentialDiagnosis(
+                        rank = d.getInt("rank"),
+                        diagnosis = d.getString("diagnosis"),
+                        icd10Code = d.getString("icd10_code"),
+                        likelihood = d.getString("likelihood"),
+                        supportingFindings = d.optJSONArray("supporting_findings")?.let { arr ->
+                            (0 until arr.length()).map { arr.getString(it) }
+                        } ?: emptyList(),
+                        redFlags = d.optJSONArray("red_flags")?.let { arr ->
+                            (0 until arr.length()).map { arr.getString(it) }
+                        } ?: emptyList(),
+                        nextSteps = d.optJSONArray("next_steps")?.let { arr ->
+                            (0 until arr.length()).map { arr.getString(it) }
+                        } ?: emptyList()
+                    ))
+                }
+
+                val urgentConsiderations = json.optJSONArray("urgent_considerations")?.let { arr ->
+                    (0 until arr.length()).map { arr.getString(it) }
+                } ?: emptyList()
+
+                lastDdxResponse = DdxResponse(
+                    differentials = differentials,
+                    clinicalReasoning = json.optString("clinical_reasoning", ""),
+                    urgentConsiderations = urgentConsiderations,
+                    timestamp = json.optString("timestamp", "")
+                )
+
+                // Display results
+                showDdxResults(lastDdxResponse!!)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "DDx generation failed", e)
+                speakFeedback("Differential diagnosis failed")
+                showToast("❌ DDx Error: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Display differential diagnosis results in AR overlay
+     */
+    private fun showDdxResults(response: DdxResponse) {
+        val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
+
+        dataOverlay = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(0xEE0A1628.toInt())
+            isClickable = true
+
+            val innerLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(32, 32, 32, 32)
+                layoutParams = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            }
+
+            // Header
+            val header = TextView(context).apply {
+                text = "🔍 DIFFERENTIAL DIAGNOSIS"
+                textSize = getTitleFontSize()
+                setTextColor(0xFF10B981.toInt())
+                setPadding(0, 0, 0, 8)
+            }
+            innerLayout.addView(header)
+
+            // Safety disclaimer
+            val disclaimer = TextView(context).apply {
+                text = "⚠️ For clinical decision support only - not a diagnosis"
+                textSize = getContentFontSize() - 2f
+                setTextColor(0xFFFBBF24.toInt())
+                setPadding(0, 0, 0, 16)
+            }
+            innerLayout.addView(disclaimer)
+
+            // Scrollable content
+            val scrollView = android.widget.ScrollView(context).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+            }
+
+            val contentLayout = android.widget.LinearLayout(context).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+            }
+
+            // Differentials list
+            response.differentials.forEach { ddx ->
+                val ddxCard = android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setBackgroundColor(0xFF1E293B.toInt())
+                    setPadding(16, 12, 16, 12)
+                    val params = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    params.bottomMargin = 12
+                    layoutParams = params
+                }
+
+                // Likelihood indicator
+                val likelihoodColor = when (ddx.likelihood.lowercase()) {
+                    "high" -> 0xFFEF4444.toInt()  // Red
+                    "moderate" -> 0xFFFBBF24.toInt()  // Yellow
+                    else -> 0xFF94A3B8.toInt()  // Gray
+                }
+
+                // Diagnosis title with rank and likelihood
+                val titleText = TextView(context).apply {
+                    text = "${ddx.rank}. [${ddx.likelihood.uppercase()}] ${ddx.diagnosis} (${ddx.icd10Code})"
+                    textSize = getContentFontSize()
+                    setTextColor(likelihoodColor)
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                }
+                ddxCard.addView(titleText)
+
+                // Supporting findings
+                if (ddx.supportingFindings.isNotEmpty()) {
+                    val supportingText = TextView(context).apply {
+                        text = "   ✓ Supporting: ${ddx.supportingFindings.joinToString(", ")}"
+                        textSize = getContentFontSize() - 2f
+                        setTextColor(0xFF10B981.toInt())
+                        setPadding(0, 4, 0, 0)
+                    }
+                    ddxCard.addView(supportingText)
+                }
+
+                // Red flags
+                if (ddx.redFlags.isNotEmpty()) {
+                    val redFlagsText = TextView(context).apply {
+                        text = "   🚩 Red flags: ${ddx.redFlags.joinToString(", ")}"
+                        textSize = getContentFontSize() - 2f
+                        setTextColor(0xFFEF4444.toInt())
+                        setPadding(0, 4, 0, 0)
+                    }
+                    ddxCard.addView(redFlagsText)
+                }
+
+                // Next steps
+                if (ddx.nextSteps.isNotEmpty()) {
+                    val nextStepsText = TextView(context).apply {
+                        text = "   → Next: ${ddx.nextSteps.joinToString(", ")}"
+                        textSize = getContentFontSize() - 2f
+                        setTextColor(0xFF60A5FA.toInt())
+                        setPadding(0, 4, 0, 0)
+                    }
+                    ddxCard.addView(nextStepsText)
+                }
+
+                contentLayout.addView(ddxCard)
+            }
+
+            // Clinical reasoning
+            if (response.clinicalReasoning.isNotEmpty()) {
+                val reasoningCard = android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setBackgroundColor(0xFF1E3A5F.toInt())
+                    setPadding(16, 12, 16, 12)
+                    val params = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    params.topMargin = 8
+                    layoutParams = params
+                }
+
+                val reasoningTitle = TextView(context).apply {
+                    text = "💡 CLINICAL REASONING"
+                    textSize = getContentFontSize()
+                    setTextColor(0xFF60A5FA.toInt())
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                }
+                reasoningCard.addView(reasoningTitle)
+
+                val reasoningText = TextView(context).apply {
+                    text = response.clinicalReasoning
+                    textSize = getContentFontSize() - 1f
+                    setTextColor(0xFFE2E8F0.toInt())
+                    setPadding(0, 8, 0, 0)
+                }
+                reasoningCard.addView(reasoningText)
+
+                contentLayout.addView(reasoningCard)
+            }
+
+            // Urgent considerations
+            if (response.urgentConsiderations.isNotEmpty()) {
+                val urgentCard = android.widget.LinearLayout(context).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    setBackgroundColor(0xFF7F1D1D.toInt())
+                    setPadding(16, 12, 16, 12)
+                    val params = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    params.topMargin = 8
+                    layoutParams = params
+                }
+
+                val urgentTitle = TextView(context).apply {
+                    text = "⚠️ URGENT CONSIDERATIONS"
+                    textSize = getContentFontSize()
+                    setTextColor(0xFFFCA5A5.toInt())
+                    setTypeface(null, android.graphics.Typeface.BOLD)
+                }
+                urgentCard.addView(urgentTitle)
+
+                response.urgentConsiderations.forEach { consideration ->
+                    val urgentText = TextView(context).apply {
+                        text = "• $consideration"
+                        textSize = getContentFontSize() - 1f
+                        setTextColor(0xFFFECACA.toInt())
+                        setPadding(0, 4, 0, 0)
+                    }
+                    urgentCard.addView(urgentText)
+                }
+
+                contentLayout.addView(urgentCard)
+            }
+
+            scrollView.addView(contentLayout)
+            innerLayout.addView(scrollView)
+
+            // Hint text
+            val hintText = TextView(context).apply {
+                text = "💡 Say \"read ddx\", \"close\", or \"order [test]\""
+                textSize = getContentFontSize() - 3f
+                setTextColor(0xFF64748B.toInt())
+                setPadding(0, 12, 0, 0)
+                gravity = android.view.Gravity.CENTER
+            }
+            innerLayout.addView(hintText)
+
+            addView(innerLayout)
+        }
+
+        rootView.addView(dataOverlay)
+        speakFeedback("Differential diagnosis ready. Top diagnosis: ${response.differentials.firstOrNull()?.diagnosis ?: "none"}")
+    }
+
+    /**
+     * Speak differential diagnosis results via TTS
+     */
+    private fun speakDdxResults() {
+        val response = lastDdxResponse
+        if (response == null || response.differentials.isEmpty()) {
+            speakFeedback("No differential diagnosis available. Say differential diagnosis to generate one.")
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.append("Differential diagnosis. ")
+
+        // Read top 3 diagnoses
+        response.differentials.take(3).forEach { ddx ->
+            sb.append("Number ${ddx.rank}: ${ddx.diagnosis}, ")
+            sb.append("${ddx.likelihood} likelihood. ")
+            if (ddx.supportingFindings.isNotEmpty()) {
+                sb.append("Supporting: ${ddx.supportingFindings.take(2).joinToString(", ")}. ")
+            }
+        }
+
+        // Urgent considerations
+        if (response.urgentConsiderations.isNotEmpty()) {
+            sb.append("Urgent: ${response.urgentConsiderations.first()}. ")
+        }
+
+        speakText(sb.toString())
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -16140,6 +16562,19 @@ SOFA Score: [X]
             lower.contains("aci status") || lower.contains("ambient status") -> {
                 // Show detected entities
                 showAciEntities()
+            }
+            // ═══ DIFFERENTIAL DIAGNOSIS COMMANDS ═══
+            lower.contains("differential diagnosis") || lower.contains("differential") ||
+            lower == "ddx" || lower.contains(" ddx") ||
+            lower.contains("what could this be") || lower.contains("possible diagnoses") ||
+            lower.contains("suggest diagnosis") || lower.contains("diagnose this") -> {
+                // Generate AI differential diagnosis
+                generateDifferentialDiagnosis()
+            }
+            lower.contains("read differential") || lower.contains("speak ddx") ||
+            lower.contains("read ddx") || lower.contains("say differential") -> {
+                // TTS readout of differential diagnosis
+                speakDdxResults()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {

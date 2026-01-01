@@ -355,13 +355,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 66. **Voiceprint Speaker Recognition** - SpeechBrain ECAPA-TDNN model for biometric voice authentication; enrollment via 3 spoken phrases ("My voice is my password", "MDx Vision unlock my session", "I authorize this clinical action"); server-side embedding extraction with cosine similarity matching (threshold 0.70); verification required for sensitive operations (push notes to EHR, push vitals/orders, add allergies, discontinue medications); voice commands ("enroll my voice", "voiceprint status", "delete voiceprint"); prevents unauthorized EHR writes even with stolen device
 67. **Patient Worklist** - Daily patient schedule with check-in workflow; scheduled/checked_in/in_room/in_progress/completed statuses; priority levels (normal, urgent, STAT); room assignment; chief complaint tracking; critical alert indicators; "who's next" queue management; voice commands ("show worklist", "check in 1", "check in 2 to room 5", "who's next", "mark 1 completed", "start seeing 2", "load 1"); API endpoints (/api/v1/worklist, /api/v1/worklist/check-in, /api/v1/worklist/status, /api/v1/worklist/next)
 68. **Order Update/Modify** - Full inpatient order management workflow; show numbered order list; update by number or medication name ("update 1 to 500mg every 6 hours", "update tylenol to 650mg PRN"); delete by number ("delete 2", "remove 3"); confirmation workflow before applying changes; parses dose, frequency, duration, PRN status; integrates with existing order placement and push to EHR
+69. **AI Differential Diagnosis (DDx)** - AI-powered differential diagnosis from clinical findings; ranked DDx list (top 5) with ICD-10 codes; likelihood levels (high/moderate/low); supporting findings, red flags, recommended next steps; clinical reasoning explanation; urgent considerations; integration with ambient mode entities; voice commands ("differential diagnosis", "ddx", "what could this be", "read differential", "speak ddx"); safety disclaimer "For clinical decision support only"; rule-based fallback when AI unavailable; HIPAA audit logging for all DDx requests
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 68 features implemented |
+| All medium effort items completed! | 69 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

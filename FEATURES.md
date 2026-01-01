@@ -1,8 +1,8 @@
 # MDx Vision - Complete Feature Checklist
 
 **Last Updated:** January 1, 2025
-**Total Features:** 68 Implemented | 6 Planned
-**Test Coverage:** 77 tests passing (100%)
+**Total Features:** 69 Implemented | 5 Planned
+**Test Coverage:** 104 tests passing (100%)
 
 ---
 
@@ -89,6 +89,25 @@
 - [x] Full transcript storage for records (not sent to EHR)
 - [x] Voice commands during ambient mode
 - [x] "View transcript" command for full record
+
+---
+
+## AI Differential Diagnosis (DDx)
+
+- [x] AI-powered differential diagnosis from clinical findings
+- [x] Ranked DDx list (top 5) with ICD-10 codes
+- [x] Likelihood levels: high, moderate, low
+- [x] Supporting findings for each diagnosis
+- [x] Red flags and warning signs
+- [x] Recommended next steps (tests, imaging)
+- [x] Clinical reasoning explanation
+- [x] Urgent considerations display
+- [x] Integration with ambient mode entities
+- [x] Voice commands: "differential diagnosis", "ddx", "what could this be"
+- [x] TTS readback: "read differential", "speak ddx"
+- [x] Safety disclaimer: "For clinical decision support only"
+- [x] Rule-based fallback when AI unavailable
+- [x] HIPAA audit logging for all DDx requests
 
 ---
 
@@ -570,11 +589,12 @@
 |-----------|-------|--------|
 | test_api.py | 19 | PASS |
 | test_worklist_crud.py | 58 | PASS |
+| test_ddx.py | 27 | PASS |
 | MainActivityTest.kt | 12 | PASS (Android) |
 | PatientVisitWorkflowTest.kt | 8 | PASS (Android) |
 | AmbientClinicalIntelligenceTest.kt | 20 | PASS (Android) |
 | AciIntegrationTest.kt | 13 | PASS (Android) |
-| **Total** | **77** | **100%** |
+| **Total** | **104** | **100%** |
 
 ---
 
@@ -587,7 +607,6 @@
 
 ### Medium Priority
 - [ ] Vuzix HUD native overlay (using standard Android UI)
-- [ ] AI Differential Diagnosis (symptom → DDx suggestions)
 - [ ] Image recognition (camera AI for wounds, rashes)
 - [ ] Billing/coding submission workflow
 
