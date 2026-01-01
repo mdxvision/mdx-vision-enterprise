@@ -1,8 +1,8 @@
 # MDx Vision - Complete Feature Checklist
 
-**Last Updated:** December 31, 2024
-**Total Features:** 62 Implemented | 12 Planned
-**Test Coverage:** 53 tests passing (100%)
+**Last Updated:** January 1, 2025
+**Total Features:** 68 Implemented | 6 Planned
+**Test Coverage:** 77 tests passing (100%)
 
 ---
 
@@ -99,6 +99,60 @@
 - [x] Critical Vital Alerts (BP >180, HR <40/>150, SpO2 <88%)
 - [x] Medication Interaction Alerts (18+ drug pairs)
 - [x] HIPAA Audit Logging
+
+---
+
+## CRUD Write-Back to EHR
+
+- [x] Push Vitals (FHIR Observation with LOINC codes)
+- [x] Push Orders (ServiceRequest/MedicationRequest)
+- [x] Push Allergies (AllergyIntolerance with SNOMED)
+- [x] Discontinue/Hold Medications (status updates)
+- [x] HIPAA-compliant soft deletes (no hard deletes)
+- [x] Offline sync queues for all data types
+- [x] Confirmation workflows for safety-critical operations
+- [x] Voice commands: "push vitals", "push orders", "add allergy", "discontinue [med]"
+
+---
+
+## Patient Worklist
+
+- [x] Daily patient schedule display
+- [x] Check-in workflow with room assignment
+- [x] Status tracking: scheduled → checked_in → in_room → in_progress → completed
+- [x] Priority levels: normal, urgent, STAT
+- [x] Chief complaint tracking
+- [x] Critical alert indicators
+- [x] "Who's next" queue management
+- [x] Voice commands: "show worklist", "check in 1", "who's next", "mark 1 completed"
+
+---
+
+## Order Management
+
+- [x] Show numbered order list
+- [x] Update order by number ("update 1 to 500mg every 6 hours")
+- [x] Update order by medication name ("update tylenol to 650mg PRN")
+- [x] Delete order by number ("delete 2", "remove 3")
+- [x] Delete order by medication name ("delete tylenol", "remove metformin")
+- [x] Confirmation workflow before applying changes
+- [x] Parse dose, frequency, duration, PRN status
+- [x] Integrates with order placement and push to EHR
+
+---
+
+## Device Security
+
+- [x] QR code device pairing from web dashboard
+- [x] TOTP authentication (Google Authenticator/Authy compatible)
+- [x] Voice code entry ("4 7 2 9 1 5")
+- [x] Proximity sensor auto-lock (glasses removed = locked)
+- [x] 12-hour session tokens
+- [x] Remote wipe from dashboard
+- [x] Voiceprint biometric authentication (SpeechBrain ECAPA-TDNN)
+- [x] Enrollment via 3 spoken phrases
+- [x] Verification required for sensitive operations (push to EHR)
+- [x] Device Management Dashboard (/dashboard/devices)
 
 ---
 
@@ -420,6 +474,38 @@
 - [x] "Compare versions"
 - [x] "Clear version history"
 
+### CRUD Write-Back Commands
+- [x] "Push vitals" / "Send vitals to EHR"
+- [x] "Push orders" / "Send orders to EHR"
+- [x] "Add allergy to [substance]"
+- [x] "Discontinue [medication]"
+- [x] "Hold [medication]"
+- [x] "Confirm" / "Yes" (for pending operations)
+- [x] "Sync all" (push all pending offline data)
+
+### Patient Worklist Commands
+- [x] "Show worklist" / "Today's patients"
+- [x] "Check in 1" / "Check in 2 to room 5"
+- [x] "Who's next" / "Next patient"
+- [x] "Mark 1 completed" / "Start seeing 2"
+- [x] "Load 1" (load patient from worklist)
+
+### Order Management Commands
+- [x] "Show orders" / "List orders"
+- [x] "Update 1 to 500mg every 6 hours"
+- [x] "Update tylenol to 650mg PRN"
+- [x] "Delete 1" / "Remove 2"
+- [x] "Delete tylenol" / "Remove metformin"
+- [x] "Confirm" / "Cancel" (for order updates)
+
+### Device Security Commands
+- [x] "Pair device"
+- [x] "Device status"
+- [x] "[6-digit TOTP code]" (spoken digits to unlock)
+- [x] "Enroll my voice"
+- [x] "Voiceprint status"
+- [x] "Delete voiceprint"
+
 ---
 
 ## UI Buttons (12-Button Grid)
@@ -482,11 +568,13 @@
 
 | Test File | Tests | Status |
 |-----------|-------|--------|
-| MainActivityTest.kt | 12 | PASS |
-| PatientVisitWorkflowTest.kt | 8 | PASS |
-| AmbientClinicalIntelligenceTest.kt | 20 | PASS |
-| AciIntegrationTest.kt | 13 | PASS |
-| **Total** | **53** | **100%** |
+| test_api.py | 19 | PASS |
+| test_worklist_crud.py | 58 | PASS |
+| MainActivityTest.kt | 12 | PASS (Android) |
+| PatientVisitWorkflowTest.kt | 8 | PASS (Android) |
+| AmbientClinicalIntelligenceTest.kt | 20 | PASS (Android) |
+| AciIntegrationTest.kt | 13 | PASS (Android) |
+| **Total** | **77** | **100%** |
 
 ---
 
@@ -496,13 +584,11 @@
 - [ ] Epic live integration (needs OAuth credentials)
 - [ ] Veradigm live integration (needs OAuth credentials)
 - [ ] OAuth2/SMART on FHIR authentication
-- [ ] EHR write-back for orders (currently display-only)
 
 ### Medium Priority
 - [ ] Vuzix HUD native overlay (using standard Android UI)
 - [ ] AI Differential Diagnosis (symptom → DDx suggestions)
 - [ ] Image recognition (camera AI for wounds, rashes)
-- [ ] Billing/coding submission workflow
 
 ### Low Priority / Future
 - [ ] Android XR SDK (Jetpack Compose Glimmer, Gemini)
@@ -567,4 +653,4 @@ Based on US Patent 15/237,980
 
 ---
 
-Last Updated: December 31, 2024
+Last Updated: January 1, 2025
