@@ -26,6 +26,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
 
@@ -2343,6 +2347,146 @@ SOFA Score: [X]
 
     // Store last DDx response for TTS readback
     private var lastDdxResponse: DdxResponse? = null
+
+    // Image Analysis data classes (Feature #70)
+    data class ImageFinding(
+        val finding: String,
+        val confidence: String,  // "high", "moderate", "low"
+        val location: String?,
+        val characteristics: List<String>
+    )
+
+    data class ImageAnalysisResponse(
+        val assessment: String,
+        val findings: List<ImageFinding>,
+        val icd10Codes: List<Map<String, String>>,
+        val recommendations: List<String>,
+        val redFlags: List<String>,
+        val differentialConsiderations: List<String>,
+        val disclaimer: String,
+        val timestamp: String
+    )
+
+    // Store last image analysis for TTS readback
+    private var lastImageAnalysis: ImageAnalysisResponse? = null
+    private var pendingImageContext: String? = null
+
+    // Image capture launcher (Feature #70)
+    private val imageCaptureUrl = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            val imageBase64 = result.data?.getStringExtra(ImageCaptureActivity.EXTRA_IMAGE_BASE64)
+            val mediaType = result.data?.getStringExtra(ImageCaptureActivity.EXTRA_MEDIA_TYPE) ?: "image/jpeg"
+            val context = result.data?.getStringExtra(ImageCaptureActivity.EXTRA_ANALYSIS_CONTEXT)
+
+            if (imageBase64 != null) {
+                Log.d(TAG, "Image captured, base64 length: ${imageBase64.length}, context: $context")
+                transcriptText.text = "Image captured. Analyzing..."
+                speakFeedback("Analyzing image")
+                analyzeMedicalImage(imageBase64, mediaType, context)
+            }
+        } else {
+            speakFeedback("Image capture cancelled")
+        }
+    }
+
+    // Billing/Claim data classes (Feature #71)
+    enum class ClaimStatus { DRAFT, SUBMITTED, ACCEPTED, REJECTED }
+
+    data class BillingDiagnosisCode(
+        val code: String,
+        val description: String,
+        val sequence: Int = 1,
+        val isPrincipal: Boolean = false
+    )
+
+    data class BillingProcedureCode(
+        val code: String,
+        val description: String,
+        val modifiers: List<String> = emptyList(),
+        val units: Int = 1
+    )
+
+    data class BillingServiceLine(
+        val lineNumber: Int,
+        val serviceDate: String,
+        val procedure: BillingProcedureCode,
+        val diagnosisPointers: List<Int> = listOf(1)
+    )
+
+    data class BillingClaim(
+        val claimId: String?,
+        val status: ClaimStatus,
+        val patientId: String,
+        val patientName: String?,
+        val noteId: String?,
+        val serviceDate: String,
+        val diagnoses: List<BillingDiagnosisCode>,
+        val serviceLines: List<BillingServiceLine>,
+        val totalCharge: Float = 0f,
+        val createdAt: String?,
+        val submittedAt: String?,
+        val fhirClaimId: String?
+    )
+
+    // Billing state
+    private var currentClaim: BillingClaim? = null
+    private var billingOverlay: android.widget.FrameLayout? = null
+    private var isAwaitingClaimConfirmation = false
+
+    // DNFB (Discharged Not Final Billed) Models (Feature #72)
+    enum class DNFBReason {
+        CODING_INCOMPLETE,
+        DOCUMENTATION_MISSING,
+        CHARGES_PENDING,
+        PRIOR_AUTH_MISSING,
+        PRIOR_AUTH_EXPIRED,
+        PRIOR_AUTH_DENIED,
+        INSURANCE_VERIFICATION,
+        PHYSICIAN_QUERY,
+        CLAIM_EDIT_REQUIRED,
+        OTHER
+    }
+
+    enum class PriorAuthStatus {
+        NOT_REQUIRED,
+        PENDING,
+        APPROVED,
+        DENIED,
+        EXPIRED,
+        NOT_OBTAINED
+    }
+
+    data class PriorAuthInfo(
+        val authNumber: String?,
+        val status: PriorAuthStatus,
+        val payerName: String?,
+        val procedureCodes: List<String>,
+        val expirationDate: String?,
+        val denialReason: String?
+    )
+
+    data class DNFBAccount(
+        val dnfbId: String,
+        val patientId: String,
+        val patientName: String?,
+        val mrn: String?,
+        val dischargeDate: String,
+        val serviceType: String?,
+        val principalDiagnosis: String?,
+        val estimatedCharges: Float,
+        val reason: DNFBReason,
+        val reasonDetail: String?,
+        val priorAuth: PriorAuthInfo?,
+        val daysSinceDischarge: Int,
+        val agingBucket: String,
+        val isResolved: Boolean
+    )
+
+    // DNFB state
+    private var dnfbAccounts = mutableListOf<DNFBAccount>()
+    private var currentDNFBFilter: String? = null  // reason filter
 
     // Barcode scanner launcher
     private val barcodeLauncher = registerForActivityResult(
@@ -7818,14 +7962,14 @@ SOFA Score: [X]
     private fun generateDifferentialDiagnosis() {
         if (currentPatientData == null) {
             speakFeedback("Please load a patient first")
-            showToast("No patient loaded")
+            Toast.makeText(this, "No patient loaded", Toast.LENGTH_SHORT).show()
             return
         }
 
         lifecycleScope.launch {
             try {
                 speakFeedback("Generating differential diagnosis")
-                showToast("🔍 Analyzing clinical data...")
+                Toast.makeText(this@MainActivity, "🔍 Analyzing clinical data...", Toast.LENGTH_SHORT).show()
 
                 // Build request from available data
                 val requestJson = org.json.JSONObject().apply {
@@ -7845,11 +7989,11 @@ SOFA Score: [X]
                     // Vitals - from captured vitals or ambient
                     val vitalsMap = org.json.JSONObject()
                     capturedVitals.forEach { vital ->
-                        vitalsMap.put(vital.type, vital.value)
+                        vitalsMap.put(vital.type.name, vital.value)
                     }
-                    if (extractedEntities.vitals.isNotEmpty()) {
-                        extractedEntities.vitals.forEach { v ->
-                            vitalsMap.put(v.substringBefore(":").trim(), v.substringAfter(":").trim())
+                    if (extractedEntities.vitalsMentioned.isNotEmpty()) {
+                        extractedEntities.vitalsMentioned.forEach { (key, value) ->
+                            vitalsMap.put(key, value)
                         }
                     }
                     if (vitalsMap.length() > 0) {
@@ -7905,7 +8049,7 @@ SOFA Score: [X]
 
                 // Make API call
                 val response = withContext(Dispatchers.IO) {
-                    val url = java.net.URL("$EHR_PROXY_BASE_URL/api/v1/ddx/generate")
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/ddx/generate")
                     val connection = url.openConnection() as java.net.HttpURLConnection
                     connection.requestMethod = "POST"
                     connection.setRequestProperty("Content-Type", "application/json")
@@ -7963,7 +8107,7 @@ SOFA Score: [X]
             } catch (e: Exception) {
                 Log.e(TAG, "DDx generation failed", e)
                 speakFeedback("Differential diagnosis failed")
-                showToast("❌ DDx Error: ${e.message}")
+                Toast.makeText(this@MainActivity, "❌ DDx Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -8197,7 +8341,1373 @@ SOFA Score: [X]
             sb.append("Urgent: ${response.urgentConsiderations.first()}. ")
         }
 
-        speakText(sb.toString())
+        speakFeedback(sb.toString())
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MEDICAL IMAGE ANALYSIS FUNCTIONS (Feature #70)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Start image capture for medical image analysis
+     * @param context Optional analysis context: "wound", "rash", "xray", or null for general
+     */
+    private fun startImageCapture(context: String? = null) {
+        pendingImageContext = context
+        val intent = Intent(this, ImageCaptureActivity::class.java).apply {
+            if (context != null) {
+                putExtra(ImageCaptureActivity.INPUT_ANALYSIS_CONTEXT, context)
+            }
+        }
+
+        val contextLabel = when (context) {
+            "wound" -> "wound"
+            "rash" -> "skin or rash"
+            "xray" -> "X-ray"
+            else -> "medical image"
+        }
+        speakFeedback("Opening camera for $contextLabel capture")
+
+        imageCaptureUrl.launch(intent)
+    }
+
+    /**
+     * Send captured image to backend for Claude Vision analysis
+     */
+    private fun analyzeMedicalImage(imageBase64: String, mediaType: String, context: String?) {
+        lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    val requestBody = buildString {
+                        append("{")
+                        append("\"image_base64\":\"$imageBase64\",")
+                        append("\"media_type\":\"$mediaType\"")
+                        if (context != null) {
+                            append(",\"analysis_context\":\"$context\"")
+                        }
+                        // Include patient context if available
+                        currentPatientData?.optString("patient_id", "")?.takeIf { it.isNotEmpty() }?.let { id ->
+                            append(",\"patient_id\":\"$id\"")
+                        }
+                        if (context != null && currentPatientData != null) {
+                            // Add chief complaint from context
+                            append(",\"chief_complaint\":\"${context.capitalize()} assessment\"")
+                        }
+                        append("}")
+                    }
+
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/image/analyze")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    conn.connectTimeout = 90000  // 90 second timeout for vision API
+                    conn.readTimeout = 90000
+
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toByteArray())
+                    }
+
+                    if (conn.responseCode == 200) {
+                        conn.inputStream.bufferedReader().readText()
+                    } else {
+                        val error = conn.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                        throw Exception("API error ${conn.responseCode}: $error")
+                    }
+                }
+
+                // Parse response
+                val json = org.json.JSONObject(response)
+                val findingsList = mutableListOf<ImageFinding>()
+                val findingsArray = json.optJSONArray("findings") ?: org.json.JSONArray()
+                for (i in 0 until findingsArray.length()) {
+                    val f = findingsArray.getJSONObject(i)
+                    val chars = mutableListOf<String>()
+                    val charsArray = f.optJSONArray("characteristics") ?: org.json.JSONArray()
+                    for (j in 0 until charsArray.length()) {
+                        chars.add(charsArray.getString(j))
+                    }
+                    findingsList.add(ImageFinding(
+                        finding = f.getString("finding"),
+                        confidence = f.optString("confidence", "moderate"),
+                        location = f.optString("location", null),
+                        characteristics = chars
+                    ))
+                }
+
+                val icd10List = mutableListOf<Map<String, String>>()
+                val icd10Array = json.optJSONArray("icd10_codes") ?: org.json.JSONArray()
+                for (i in 0 until icd10Array.length()) {
+                    val code = icd10Array.getJSONObject(i)
+                    icd10List.add(mapOf(
+                        "code" to code.optString("code", ""),
+                        "description" to code.optString("description", "")
+                    ))
+                }
+
+                val recsList = mutableListOf<String>()
+                val recsArray = json.optJSONArray("recommendations") ?: org.json.JSONArray()
+                for (i in 0 until recsArray.length()) {
+                    recsList.add(recsArray.getString(i))
+                }
+
+                val redFlagsList = mutableListOf<String>()
+                val redFlagsArray = json.optJSONArray("red_flags") ?: org.json.JSONArray()
+                for (i in 0 until redFlagsArray.length()) {
+                    redFlagsList.add(redFlagsArray.getString(i))
+                }
+
+                val diffList = mutableListOf<String>()
+                val diffArray = json.optJSONArray("differential_considerations") ?: org.json.JSONArray()
+                for (i in 0 until diffArray.length()) {
+                    diffList.add(diffArray.getString(i))
+                }
+
+                val analysisResponse = ImageAnalysisResponse(
+                    assessment = json.getString("assessment"),
+                    findings = findingsList,
+                    icd10Codes = icd10List,
+                    recommendations = recsList,
+                    redFlags = redFlagsList,
+                    differentialConsiderations = diffList,
+                    disclaimer = json.optString("disclaimer", "For clinical decision support only"),
+                    timestamp = json.optString("timestamp", "")
+                )
+
+                lastImageAnalysis = analysisResponse
+                showImageAnalysisResults(analysisResponse)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Image analysis failed: ${e.message}")
+                runOnUiThread {
+                    transcriptText.text = "Image analysis failed: ${e.message}"
+                }
+                speakFeedback("Image analysis failed. Please try again.")
+            }
+        }
+    }
+
+    /**
+     * Display image analysis results in AR overlay
+     */
+    private fun showImageAnalysisResults(response: ImageAnalysisResponse) {
+        val sb = StringBuilder()
+
+        // Header
+        sb.appendLine("📷 IMAGE ANALYSIS")
+        sb.appendLine("═".repeat(40))
+
+        // Red flags first (safety)
+        if (response.redFlags.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("🚨 RED FLAGS:")
+            response.redFlags.forEach { flag ->
+                sb.appendLine("  ⚠️ $flag")
+            }
+        }
+
+        // Assessment
+        sb.appendLine()
+        sb.appendLine("📋 ASSESSMENT:")
+        sb.appendLine("  ${response.assessment}")
+
+        // Findings
+        if (response.findings.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("🔍 FINDINGS:")
+            response.findings.forEach { finding ->
+                val confidence = when (finding.confidence.lowercase()) {
+                    "high" -> "●●●"
+                    "moderate" -> "●●○"
+                    else -> "●○○"
+                }
+                sb.append("  • ${finding.finding} [$confidence]")
+                finding.location?.let { sb.append(" @ $it") }
+                sb.appendLine()
+            }
+        }
+
+        // ICD-10 codes
+        if (response.icd10Codes.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("🏥 ICD-10 CODES:")
+            response.icd10Codes.forEach { code ->
+                sb.appendLine("  • ${code["code"]}: ${code["description"]}")
+            }
+        }
+
+        // Recommendations
+        if (response.recommendations.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("💡 RECOMMENDATIONS:")
+            response.recommendations.forEach { rec ->
+                sb.appendLine("  • $rec")
+            }
+        }
+
+        // Differential considerations
+        if (response.differentialConsiderations.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("🤔 CONSIDER:")
+            response.differentialConsiderations.take(3).forEach { diff ->
+                sb.appendLine("  • $diff")
+            }
+        }
+
+        // Disclaimer
+        sb.appendLine()
+        sb.appendLine("─".repeat(40))
+        sb.appendLine("⚕️ ${response.disclaimer}")
+
+        runOnUiThread {
+            transcriptText.text = sb.toString()
+        }
+
+        // Speak red flags immediately if present
+        if (response.redFlags.isNotEmpty()) {
+            speakFeedback("Alert. Red flags detected. ${response.redFlags.first()}")
+        } else {
+            speakFeedback("Image analysis complete. ${response.findings.size} findings identified.")
+        }
+    }
+
+    /**
+     * TTS readback of last image analysis
+     */
+    private fun speakImageAnalysisResults() {
+        val response = lastImageAnalysis
+        if (response == null) {
+            speakFeedback("No image analysis available. Say take photo to capture an image.")
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.append("Image analysis. ")
+
+        // Red flags first
+        if (response.redFlags.isNotEmpty()) {
+            sb.append("Alert: ${response.redFlags.size} red flags. ")
+            sb.append("${response.redFlags.first()}. ")
+        }
+
+        // Assessment
+        sb.append("Assessment: ${response.assessment}. ")
+
+        // Top findings
+        if (response.findings.isNotEmpty()) {
+            sb.append("${response.findings.size} findings. ")
+            response.findings.take(2).forEach { finding ->
+                sb.append("${finding.finding}, ${finding.confidence} confidence. ")
+            }
+        }
+
+        // Top recommendation
+        if (response.recommendations.isNotEmpty()) {
+            sb.append("Recommendation: ${response.recommendations.first()}. ")
+        }
+
+        speakFeedback(sb.toString())
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // BILLING/CLAIM FUNCTIONS (Feature #71)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Create billing claim from last saved note
+     */
+    private fun createClaimFromNote(noteId: String) {
+        val patientId = currentPatientData?.optString("patient_id", "")
+        if (patientId.isNullOrEmpty()) {
+            speakFeedback("No patient loaded. Load patient first.")
+            return
+        }
+
+        val serviceDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(java.util.Date())
+
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Creating billing claim")
+
+                val response = withContext(Dispatchers.IO) {
+                    val requestBody = org.json.JSONObject().apply {
+                        put("patient_id", patientId as String)
+                        put("note_id", noteId)
+                        put("service_date", serviceDate)
+                    }.toString()
+
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/billing/claims")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+                    conn.connectTimeout = 30000
+                    conn.readTimeout = 30000
+
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toByteArray())
+                    }
+
+                    if (conn.responseCode == 200) {
+                        conn.inputStream.bufferedReader().readText()
+                    } else {
+                        val error = conn.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                        throw Exception("API error ${conn.responseCode}: $error")
+                    }
+                }
+
+                val json = org.json.JSONObject(response)
+                if (json.optBoolean("success")) {
+                    currentClaim = parseClaimJson(json.optJSONObject("claim"))
+                    speakFeedback("Claim created. Review codes before submission.")
+                    showBillingReviewUI()
+                } else {
+                    speakFeedback("Failed to create claim")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Create claim failed: ${e.message}")
+                speakFeedback("Failed to create claim. ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Parse claim JSON to data class
+     */
+    private fun parseClaimJson(json: org.json.JSONObject?): BillingClaim? {
+        json ?: return null
+
+        val diagnoses = mutableListOf<BillingDiagnosisCode>()
+        val diagArray = json.optJSONArray("diagnoses") ?: org.json.JSONArray()
+        for (i in 0 until diagArray.length()) {
+            val dx = diagArray.getJSONObject(i)
+            diagnoses.add(BillingDiagnosisCode(
+                code = dx.optString("code"),
+                description = dx.optString("description"),
+                sequence = dx.optInt("sequence", i + 1),
+                isPrincipal = dx.optBoolean("is_principal")
+            ))
+        }
+
+        val serviceLines = mutableListOf<BillingServiceLine>()
+        val linesArray = json.optJSONArray("service_lines") ?: org.json.JSONArray()
+        for (i in 0 until linesArray.length()) {
+            val line = linesArray.getJSONObject(i)
+            val proc = line.optJSONObject("procedure") ?: org.json.JSONObject()
+            val modifiers = mutableListOf<String>()
+            val modArray = proc.optJSONArray("modifiers") ?: org.json.JSONArray()
+            for (j in 0 until modArray.length()) {
+                modifiers.add(modArray.getString(j))
+            }
+
+            serviceLines.add(BillingServiceLine(
+                lineNumber = line.optInt("line_number", i + 1),
+                serviceDate = line.optString("service_date"),
+                procedure = BillingProcedureCode(
+                    code = proc.optString("code"),
+                    description = proc.optString("description"),
+                    modifiers = modifiers,
+                    units = proc.optInt("units", 1)
+                )
+            ))
+        }
+
+        return BillingClaim(
+            claimId = json.optString("claim_id"),
+            status = try { ClaimStatus.valueOf(json.optString("status", "DRAFT").uppercase()) }
+                     catch (e: Exception) { ClaimStatus.DRAFT },
+            patientId = json.optString("patient_id"),
+            patientName = json.optString("patient_name"),
+            noteId = json.optString("note_id"),
+            serviceDate = json.optString("service_date"),
+            diagnoses = diagnoses,
+            serviceLines = serviceLines,
+            totalCharge = json.optDouble("total_charge", 0.0).toFloat(),
+            createdAt = json.optString("created_at"),
+            submittedAt = json.optString("submitted_at"),
+            fhirClaimId = json.optString("fhir_claim_id")
+        )
+    }
+
+    /**
+     * Show billing review UI overlay
+     */
+    private fun showBillingReviewUI() {
+        val claim = currentClaim ?: return
+
+        val sb = StringBuilder()
+        sb.appendLine("💰 BILLING CLAIM REVIEW")
+        sb.appendLine("═".repeat(40))
+        sb.appendLine("Patient: ${currentPatientData?.optString("name", "Unknown")}")
+        sb.appendLine("Service Date: ${claim.serviceDate}")
+        sb.appendLine("Status: ${claim.status}")
+        sb.appendLine()
+
+        // Diagnoses section
+        sb.appendLine("📋 DIAGNOSES (ICD-10):")
+        if (claim.diagnoses.isEmpty()) {
+            sb.appendLine("  No diagnoses added")
+        } else {
+            claim.diagnoses.forEachIndexed { index, dx ->
+                val principal = if (dx.isPrincipal) " ★" else ""
+                sb.appendLine("  ${index + 1}. ${dx.code} - ${dx.description}$principal")
+            }
+        }
+
+        sb.appendLine()
+
+        // Procedures section
+        sb.appendLine("🏥 PROCEDURES (CPT):")
+        if (claim.serviceLines.isEmpty()) {
+            sb.appendLine("  No procedures added")
+        } else {
+            claim.serviceLines.forEach { line ->
+                val modStr = if (line.procedure.modifiers.isNotEmpty())
+                    " [${line.procedure.modifiers.joinToString(", ")}]" else ""
+                sb.appendLine("  ${line.lineNumber}. ${line.procedure.code}$modStr - ${line.procedure.description}")
+            }
+        }
+
+        sb.appendLine()
+        sb.appendLine("─".repeat(40))
+        sb.appendLine("Voice Commands:")
+        sb.appendLine("• \"submit claim\" - Submit for processing")
+        sb.appendLine("• \"add diagnosis [code]\" - Add ICD-10")
+        sb.appendLine("• \"add procedure [code]\" - Add CPT")
+        sb.appendLine("• \"close billing\" - Cancel")
+
+        runOnUiThread {
+            transcriptText.text = sb.toString()
+        }
+    }
+
+    /**
+     * Submit billing claim
+     */
+    private fun submitBillingClaim() {
+        val claim = currentClaim
+        if (claim == null) {
+            speakFeedback("No claim to submit. Create a claim first.")
+            return
+        }
+
+        if (claim.diagnoses.isEmpty()) {
+            speakFeedback("Claim requires at least one diagnosis")
+            return
+        }
+
+        if (claim.serviceLines.isEmpty()) {
+            speakFeedback("Claim requires at least one procedure")
+            return
+        }
+
+        isAwaitingClaimConfirmation = true
+        speakFeedback("Ready to submit claim with ${claim.diagnoses.size} diagnoses and ${claim.serviceLines.size} procedures. Say confirm to proceed or cancel to abort.")
+    }
+
+    /**
+     * Confirm and execute claim submission
+     */
+    private fun confirmClaimSubmission() {
+        val claim = currentClaim ?: return
+        isAwaitingClaimConfirmation = false
+
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Submitting claim")
+
+                val response = withContext(Dispatchers.IO) {
+                    val requestBody = org.json.JSONObject().apply {
+                        put("confirm", true)
+                    }.toString()
+
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/billing/claims/${claim.claimId}/submit")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toByteArray())
+                    }
+
+                    if (conn.responseCode == 200) {
+                        conn.inputStream.bufferedReader().readText()
+                    } else {
+                        val error = conn.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                        throw Exception("API error ${conn.responseCode}: $error")
+                    }
+                }
+
+                val json = org.json.JSONObject(response)
+                if (json.optBoolean("success")) {
+                    val fhirId = json.optString("fhir_claim_id", "")
+                    speakFeedback("Claim submitted successfully")
+                    runOnUiThread {
+                        transcriptText.text = "✅ CLAIM SUBMITTED\n\nClaim ID: ${claim.claimId}\nFHIR ID: $fhirId\nStatus: SUBMITTED"
+                    }
+                    currentClaim = null
+                } else {
+                    speakFeedback("Submission failed: ${json.optString("error")}")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Submit claim failed: ${e.message}")
+                speakFeedback("Submission failed. ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Show claim history for current patient
+     */
+    private fun showClaimHistory() {
+        val patientId = currentPatientData?.optString("patient_id", "")
+        if (patientId.isNullOrEmpty()) {
+            speakFeedback("No patient loaded")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/patient/$patientId/claims").readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val claims = json.optJSONArray("claims") ?: org.json.JSONArray()
+
+                val sb = StringBuilder()
+                sb.appendLine("📋 BILLING CLAIMS HISTORY")
+                sb.appendLine("═".repeat(40))
+
+                if (claims.length() == 0) {
+                    sb.appendLine("No claims found for this patient")
+                } else {
+                    for (i in 0 until claims.length()) {
+                        val c = claims.getJSONObject(i)
+                        val status = c.optString("status", "unknown").uppercase()
+                        val date = c.optString("service_date", "")
+                        val dxCount = c.optJSONArray("diagnoses")?.length() ?: 0
+                        val cptCount = c.optJSONArray("service_lines")?.length() ?: 0
+
+                        val statusIcon = when (status) {
+                            "DRAFT" -> "📝"
+                            "SUBMITTED" -> "📤"
+                            "ACCEPTED" -> "✅"
+                            "REJECTED" -> "❌"
+                            else -> "❓"
+                        }
+
+                        sb.appendLine("${i + 1}. $statusIcon $date - $status")
+                        sb.appendLine("   $dxCount diagnoses, $cptCount procedures")
+                    }
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+                speakFeedback("Found ${claims.length()} claims")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Fetch claims failed: ${e.message}")
+                speakFeedback("Failed to load claim history")
+            }
+        }
+    }
+
+    /**
+     * Close billing review UI
+     */
+    private fun closeBillingUI() {
+        currentClaim = null
+        isAwaitingClaimConfirmation = false
+        speakFeedback("Billing closed")
+        runOnUiThread {
+            transcriptText.text = "Billing session closed"
+        }
+    }
+
+    /**
+     * Add diagnosis code to current claim
+     */
+    private fun addDiagnosisToClaim(code: String) {
+        val claim = currentClaim ?: return
+
+        lifecycleScope.launch {
+            try {
+                // First search for the code to get description
+                val searchResponse = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/billing/codes/icd10/search?q=$code&limit=1").readText()
+                }
+
+                val searchJson = org.json.JSONObject(searchResponse)
+                val results = searchJson.optJSONArray("results") ?: org.json.JSONArray()
+
+                val description = if (results.length() > 0) {
+                    results.getJSONObject(0).optString("description", "Unknown")
+                } else {
+                    "Unknown diagnosis"
+                }
+
+                // Update claim via API
+                val newDiagnoses = claim.diagnoses.toMutableList()
+                val isPrincipal = newDiagnoses.isEmpty()
+                newDiagnoses.add(BillingDiagnosisCode(
+                    code = code,
+                    description = description,
+                    sequence = newDiagnoses.size + 1,
+                    isPrincipal = isPrincipal
+                ))
+
+                val updateResponse = withContext(Dispatchers.IO) {
+                    val diagArray = org.json.JSONArray()
+                    newDiagnoses.forEach { dx ->
+                        diagArray.put(org.json.JSONObject().apply {
+                            put("code", dx.code)
+                            put("description", dx.description)
+                            put("sequence", dx.sequence)
+                            put("is_principal", dx.isPrincipal)
+                        })
+                    }
+
+                    val requestBody = org.json.JSONObject().apply {
+                        put("diagnoses", diagArray)
+                    }.toString()
+
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/billing/claims/${claim.claimId}")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "PUT"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toByteArray())
+                    }
+
+                    conn.inputStream.bufferedReader().readText()
+                }
+
+                val json = org.json.JSONObject(updateResponse)
+                if (json.optBoolean("success")) {
+                    currentClaim = parseClaimJson(json.optJSONObject("claim"))
+                    speakFeedback("Added $code")
+                    showBillingReviewUI()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Add diagnosis failed: ${e.message}")
+                speakFeedback("Failed to add diagnosis")
+            }
+        }
+    }
+
+    /**
+     * Remove diagnosis from current claim by index
+     */
+    private fun removeDiagnosisFromClaim(index: Int) {
+        val claim = currentClaim ?: return
+
+        if (index < 0 || index >= claim.diagnoses.size) {
+            speakFeedback("Invalid diagnosis number")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                val newDiagnoses = claim.diagnoses.toMutableList()
+                val removed = newDiagnoses.removeAt(index)
+
+                // Re-sequence and re-assign principal if needed
+                newDiagnoses.forEachIndexed { i, dx ->
+                    newDiagnoses[i] = dx.copy(
+                        sequence = i + 1,
+                        isPrincipal = i == 0
+                    )
+                }
+
+                val updateResponse = withContext(Dispatchers.IO) {
+                    val diagArray = org.json.JSONArray()
+                    newDiagnoses.forEach { dx ->
+                        diagArray.put(org.json.JSONObject().apply {
+                            put("code", dx.code)
+                            put("description", dx.description)
+                            put("sequence", dx.sequence)
+                            put("is_principal", dx.isPrincipal)
+                        })
+                    }
+
+                    val requestBody = org.json.JSONObject().apply {
+                        put("diagnoses", diagArray)
+                    }.toString()
+
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/billing/claims/${claim.claimId}")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "PUT"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toByteArray())
+                    }
+
+                    conn.inputStream.bufferedReader().readText()
+                }
+
+                val json = org.json.JSONObject(updateResponse)
+                if (json.optBoolean("success")) {
+                    currentClaim = parseClaimJson(json.optJSONObject("claim"))
+                    speakFeedback("Removed ${removed.code}")
+                    showBillingReviewUI()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Remove diagnosis failed: ${e.message}")
+                speakFeedback("Failed to remove diagnosis")
+            }
+        }
+    }
+
+    /**
+     * Add procedure code to current claim
+     */
+    private fun addProcedureToClaim(code: String) {
+        val claim = currentClaim ?: return
+
+        lifecycleScope.launch {
+            try {
+                // Search for CPT code description
+                val searchResponse = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/billing/codes/cpt/search?q=$code&limit=1").readText()
+                }
+
+                val searchJson = org.json.JSONObject(searchResponse)
+                val results = searchJson.optJSONArray("results") ?: org.json.JSONArray()
+
+                val description = if (results.length() > 0) {
+                    results.getJSONObject(0).optString("description", "Unknown")
+                } else {
+                    "Unknown procedure"
+                }
+
+                // Update claim via API
+                val newLines = claim.serviceLines.toMutableList()
+                newLines.add(BillingServiceLine(
+                    lineNumber = newLines.size + 1,
+                    serviceDate = claim.serviceDate,
+                    procedure = BillingProcedureCode(
+                        code = code,
+                        description = description,
+                        modifiers = emptyList(),
+                        units = 1
+                    )
+                ))
+
+                val updateResponse = withContext(Dispatchers.IO) {
+                    val linesArray = org.json.JSONArray()
+                    newLines.forEach { line ->
+                        linesArray.put(org.json.JSONObject().apply {
+                            put("line_number", line.lineNumber)
+                            put("service_date", line.serviceDate)
+                            put("procedure", org.json.JSONObject().apply {
+                                put("code", line.procedure.code)
+                                put("description", line.procedure.description)
+                                put("modifiers", org.json.JSONArray(line.procedure.modifiers))
+                                put("units", line.procedure.units)
+                            })
+                            put("diagnosis_pointers", org.json.JSONArray(listOf(1)))
+                        })
+                    }
+
+                    val requestBody = org.json.JSONObject().apply {
+                        put("service_lines", linesArray)
+                    }.toString()
+
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/billing/claims/${claim.claimId}")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "PUT"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toByteArray())
+                    }
+
+                    conn.inputStream.bufferedReader().readText()
+                }
+
+                val json = org.json.JSONObject(updateResponse)
+                if (json.optBoolean("success")) {
+                    currentClaim = parseClaimJson(json.optJSONObject("claim"))
+                    speakFeedback("Added $code")
+                    showBillingReviewUI()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Add procedure failed: ${e.message}")
+                speakFeedback("Failed to add procedure")
+            }
+        }
+    }
+
+    /**
+     * Add modifier to procedure in current claim
+     */
+    private fun addModifierToProcedure(modifier: String, procIndex: Int) {
+        val claim = currentClaim ?: return
+
+        if (procIndex < 0 || procIndex >= claim.serviceLines.size) {
+            speakFeedback("Invalid procedure number")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                val newLines = claim.serviceLines.toMutableList()
+                val line = newLines[procIndex]
+                val newModifiers = line.procedure.modifiers.toMutableList()
+
+                if (newModifiers.contains(modifier)) {
+                    speakFeedback("Modifier $modifier already added")
+                    return@launch
+                }
+
+                newModifiers.add(modifier)
+                newLines[procIndex] = line.copy(
+                    procedure = line.procedure.copy(modifiers = newModifiers)
+                )
+
+                val updateResponse = withContext(Dispatchers.IO) {
+                    val linesArray = org.json.JSONArray()
+                    newLines.forEach { l ->
+                        linesArray.put(org.json.JSONObject().apply {
+                            put("line_number", l.lineNumber)
+                            put("service_date", l.serviceDate)
+                            put("procedure", org.json.JSONObject().apply {
+                                put("code", l.procedure.code)
+                                put("description", l.procedure.description)
+                                put("modifiers", org.json.JSONArray(l.procedure.modifiers))
+                                put("units", l.procedure.units)
+                            })
+                            put("diagnosis_pointers", org.json.JSONArray(listOf(1)))
+                        })
+                    }
+
+                    val requestBody = org.json.JSONObject().apply {
+                        put("service_lines", linesArray)
+                    }.toString()
+
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/billing/claims/${claim.claimId}")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "PUT"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+
+                    conn.outputStream.use { os ->
+                        os.write(requestBody.toByteArray())
+                    }
+
+                    conn.inputStream.bufferedReader().readText()
+                }
+
+                val json = org.json.JSONObject(updateResponse)
+                if (json.optBoolean("success")) {
+                    currentClaim = parseClaimJson(json.optJSONObject("claim"))
+                    speakFeedback("Added modifier $modifier to procedure ${procIndex + 1}")
+                    showBillingReviewUI()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Add modifier failed: ${e.message}")
+                speakFeedback("Failed to add modifier")
+            }
+        }
+    }
+
+    /**
+     * Search ICD-10 codes and display results
+     */
+    private fun searchICD10Codes(query: String) {
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Searching I C D codes")
+
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/billing/codes/icd10/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}&limit=10").readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val results = json.optJSONArray("results") ?: org.json.JSONArray()
+
+                val sb = StringBuilder()
+                sb.appendLine("🔍 ICD-10 SEARCH: \"$query\"")
+                sb.appendLine("═".repeat(40))
+
+                if (results.length() == 0) {
+                    sb.appendLine("No codes found")
+                    speakFeedback("No I C D codes found for $query")
+                } else {
+                    for (i in 0 until results.length()) {
+                        val code = results.getJSONObject(i)
+                        sb.appendLine("${i + 1}. ${code.optString("code")} - ${code.optString("description")}")
+                    }
+                    sb.appendLine()
+                    sb.appendLine("Say \"add diagnosis [code]\" to add")
+                    speakFeedback("Found ${results.length()} codes")
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "ICD-10 search failed: ${e.message}")
+                speakFeedback("Search failed")
+            }
+        }
+    }
+
+    /**
+     * Search CPT codes and display results
+     */
+    private fun searchCPTCodes(query: String) {
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Searching C P T codes")
+
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/billing/codes/cpt/search?q=${java.net.URLEncoder.encode(query, "UTF-8")}&limit=10").readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val results = json.optJSONArray("results") ?: org.json.JSONArray()
+
+                val sb = StringBuilder()
+                sb.appendLine("🔍 CPT SEARCH: \"$query\"")
+                sb.appendLine("═".repeat(40))
+
+                if (results.length() == 0) {
+                    sb.appendLine("No codes found")
+                    speakFeedback("No C P T codes found for $query")
+                } else {
+                    for (i in 0 until results.length()) {
+                        val code = results.getJSONObject(i)
+                        sb.appendLine("${i + 1}. ${code.optString("code")} - ${code.optString("description")}")
+                    }
+                    sb.appendLine()
+                    sb.appendLine("Say \"add procedure [code]\" to add")
+                    speakFeedback("Found ${results.length()} codes")
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "CPT search failed: ${e.message}")
+                speakFeedback("Search failed")
+            }
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DNFB (DISCHARGED NOT FINAL BILLED) FUNCTIONS (Feature #72)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Fetch and display DNFB worklist
+     */
+    private fun showDNFBWorklist(filter: String? = null) {
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Loading D N F B worklist")
+
+                val url = if (filter != null) {
+                    "$EHR_PROXY_URL/api/v1/dnfb?reason=$filter"
+                } else {
+                    "$EHR_PROXY_URL/api/v1/dnfb"
+                }
+
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL(url).readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val accounts = json.optJSONArray("accounts") ?: org.json.JSONArray()
+                val totalCharges = json.optDouble("total_estimated_charges", 0.0)
+                val priorAuthCount = json.optInt("prior_auth_issues", 0)
+
+                dnfbAccounts.clear()
+
+                val sb = StringBuilder()
+                sb.appendLine("💰 DNFB WORKLIST")
+                sb.appendLine("═".repeat(40))
+                sb.appendLine("Total: ${accounts.length()} | \$${String.format("%,.0f", totalCharges)}")
+                if (priorAuthCount > 0) {
+                    sb.appendLine("⚠️ Prior Auth Issues: $priorAuthCount")
+                }
+                sb.appendLine()
+
+                if (accounts.length() == 0) {
+                    sb.appendLine("No unbilled accounts found")
+                    speakFeedback("No D N F B accounts")
+                } else {
+                    for (i in 0 until accounts.length()) {
+                        val acc = accounts.getJSONObject(i)
+                        val name = acc.optString("patient_name", "Unknown")
+                        val days = acc.optInt("days_since_discharge", 0)
+                        val reason = acc.optString("reason", "").replace("_", " ")
+                        val charges = acc.optDouble("estimated_charges", 0.0)
+                        val bucket = acc.optString("aging_bucket", "0-3")
+
+                        val agingIcon = when {
+                            days > 14 -> "🔴"
+                            days > 7 -> "🟡"
+                            else -> "🟢"
+                        }
+
+                        sb.appendLine("${i + 1}. $agingIcon $name")
+                        sb.appendLine("   $days days | $bucket | \$${String.format("%,.0f", charges)}")
+                        sb.appendLine("   Reason: $reason")
+
+                        // Check for prior auth issues
+                        if (reason.contains("prior_auth")) {
+                            sb.appendLine("   ⚠️ Prior Auth Issue")
+                        }
+                        sb.appendLine()
+                    }
+
+                    sb.appendLine("─".repeat(40))
+                    sb.appendLine("Voice Commands:")
+                    sb.appendLine("• \"prior auth issues\" - Filter by prior auth")
+                    sb.appendLine("• \"over 7 days\" - Show aging > 7 days")
+                    sb.appendLine("• \"resolve 1\" - Mark as billed")
+                    speakFeedback("Found ${accounts.length()} unbilled accounts totaling ${String.format("%,.0f", totalCharges)} dollars")
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "DNFB fetch failed: ${e.message}")
+                speakFeedback("Failed to load D N F B worklist")
+            }
+        }
+    }
+
+    /**
+     * Show DNFB summary metrics
+     */
+    private fun showDNFBSummary() {
+        lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/dnfb/summary").readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val total = json.optInt("total_accounts", 0)
+                val totalCharges = json.optDouble("total_estimated_charges", 0.0)
+                val avgDays = json.optDouble("average_days_unbilled", 0.0)
+                val over7 = json.optInt("aging_over_7_days", 0)
+                val over14 = json.optInt("aging_over_14_days", 0)
+
+                val priorAuth = json.optJSONObject("prior_auth_issues")
+                val priorAuthCount = priorAuth?.optInt("count", 0) ?: 0
+                val priorAuthCharges = priorAuth?.optDouble("charges", 0.0) ?: 0.0
+
+                val sb = StringBuilder()
+                sb.appendLine("📊 DNFB SUMMARY")
+                sb.appendLine("═".repeat(40))
+                sb.appendLine()
+                sb.appendLine("Total Unbilled: $total accounts")
+                sb.appendLine("Total Charges: \$${String.format("%,.0f", totalCharges)}")
+                sb.appendLine("Avg Days: ${String.format("%.1f", avgDays)}")
+                sb.appendLine()
+                sb.appendLine("AGING:")
+                sb.appendLine("  Over 7 days: $over7")
+                sb.appendLine("  Over 14 days: $over14")
+                sb.appendLine()
+                sb.appendLine("PRIOR AUTH ISSUES:")
+                sb.appendLine("  Count: $priorAuthCount")
+                sb.appendLine("  At Risk: \$${String.format("%,.0f", priorAuthCharges)}")
+
+                // Add breakdown by reason
+                val byReason = json.optJSONObject("by_reason")
+                if (byReason != null && byReason.length() > 0) {
+                    sb.appendLine()
+                    sb.appendLine("BY REASON:")
+                    byReason.keys().forEach { key ->
+                        val data = byReason.optJSONObject(key)
+                        val count = data?.optInt("count", 0) ?: 0
+                        val charges = data?.optDouble("charges", 0.0) ?: 0.0
+                        sb.appendLine("  ${key.replace("_", " ")}: $count (\$${String.format("%,.0f", charges)})")
+                    }
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+
+                speakFeedback("$total unbilled accounts totaling ${String.format("%,.0f", totalCharges)} dollars. $priorAuthCount have prior auth issues.")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "DNFB summary failed: ${e.message}")
+                speakFeedback("Failed to load D N F B summary")
+            }
+        }
+    }
+
+    /**
+     * Show only prior auth related DNFB issues
+     */
+    private fun showPriorAuthIssues() {
+        lifecycleScope.launch {
+            try {
+                speakFeedback("Loading prior authorization issues")
+
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/dnfb?prior_auth_issue=true").readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val accounts = json.optJSONArray("accounts") ?: org.json.JSONArray()
+                val totalCharges = json.optDouble("total_estimated_charges", 0.0)
+
+                val sb = StringBuilder()
+                sb.appendLine("⚠️ PRIOR AUTH ISSUES")
+                sb.appendLine("═".repeat(40))
+                sb.appendLine("At Risk: \$${String.format("%,.0f", totalCharges)}")
+                sb.appendLine()
+
+                if (accounts.length() == 0) {
+                    sb.appendLine("No prior auth issues found")
+                    speakFeedback("No prior authorization issues")
+                } else {
+                    for (i in 0 until accounts.length()) {
+                        val acc = accounts.getJSONObject(i)
+                        val name = acc.optString("patient_name", "Unknown")
+                        val reason = acc.optString("reason", "")
+                        val charges = acc.optDouble("estimated_charges", 0.0)
+                        val days = acc.optInt("days_since_discharge", 0)
+
+                        val statusIcon = when {
+                            reason.contains("denied") -> "❌"
+                            reason.contains("expired") -> "⏰"
+                            reason.contains("missing") -> "❓"
+                            else -> "⚠️"
+                        }
+
+                        sb.appendLine("${i + 1}. $statusIcon $name")
+                        sb.appendLine("   \$${String.format("%,.0f", charges)} | $days days")
+                        sb.appendLine("   Status: ${reason.replace("prior_auth_", "").replace("_", " ").uppercase()}")
+
+                        // Show prior auth details if available
+                        val priorAuth = acc.optJSONObject("prior_auth")
+                        if (priorAuth != null) {
+                            val payer = priorAuth.optString("payer_name", "")
+                            val expDate = priorAuth.optString("expiration_date", "")
+                            val denial = priorAuth.optString("denial_reason", "")
+
+                            if (payer.isNotEmpty()) sb.appendLine("   Payer: $payer")
+                            if (expDate.isNotEmpty()) sb.appendLine("   Expires: $expDate")
+                            if (denial.isNotEmpty()) sb.appendLine("   Denial: $denial")
+                        }
+                        sb.appendLine()
+                    }
+
+                    speakFeedback("Found ${accounts.length()} prior auth issues totaling ${String.format("%,.0f", totalCharges)} dollars at risk")
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Prior auth issues fetch failed: ${e.message}")
+                speakFeedback("Failed to load prior auth issues")
+            }
+        }
+    }
+
+    /**
+     * Show DNFB accounts over X days
+     */
+    private fun showDNFBOverDays(days: Int) {
+        lifecycleScope.launch {
+            try {
+                val bucket = when {
+                    days >= 15 -> "15-30"
+                    days >= 8 -> "8-14"
+                    days >= 4 -> "4-7"
+                    else -> "0-3"
+                }
+
+                speakFeedback("Loading accounts over $days days")
+
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/dnfb").readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val allAccounts = json.optJSONArray("accounts") ?: org.json.JSONArray()
+
+                val filteredAccounts = mutableListOf<org.json.JSONObject>()
+                for (i in 0 until allAccounts.length()) {
+                    val acc = allAccounts.getJSONObject(i)
+                    if (acc.optInt("days_since_discharge", 0) > days) {
+                        filteredAccounts.add(acc)
+                    }
+                }
+
+                val totalCharges = filteredAccounts.sumOf { it.optDouble("estimated_charges", 0.0) }
+
+                val sb = StringBuilder()
+                sb.appendLine("📅 DNFB OVER $days DAYS")
+                sb.appendLine("═".repeat(40))
+                sb.appendLine("Count: ${filteredAccounts.size} | \$${String.format("%,.0f", totalCharges)}")
+                sb.appendLine()
+
+                if (filteredAccounts.isEmpty()) {
+                    sb.appendLine("No accounts over $days days")
+                    speakFeedback("No accounts over $days days")
+                } else {
+                    filteredAccounts.sortedByDescending { it.optInt("days_since_discharge", 0) }
+                        .forEachIndexed { index, acc ->
+                            val name = acc.optString("patient_name", "Unknown")
+                            val accDays = acc.optInt("days_since_discharge", 0)
+                            val charges = acc.optDouble("estimated_charges", 0.0)
+                            val reason = acc.optString("reason", "").replace("_", " ")
+
+                            sb.appendLine("${index + 1}. 🔴 $name")
+                            sb.appendLine("   $accDays days | \$${String.format("%,.0f", charges)}")
+                            sb.appendLine("   $reason")
+                            sb.appendLine()
+                        }
+
+                    speakFeedback("${filteredAccounts.size} accounts over $days days totaling ${String.format("%,.0f", totalCharges)} dollars")
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "DNFB over days fetch failed: ${e.message}")
+                speakFeedback("Failed to load aging accounts")
+            }
+        }
+    }
+
+    /**
+     * Resolve DNFB account (mark as billed)
+     */
+    private fun resolveDNFBAccount(index: Int) {
+        if (dnfbAccounts.isEmpty()) {
+            speakFeedback("No D N F B accounts loaded. Say show D N F B first.")
+            return
+        }
+
+        if (index < 0 || index >= dnfbAccounts.size) {
+            speakFeedback("Invalid account number")
+            return
+        }
+
+        val account = dnfbAccounts[index]
+
+        lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/dnfb/${account.dnfbId}/resolve")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.setRequestProperty("Content-Type", "application/json")
+                    conn.doOutput = true
+
+                    conn.outputStream.use { os ->
+                        os.write("{}".toByteArray())
+                    }
+
+                    conn.inputStream.bufferedReader().readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                if (json.optBoolean("success")) {
+                    speakFeedback("Account ${index + 1} resolved")
+                    // Refresh the list
+                    showDNFBWorklist(currentDNFBFilter)
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Resolve DNFB failed: ${e.message}")
+                speakFeedback("Failed to resolve account")
+            }
+        }
+    }
+
+    /**
+     * Show patient's DNFB status
+     */
+    private fun showPatientDNFB() {
+        val patientId = currentPatientData?.optString("patient_id", "")
+        if (patientId.isNullOrEmpty()) {
+            speakFeedback("No patient loaded")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    java.net.URL("$EHR_PROXY_URL/api/v1/patient/$patientId/dnfb").readText()
+                }
+
+                val json = org.json.JSONObject(response)
+                val accounts = json.optJSONArray("accounts") ?: org.json.JSONArray()
+                val activeCount = json.optInt("active_count", 0)
+                val unbilledCharges = json.optDouble("total_unbilled_charges", 0.0)
+
+                val sb = StringBuilder()
+                sb.appendLine("📋 PATIENT DNFB STATUS")
+                sb.appendLine("═".repeat(40))
+
+                if (activeCount == 0) {
+                    sb.appendLine("No unbilled accounts for this patient")
+                    speakFeedback("No unbilled accounts for current patient")
+                } else {
+                    sb.appendLine("Unbilled: $activeCount accounts")
+                    sb.appendLine("Total: \$${String.format("%,.0f", unbilledCharges)}")
+                    sb.appendLine()
+
+                    for (i in 0 until accounts.length()) {
+                        val acc = accounts.getJSONObject(i)
+                        if (acc.optBoolean("is_resolved")) continue
+
+                        val discharge = acc.optString("discharge_date", "")
+                        val days = acc.optInt("days_since_discharge", 0)
+                        val reason = acc.optString("reason", "").replace("_", " ")
+                        val charges = acc.optDouble("estimated_charges", 0.0)
+
+                        sb.appendLine("${i + 1}. Discharged: $discharge ($days days)")
+                        sb.appendLine("   Reason: $reason")
+                        sb.appendLine("   Charges: \$${String.format("%,.0f", charges)}")
+                        sb.appendLine()
+                    }
+
+                    speakFeedback("Patient has $activeCount unbilled accounts totaling ${String.format("%,.0f", unbilledCharges)} dollars")
+                }
+
+                runOnUiThread {
+                    transcriptText.text = sb.toString()
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Patient DNFB fetch failed: ${e.message}")
+                speakFeedback("Failed to load patient D N F B status")
+            }
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -8230,7 +9740,7 @@ SOFA Score: [X]
             try {
                 speakFeedback("Loading worklist")
                 val response = withContext(Dispatchers.IO) {
-                    java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist").readText()
+                    java.net.URL("$EHR_PROXY_URL/api/v1/worklist").readText()
                 }
                 val json = org.json.JSONObject(response)
                 val patients = json.getJSONArray("patients")
@@ -8328,7 +9838,7 @@ SOFA Score: [X]
                 }
 
                 val response = withContext(Dispatchers.IO) {
-                    val url = java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist/check-in")
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/worklist/check-in")
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "POST"
                     conn.setRequestProperty("Content-Type", "application/json")
@@ -8357,7 +9867,7 @@ SOFA Score: [X]
         lifecycleScope.launch {
             try {
                 val response = withContext(Dispatchers.IO) {
-                    java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist/next").readText()
+                    java.net.URL("$EHR_PROXY_URL/api/v1/worklist/next").readText()
                 }
                 val json = org.json.JSONObject(response)
                 val nextPatient = json.optJSONObject("next_patient")
@@ -8419,7 +9929,7 @@ SOFA Score: [X]
                 }
 
                 val response = withContext(Dispatchers.IO) {
-                    val url = java.net.URL("$EHR_PROXY_BASE_URL/api/v1/worklist/status")
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/worklist/status")
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "POST"
                     conn.setRequestProperty("Content-Type", "application/json")
@@ -13678,7 +15188,7 @@ SOFA Score: [X]
 
         // Recording indicator
         val recordingIndicator = TextView(this).apply {
-            id = R.id.text1  // Using a different ID for recording status
+            id = android.R.id.text1  // Using a different ID for recording status
             text = "🔴 Listening..."
             textSize = 18f
             setTextColor(0xFFE53935.toInt())
@@ -16576,6 +18086,203 @@ SOFA Score: [X]
                 // TTS readout of differential diagnosis
                 speakDdxResults()
             }
+            // ═══ IMAGE ANALYSIS COMMANDS (Feature #70) ═══
+            lower.contains("take photo") || lower.contains("capture image") ||
+            lower.contains("take picture") || lower.contains("take image") -> {
+                // General image capture
+                startImageCapture(null)
+            }
+            lower.contains("analyze wound") || lower.contains("wound photo") ||
+            lower.contains("capture wound") || lower.contains("wound image") -> {
+                // Wound-specific image capture
+                startImageCapture("wound")
+            }
+            lower.contains("analyze rash") || lower.contains("skin rash") ||
+            lower.contains("capture rash") || lower.contains("skin photo") ||
+            lower.contains("dermatology") -> {
+                // Dermatology/rash image capture
+                startImageCapture("rash")
+            }
+            lower.contains("analyze xray") || lower.contains("x-ray") ||
+            lower.contains("capture xray") || lower.contains("radiology") -> {
+                // X-ray image capture
+                startImageCapture("xray")
+            }
+            lower.contains("read analysis") || lower.contains("image results") ||
+            lower.contains("speak analysis") || lower.contains("read image") -> {
+                // TTS readout of image analysis
+                speakImageAnalysisResults()
+            }
+            // ═══ BILLING/CODING COMMANDS (Feature #71) ═══
+            lower.contains("create claim") || lower.contains("bill this") ||
+            lower.contains("start billing") || lower.contains("billing for this") -> {
+                // Create billing claim from current saved note
+                lastSavedNoteId?.let { noteId ->
+                    createClaimFromNote(noteId)
+                } ?: run {
+                    speakFeedback("No saved note. Save a note first before creating a claim.")
+                    Toast.makeText(this, "Save note first", Toast.LENGTH_SHORT).show()
+                }
+            }
+            lower.contains("submit claim") || lower.contains("send claim") ||
+            lower.contains("submit billing") -> {
+                // Submit current claim (requires confirmation)
+                submitBillingClaim()
+            }
+            lower == "confirm" || lower.contains("confirm submission") ||
+            lower.contains("yes submit") || lower.contains("confirm claim") -> {
+                // Confirm pending claim submission
+                if (isAwaitingClaimConfirmation) {
+                    confirmClaimSubmission()
+                }
+            }
+            (lower == "cancel" || lower.contains("cancel submission") ||
+            lower.contains("don't submit") || lower.contains("cancel claim")) &&
+            isAwaitingClaimConfirmation -> {
+                // Cancel pending claim submission
+                isAwaitingClaimConfirmation = false
+                speakFeedback("Claim submission cancelled.")
+                Toast.makeText(this, "Submission cancelled", Toast.LENGTH_SHORT).show()
+            }
+            lower.contains("show claims") || lower.contains("claim history") ||
+            lower.contains("view claims") || lower.contains("billing history") -> {
+                // Show claim history for current patient
+                showClaimHistory()
+            }
+            lower.contains("close billing") || lower.contains("hide billing") ||
+            lower.contains("exit billing") -> {
+                // Close billing UI
+                closeBillingUI()
+            }
+            lower.contains("add diagnosis") || lower.contains("add icd") -> {
+                // Add ICD-10 diagnosis to current claim: "add diagnosis J06.9"
+                val code = lower
+                    .replace("add diagnosis", "")
+                    .replace("add icd", "")
+                    .replace("code", "")
+                    .trim()
+                    .uppercase()
+                if (code.isNotEmpty() && currentClaim != null) {
+                    addDiagnosisToClaim(code)
+                } else if (currentClaim == null) {
+                    speakFeedback("No active claim. Say create claim first.")
+                } else {
+                    speakFeedback("Say add diagnosis followed by the I C D 10 code.")
+                }
+            }
+            lower.contains("remove diagnosis") || lower.contains("delete diagnosis") -> {
+                // Remove diagnosis by number: "remove diagnosis 2"
+                val match = Regex("\\d+").find(lower)
+                if (match != null && currentClaim != null) {
+                    val index = match.value.toIntOrNull()?.minus(1) ?: -1
+                    removeDiagnosisFromClaim(index)
+                } else if (currentClaim == null) {
+                    speakFeedback("No active claim.")
+                } else {
+                    speakFeedback("Say remove diagnosis followed by the number.")
+                }
+            }
+            lower.contains("add procedure") || lower.contains("add cpt") -> {
+                // Add CPT procedure to current claim: "add procedure 99213"
+                val code = lower
+                    .replace("add procedure", "")
+                    .replace("add cpt", "")
+                    .replace("code", "")
+                    .trim()
+                    .uppercase()
+                if (code.isNotEmpty() && currentClaim != null) {
+                    addProcedureToClaim(code)
+                } else if (currentClaim == null) {
+                    speakFeedback("No active claim. Say create claim first.")
+                } else {
+                    speakFeedback("Say add procedure followed by the C P T code.")
+                }
+            }
+            lower.contains("add modifier") -> {
+                // Add modifier to procedure: "add modifier 25 to 1" or "add modifier 25"
+                val parts = lower.replace("add modifier", "").trim()
+                val modMatch = Regex("([0-9A-Za-z]{2})").find(parts)
+                val toMatch = Regex("to\\s+(\\d+)").find(parts)
+                if (modMatch != null && currentClaim != null) {
+                    val modifier = modMatch.groupValues[1].uppercase()
+                    val procIndex = toMatch?.groupValues?.get(1)?.toIntOrNull()?.minus(1) ?: 0
+                    addModifierToProcedure(modifier, procIndex)
+                } else if (currentClaim == null) {
+                    speakFeedback("No active claim.")
+                } else {
+                    speakFeedback("Say add modifier followed by the modifier code.")
+                }
+            }
+            lower.contains("search icd") || lower.contains("find icd") ||
+            lower.contains("lookup icd") -> {
+                // Search ICD-10 codes: "search icd hypertension"
+                val query = lower
+                    .replace("search icd", "")
+                    .replace("find icd", "")
+                    .replace("lookup icd", "")
+                    .replace("code", "")
+                    .replace("codes", "")
+                    .trim()
+                if (query.isNotEmpty()) {
+                    searchICD10Codes(query)
+                } else {
+                    speakFeedback("Say search I C D followed by the term to search.")
+                }
+            }
+            lower.contains("search cpt") || lower.contains("find cpt") ||
+            lower.contains("lookup cpt") -> {
+                // Search CPT codes: "search cpt office visit"
+                val query = lower
+                    .replace("search cpt", "")
+                    .replace("find cpt", "")
+                    .replace("lookup cpt", "")
+                    .replace("code", "")
+                    .replace("codes", "")
+                    .trim()
+                if (query.isNotEmpty()) {
+                    searchCPTCodes(query)
+                } else {
+                    speakFeedback("Say search C P T followed by the term to search.")
+                }
+            }
+            // ═══ DNFB (DISCHARGED NOT FINAL BILLED) COMMANDS (Feature #72) ═══
+            lower.contains("show dnfb") || lower.contains("dnfb worklist") ||
+            lower.contains("dnfb list") || lower.contains("unbilled accounts") ||
+            lower.contains("discharged not billed") -> {
+                // Show DNFB worklist
+                showDNFBWorklist()
+            }
+            lower.contains("dnfb summary") || lower.contains("dnfb metrics") ||
+            lower.contains("unbilled summary") -> {
+                // Show DNFB summary metrics
+                showDNFBSummary()
+            }
+            lower.contains("prior auth issue") || lower.contains("prior authorization issue") ||
+            lower.contains("prior auth problem") || lower.contains("auth issues") -> {
+                // Show prior auth related DNFB
+                showPriorAuthIssues()
+            }
+            (lower.contains("over") && lower.contains("days") &&
+             (lower.contains("dnfb") || lower.contains("unbilled") || lower.contains("aging"))) -> {
+                // Show aging DNFB: "over 7 days", "dnfb over 14 days"
+                val daysMatch = Regex("(\\d+)\\s*days?").find(lower)
+                val days = daysMatch?.groupValues?.get(1)?.toIntOrNull() ?: 7
+                showDNFBOverDays(days)
+            }
+            lower.contains("resolve") && Regex("\\d+").containsMatchIn(lower) &&
+            (lower.contains("dnfb") || dnfbAccounts.isNotEmpty()) -> {
+                // Resolve DNFB account by number: "resolve 1", "resolve dnfb 2"
+                val match = Regex("\\d+").find(lower)
+                if (match != null) {
+                    val index = match.value.toIntOrNull()?.minus(1) ?: -1
+                    resolveDNFBAccount(index)
+                }
+            }
+            lower.contains("patient dnfb") || lower.contains("patient unbilled") ||
+            (lower.contains("this patient") && lower.contains("dnfb")) -> {
+                // Show current patient's DNFB status
+                showPatientDNFB()
+            }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
                 // Generate note from pending transcript
@@ -16870,7 +18577,7 @@ SOFA Score: [X]
                     val patientNum = numMatch.groupValues[1].toIntOrNull()?.minus(1) ?: -1
                     if (patientNum >= 0 && patientNum < worklistPatients.size) {
                         val patient = worklistPatients[patientNum]
-                        loadPatientById(patient.patientId)
+                        fetchPatientData(patient.patientId)
                     } else {
                         // Check patient history instead
                         loadPatientFromHistory(patientNum + 1)

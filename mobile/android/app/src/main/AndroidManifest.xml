@@ -75,5 +75,19 @@
             android:screenOrientation="landscape"
             android:exported="false" />
 
+        <!-- Image Capture Activity (Feature #70 - Medical Image Recognition) -->
+        <activity
+            android:name=".ImageCaptureActivity"
+            android:label="Capture Image"
+            android:screenOrientation="landscape"
+            android:exported="false" />
+
+        <!-- QR Pairing Activity (Device Authentication) -->
+        <activity
+            android:name=".QrPairingActivity"
+            android:label="Pair Device"
+            android:screenOrientation="landscape"
+            android:exported="false" />
+
     </application>
 </manifest>

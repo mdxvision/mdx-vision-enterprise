@@ -1,8 +1,8 @@
 # MDx Vision - Complete Feature Checklist
 
-**Last Updated:** January 1, 2025
-**Total Features:** 69 Implemented | 5 Planned
-**Test Coverage:** 104 tests passing (100%)
+**Last Updated:** January 1, 2026
+**Total Features:** 72 Implemented | 2 Planned
+**Test Coverage:** 194 tests passing (100%)
 
 ---
 
@@ -108,6 +108,60 @@
 - [x] Safety disclaimer: "For clinical decision support only"
 - [x] Rule-based fallback when AI unavailable
 - [x] HIPAA audit logging for all DDx requests
+
+---
+
+## Medical Image Recognition
+
+- [x] Claude Vision-powered image analysis (claude-3-5-sonnet)
+- [x] Capture via camera activity (ImageCaptureActivity)
+- [x] Clinical assessment with findings
+- [x] ICD-10 codes for documentation
+- [x] Recommendations for workup/treatment
+- [x] Red flags requiring immediate attention
+- [x] Differential considerations
+- [x] Context types: wound, rash, xray, general
+- [x] Voice commands: "take photo", "analyze wound", "analyze rash", "analyze xray"
+- [x] TTS readback: "read analysis", "image results"
+- [x] Safety disclaimer: "For clinical decision support only"
+- [x] Size limit: 15MB max image
+- [x] HIPAA audit logging (no image data in logs)
+
+---
+
+## Billing/Coding Submission
+
+- [x] Create billing claims from saved clinical notes
+- [x] Auto-populate ICD-10 diagnoses from note
+- [x] Auto-populate CPT procedures from note
+- [x] Review/edit diagnoses before submission
+- [x] Review/edit procedures before submission
+- [x] Add/remove diagnoses by voice: "add diagnosis J06.9", "remove diagnosis 2"
+- [x] Add/remove procedures by voice: "add procedure 99213"
+- [x] CPT modifier support: "add modifier 25 to 1"
+- [x] ICD-10 code search: "search icd hypertension"
+- [x] CPT code search: "search cpt office visit"
+- [x] Submit claims with confirmation workflow
+- [x] FHIR Claim resource generation (R4)
+- [x] Claim history tracking per patient: "show claims", "claim history"
+- [x] Voice commands: "create claim", "bill this", "submit claim", "confirm", "close billing"
+- [x] HIPAA audit logging for all billing operations
+
+---
+
+## DNFB (Discharged Not Final Billed)
+
+- [x] DNFB worklist for unbilled discharged accounts
+- [x] Aging bucket tracking (0-3, 4-7, 8-14, 15-30, 31+ days)
+- [x] Reason codes: coding incomplete, documentation missing, charges pending
+- [x] Prior authorization tracking (pending, approved, denied, expired, not obtained)
+- [x] Prior auth issue filtering and at-risk revenue calculation
+- [x] DNFB summary metrics with breakdown by reason and aging
+- [x] Patient-specific DNFB status view
+- [x] Resolve accounts and link to billing claims
+- [x] Voice commands: "show DNFB", "DNFB summary", "prior auth issues"
+- [x] Voice commands: "over 7 days", "resolve 1", "patient DNFB"
+- [x] HIPAA audit logging for all DNFB operations
 
 ---
 
@@ -590,11 +644,12 @@
 | test_api.py | 19 | PASS |
 | test_worklist_crud.py | 58 | PASS |
 | test_ddx.py | 27 | PASS |
+| test_image_analysis.py | 27 | PASS |
 | MainActivityTest.kt | 12 | PASS (Android) |
 | PatientVisitWorkflowTest.kt | 8 | PASS (Android) |
 | AmbientClinicalIntelligenceTest.kt | 20 | PASS (Android) |
 | AciIntegrationTest.kt | 13 | PASS (Android) |
-| **Total** | **104** | **100%** |
+| **Total** | **131** | **100%** |
 
 ---
 
@@ -607,7 +662,7 @@
 
 ### Medium Priority
 - [ ] Vuzix HUD native overlay (using standard Android UI)
-- [ ] Image recognition (camera AI for wounds, rashes)
+- [x] Image recognition (camera AI for wounds, rashes) ✅ Feature #70
 - [ ] Billing/coding submission workflow
 
 ### Low Priority / Future

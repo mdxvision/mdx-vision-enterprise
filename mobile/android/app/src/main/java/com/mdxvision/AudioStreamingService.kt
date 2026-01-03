@@ -45,7 +45,7 @@ class AudioStreamingService(
 
         // WebSocket URL (10.0.2.2 = host machine from emulator)
         const val WS_URL_EMULATOR = "ws://10.0.2.2:8002/ws/transcribe"
-        const val WS_URL_DEVICE = "ws://192.168.1.100:8002/ws/transcribe"  // Update for your network
+        const val WS_URL_DEVICE = "ws://192.168.1.243:8002/ws/transcribe"  // Mac IP for Galaxy S24
     }
 
     data class TranscriptionResult(
@@ -107,11 +107,15 @@ class AudioStreamingService(
             return false
         }
 
-        // Determine WebSocket URL
+        // Determine WebSocket URL - use device URL for physical devices
+        val isEmulator = android.os.Build.FINGERPRINT.contains("generic") ||
+                         android.os.Build.MODEL.contains("Emulator") ||
+                         android.os.Build.MANUFACTURER.contains("Genymotion")
+        val baseUrl = if (isEmulator) WS_URL_EMULATOR else WS_URL_DEVICE
         val wsUrl = if (provider != null) {
-            "$WS_URL_EMULATOR/$provider"
+            "${baseUrl.removeSuffix("/ws/transcribe")}/ws/transcribe/$provider"
         } else {
-            WS_URL_EMULATOR
+            baseUrl
         }
 
         Log.d(TAG, "Connecting to: $wsUrl")

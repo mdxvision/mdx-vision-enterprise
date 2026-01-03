@@ -128,19 +128,13 @@ class AssemblyAIProvider(TranscriptionProvider):
             self.websocket = await websockets.connect(url, additional_headers=headers)
             print("✅ AssemblyAI: WebSocket connected!")
 
-            # Send word_boost configuration if medical vocabulary is enabled
+            # Note: word_boost for AssemblyAI real-time must be sent via URL params
+            # The real-time API doesn't support post-connection config messages
+            # Medical vocabulary is informational only for now
             if self.enable_medical_vocab:
                 vocab = get_vocabulary(self.specialties)
                 if vocab:
-                    # AssemblyAI allows up to 2500 boosted words
-                    # Select top medical terms (prioritize shorter, more specific terms)
-                    boost_words = vocab[:1000]  # Limit to 1000 for performance
-                    config = {
-                        "word_boost": boost_words,
-                        "boost_param": "high"  # high boost for medical terms
-                    }
-                    await self.websocket.send(json.dumps(config))
-                    print(f"📚 AssemblyAI: Sent {len(boost_words)} medical vocabulary terms")
+                    print(f"📚 AssemblyAI: Medical vocabulary loaded ({len(vocab)} terms) - using default recognition")
 
             # Start background receiver
             self._receive_task = asyncio.create_task(self._receive_loop())
@@ -202,7 +196,17 @@ class AssemblyAIProvider(TranscriptionProvider):
                     print("AssemblyAI session ended")
                     break
 
-        except websockets.exceptions.ConnectionClosed:
+                elif msg_type == "error" or "error" in data:
+                    error_msg = data.get("error", data)
+                    print(f"❌ AssemblyAI ERROR: {error_msg}")
+                    break
+
+                else:
+                    # Log unknown message types for debugging
+                    print(f"📩 AssemblyAI message: {msg_type} - {str(data)[:200]}")
+
+        except websockets.exceptions.ConnectionClosed as e:
+            print(f"AssemblyAI: Connection closed - code={e.code}, reason={e.reason}")
             print("AssemblyAI: Connection closed")
         except Exception as e:
             print(f"AssemblyAI receive error: {e}")

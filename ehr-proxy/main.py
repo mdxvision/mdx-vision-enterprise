@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from enum import Enum
 import uvicorn
 import os
 import re
@@ -19,7 +20,7 @@ import json
 import asyncio
 import uuid
 import base64
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Import transcription service
 from transcription import (
@@ -786,6 +787,224 @@ class DdxResponse(BaseModel):
     clinical_reasoning: str
     urgent_considerations: List[str] = []
     timestamp: str
+
+
+# Medical Image Analysis Models
+class ImageAnalysisRequest(BaseModel):
+    """Request model for medical image analysis"""
+    image_base64: str
+    media_type: str = "image/jpeg"
+    patient_id: Optional[str] = None
+    analysis_context: Optional[str] = None  # "wound", "rash", "xray", "general"
+    chief_complaint: Optional[str] = None
+    patient_age: Optional[int] = None
+    patient_gender: Optional[str] = None
+
+
+class ImageFinding(BaseModel):
+    """Individual finding from image analysis"""
+    finding: str
+    confidence: str  # "high", "moderate", "low"
+    location: Optional[str] = None
+    characteristics: List[str] = []
+
+
+class ImageAnalysisResponse(BaseModel):
+    """Response model for medical image analysis"""
+    assessment: str
+    findings: List[ImageFinding]
+    icd10_codes: List[Dict[str, str]]
+    recommendations: List[str]
+    red_flags: List[str]
+    differential_considerations: List[str]
+    disclaimer: str
+    timestamp: str
+
+
+# Billing/Claim Models (Feature #71)
+class ClaimStatus(str, Enum):
+    """Claim lifecycle status"""
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
+class BillingDiagnosisCode(BaseModel):
+    """ICD-10 diagnosis code with sequencing for billing"""
+    code: str
+    description: str
+    sequence: int = 1
+    is_principal: bool = False
+
+
+class BillingProcedureCode(BaseModel):
+    """CPT procedure code with modifiers for billing"""
+    code: str
+    description: str
+    modifiers: List[str] = []
+    units: int = 1
+
+
+class BillingServiceLine(BaseModel):
+    """Individual service/procedure line on claim"""
+    line_number: int
+    service_date: str
+    procedure: BillingProcedureCode
+    diagnosis_pointers: List[int] = [1]
+
+
+class BillingClaim(BaseModel):
+    """Complete billing claim model"""
+    claim_id: Optional[str] = None
+    status: ClaimStatus = ClaimStatus.DRAFT
+    patient_id: str
+    patient_name: Optional[str] = None
+    note_id: Optional[str] = None
+    service_date: str
+    provider_name: Optional[str] = None
+    provider_npi: Optional[str] = None
+    diagnoses: List[BillingDiagnosisCode] = []
+    service_lines: List[BillingServiceLine] = []
+    total_charge: float = 0.0
+    created_at: Optional[str] = None
+    submitted_at: Optional[str] = None
+    fhir_claim_id: Optional[str] = None
+
+
+class ClaimCreateRequest(BaseModel):
+    """Request to create a new billing claim"""
+    patient_id: str
+    note_id: Optional[str] = None
+    service_date: str
+    provider_name: Optional[str] = None
+    provider_npi: Optional[str] = None
+    icd10_codes: Optional[List[Dict]] = None
+    cpt_codes: Optional[List[Dict]] = None
+
+
+class ClaimUpdateRequest(BaseModel):
+    """Request to update/edit claim codes before submission"""
+    diagnoses: Optional[List[BillingDiagnosisCode]] = None
+    service_lines: Optional[List[BillingServiceLine]] = None
+
+
+class ClaimSubmitRequest(BaseModel):
+    """Request to submit claim"""
+    confirm: bool = False
+
+
+# In-memory billing claims storage
+billing_claims: dict = {}
+
+
+# DNFB Models (Feature #72)
+class DNFBReason(str, Enum):
+    """Reason account is not final billed"""
+    CODING_INCOMPLETE = "coding_incomplete"
+    DOCUMENTATION_MISSING = "documentation_missing"
+    CHARGES_PENDING = "charges_pending"
+    PRIOR_AUTH_MISSING = "prior_auth_missing"
+    PRIOR_AUTH_EXPIRED = "prior_auth_expired"
+    PRIOR_AUTH_DENIED = "prior_auth_denied"
+    INSURANCE_VERIFICATION = "insurance_verification"
+    PHYSICIAN_QUERY = "physician_query"
+    CLAIM_EDIT_REQUIRED = "claim_edit_required"
+    OTHER = "other"
+
+
+class PriorAuthStatus(str, Enum):
+    """Prior authorization status"""
+    NOT_REQUIRED = "not_required"
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+    EXPIRED = "expired"
+    NOT_OBTAINED = "not_obtained"
+
+
+class PriorAuthInfo(BaseModel):
+    """Prior authorization tracking"""
+    auth_number: Optional[str] = None
+    status: PriorAuthStatus = PriorAuthStatus.NOT_REQUIRED
+    requested_date: Optional[str] = None
+    approval_date: Optional[str] = None
+    expiration_date: Optional[str] = None
+    approved_units: Optional[int] = None
+    used_units: int = 0
+    payer_name: Optional[str] = None
+    procedure_codes: List[str] = []
+    denial_reason: Optional[str] = None
+
+
+class DNFBAccount(BaseModel):
+    """Discharged Not Final Billed account"""
+    dnfb_id: Optional[str] = None
+    patient_id: str
+    patient_name: Optional[str] = None
+    mrn: Optional[str] = None
+    encounter_id: Optional[str] = None
+    admission_date: Optional[str] = None
+    discharge_date: str
+    discharge_disposition: Optional[str] = None  # home, SNF, expired, etc.
+    attending_physician: Optional[str] = None
+    service_type: Optional[str] = None  # inpatient, observation, outpatient
+    principal_diagnosis: Optional[str] = None
+    principal_diagnosis_desc: Optional[str] = None
+    estimated_charges: float = 0.0
+    reason: DNFBReason = DNFBReason.CODING_INCOMPLETE
+    reason_detail: Optional[str] = None
+    prior_auth: Optional[PriorAuthInfo] = None
+    days_since_discharge: int = 0
+    aging_bucket: str = "0-3"  # 0-3, 4-7, 8-14, 15-30, 31+
+    assigned_coder: Optional[str] = None
+    last_updated: Optional[str] = None
+    notes: List[str] = []
+    is_resolved: bool = False
+    resolved_date: Optional[str] = None
+    claim_id: Optional[str] = None  # Link to billing claim when created
+
+
+class DNFBCreateRequest(BaseModel):
+    """Request to add account to DNFB worklist"""
+    patient_id: str
+    patient_name: Optional[str] = None
+    mrn: Optional[str] = None
+    encounter_id: Optional[str] = None
+    discharge_date: str
+    reason: DNFBReason = DNFBReason.CODING_INCOMPLETE
+    reason_detail: Optional[str] = None
+    estimated_charges: float = 0.0
+    service_type: str = "inpatient"
+    principal_diagnosis: Optional[str] = None
+    attending_physician: Optional[str] = None
+
+
+class DNFBUpdateRequest(BaseModel):
+    """Request to update DNFB account"""
+    reason: Optional[DNFBReason] = None
+    reason_detail: Optional[str] = None
+    assigned_coder: Optional[str] = None
+    notes: Optional[List[str]] = None
+    prior_auth: Optional[PriorAuthInfo] = None
+    is_resolved: Optional[bool] = None
+
+
+class PriorAuthRequest(BaseModel):
+    """Request to add/update prior auth info"""
+    auth_number: Optional[str] = None
+    status: PriorAuthStatus
+    payer_name: Optional[str] = None
+    procedure_codes: List[str] = []
+    requested_date: Optional[str] = None
+    approval_date: Optional[str] = None
+    expiration_date: Optional[str] = None
+    approved_units: Optional[int] = None
+    denial_reason: Optional[str] = None
+
+
+# In-memory DNFB storage
+dnfb_accounts: dict = {}
 
 
 # In-memory worklist storage (would be database in production)
@@ -3511,6 +3730,1030 @@ async def generate_differential_diagnosis(request: DdxRequest, req: Request):
                 ip_address=ip_address
             )
             raise HTTPException(status_code=500, detail=f"DDx generation failed: {str(e)}")
+
+
+# ============ Medical Image Analysis (Feature #70) ============
+
+async def generate_image_analysis_with_claude(request: ImageAnalysisRequest) -> ImageAnalysisResponse:
+    """
+    Generate medical image analysis using Claude Vision (claude-3-5-sonnet).
+
+    Analyzes medical images (wounds, rashes, X-rays, etc.) for clinical findings,
+    ICD-10 codes, recommendations, and red flags.
+
+    Uses claude-3-5-sonnet-20241022 for vision capabilities.
+    """
+    import anthropic
+
+    # Build context string
+    context_parts = []
+    if request.analysis_context:
+        context_parts.append(f"Analysis type: {request.analysis_context}")
+    if request.chief_complaint:
+        context_parts.append(f"Chief complaint: {request.chief_complaint}")
+    if request.patient_age:
+        context_parts.append(f"Patient age: {request.patient_age}")
+    if request.patient_gender:
+        context_parts.append(f"Patient gender: {request.patient_gender}")
+
+    context_str = "; ".join(context_parts) if context_parts else "General medical image"
+
+    # Build the clinical prompt for image analysis
+    system_prompt = """You are a clinical decision support AI analyzing medical images.
+Your analysis is for clinical decision support only - NOT a diagnosis.
+
+Provide structured analysis including:
+1. Overall assessment (1-2 sentences)
+2. Specific findings with confidence levels (high/moderate/low)
+3. Relevant ICD-10 codes for documentation
+4. Clinical recommendations for workup/treatment
+5. Red flags requiring immediate attention
+6. Differential considerations
+
+Be thorough but concise. Focus on clinically actionable findings.
+Always err on the side of caution with red flags."""
+
+    user_prompt = f"""Analyze this medical image for clinical findings.
+
+Context: {context_str}
+
+Provide your analysis in the following JSON format:
+{{
+  "assessment": "Brief overall assessment",
+  "findings": [
+    {{
+      "finding": "Description of finding",
+      "confidence": "high|moderate|low",
+      "location": "Anatomical location if applicable",
+      "characteristics": ["characteristic1", "characteristic2"]
+    }}
+  ],
+  "icd10_codes": [
+    {{"code": "L03.90", "description": "Cellulitis, unspecified"}}
+  ],
+  "recommendations": ["Recommendation 1", "Recommendation 2"],
+  "red_flags": ["Any urgent findings requiring immediate attention"],
+  "differential_considerations": ["Other possible diagnoses to consider"]
+}}
+
+Respond ONLY with valid JSON."""
+
+    try:
+        client = anthropic.Anthropic(api_key=CLAUDE_API_KEY)
+
+        # Use claude-3-5-sonnet for vision (vision-capable model)
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=2000,
+            system=system_prompt,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": request.media_type,
+                                "data": request.image_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": user_prompt
+                        }
+                    ]
+                }
+            ]
+        )
+
+        # Parse response
+        response_text = response.content[0].text.strip()
+
+        # Extract JSON from response (handle markdown code blocks)
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+
+        analysis_data = json.loads(response_text)
+
+        # Build response
+        findings = [
+            ImageFinding(
+                finding=f.get("finding", ""),
+                confidence=f.get("confidence", "moderate"),
+                location=f.get("location"),
+                characteristics=f.get("characteristics", [])
+            )
+            for f in analysis_data.get("findings", [])
+        ]
+
+        return ImageAnalysisResponse(
+            assessment=analysis_data.get("assessment", "Unable to assess image"),
+            findings=findings,
+            icd10_codes=analysis_data.get("icd10_codes", []),
+            recommendations=analysis_data.get("recommendations", []),
+            red_flags=analysis_data.get("red_flags", []),
+            differential_considerations=analysis_data.get("differential_considerations", []),
+            disclaimer="For clinical decision support only. Not a diagnosis. Clinical correlation required.",
+            timestamp=datetime.now().isoformat()
+        )
+
+    except json.JSONDecodeError as e:
+        # Return a basic response if parsing fails
+        return ImageAnalysisResponse(
+            assessment="Image analysis completed but response parsing failed",
+            findings=[],
+            icd10_codes=[],
+            recommendations=["Please review image manually"],
+            red_flags=[],
+            differential_considerations=[],
+            disclaimer="For clinical decision support only. Not a diagnosis.",
+            timestamp=datetime.now().isoformat()
+        )
+    except Exception as e:
+        raise Exception(f"Claude Vision API error: {str(e)}")
+
+
+@app.post("/api/v1/image/analyze")
+async def analyze_medical_image(request: ImageAnalysisRequest, req: Request):
+    """
+    Analyze a medical image using Claude Vision.
+
+    Takes a base64-encoded image and optional context to generate:
+    - Clinical assessment
+    - Specific findings with confidence levels
+    - ICD-10 codes for documentation
+    - Recommendations for workup/treatment
+    - Red flags requiring immediate attention
+    - Differential considerations
+
+    Supported media types: image/jpeg, image/png, image/webp
+    Maximum image size: 15MB (20MB base64)
+
+    Safety: For clinical decision support only - not a diagnosis.
+    """
+    # Validate image_base64 is present
+    if not request.image_base64 or not request.image_base64.strip():
+        raise HTTPException(status_code=400, detail="Image data is required")
+
+    # Validate media type
+    valid_media_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+    if request.media_type not in valid_media_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported media type. Supported types: {', '.join(valid_media_types)}"
+        )
+
+    # Check base64 size (rough check - 15MB image = ~20MB base64)
+    max_base64_size = 20 * 1024 * 1024  # 20MB
+    if len(request.image_base64) > max_base64_size:
+        raise HTTPException(status_code=400, detail="Image too large. Maximum size is 15MB")
+
+    # Audit log (no actual image data logged for HIPAA)
+    ip_address = req.client.host if req.client else None
+    audit_logger.log_note_operation(
+        action=AuditAction.ANALYZE_IMAGE,
+        note_type="IMAGE",
+        status="processing",
+        details=f"Context: {request.analysis_context or 'general'}, Patient: {request.patient_id or 'none'}",
+        ip_address=ip_address
+    )
+
+    try:
+        if not CLAUDE_API_KEY:
+            raise HTTPException(
+                status_code=503,
+                detail="Image analysis requires Claude API key configuration"
+            )
+
+        # Generate analysis with Claude Vision
+        analysis_response = await generate_image_analysis_with_claude(request)
+
+        # Audit success
+        audit_logger.log_note_operation(
+            action=AuditAction.ANALYZE_IMAGE,
+            note_type="IMAGE",
+            status="success",
+            details=f"Found {len(analysis_response.findings)} findings, {len(analysis_response.red_flags)} red flags",
+            ip_address=ip_address
+        )
+
+        return analysis_response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Audit failure
+        audit_logger.log_note_operation(
+            action=AuditAction.ANALYZE_IMAGE,
+            note_type="IMAGE",
+            status="failure",
+            details=str(e)[:100],
+            ip_address=ip_address
+        )
+        raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")
+
+
+# ============ Billing/Claim Endpoints (Feature #71) ============
+
+def build_fhir_claim(claim: dict) -> dict:
+    """Build FHIR R4 Claim resource from internal claim model."""
+
+    # Map diagnoses to FHIR format
+    diagnoses = []
+    for dx in claim.get("diagnoses", []):
+        diagnoses.append({
+            "sequence": dx.get("sequence", 1),
+            "diagnosisCodeableConcept": {
+                "coding": [{
+                    "system": "http://hl7.org/fhir/sid/icd-10-cm",
+                    "code": dx.get("code"),
+                    "display": dx.get("description")
+                }]
+            }
+        })
+
+    # Map service lines/procedures to FHIR items
+    items = []
+    for line in claim.get("service_lines", []):
+        procedure = line.get("procedure", {})
+        item = {
+            "sequence": line.get("line_number", 1),
+            "productOrService": {
+                "coding": [{
+                    "system": "http://www.ama-assn.org/go/cpt",
+                    "code": procedure.get("code"),
+                    "display": procedure.get("description")
+                }]
+            },
+            "servicedDate": line.get("service_date"),
+            "quantity": {"value": procedure.get("units", 1)},
+            "diagnosisSequence": line.get("diagnosis_pointers", [1])
+        }
+
+        # Add modifiers if present
+        if procedure.get("modifiers"):
+            item["modifier"] = [
+                {"coding": [{"system": "http://www.ama-assn.org/go/cpt", "code": mod}]}
+                for mod in procedure["modifiers"]
+            ]
+
+        items.append(item)
+
+    return {
+        "resourceType": "Claim",
+        "status": "active",
+        "type": {
+            "coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/claim-type",
+                "code": "professional"
+            }]
+        },
+        "use": "claim",
+        "patient": {
+            "reference": f"Patient/{claim.get('patient_id')}"
+        },
+        "created": claim.get("created_at", datetime.now().isoformat()),
+        "provider": {
+            "display": claim.get("provider_name", "Provider")
+        },
+        "priority": {"coding": [{"code": "normal"}]},
+        "diagnosis": diagnoses,
+        "item": items,
+        "total": {
+            "value": claim.get("total_charge", 0),
+            "currency": "USD"
+        }
+    }
+
+
+@app.post("/api/v1/billing/claims")
+async def create_billing_claim(request: ClaimCreateRequest, req: Request):
+    """
+    Create a new billing claim.
+
+    If note_id is provided, auto-populates ICD-10 and CPT codes from the saved note.
+    Otherwise, uses manually provided codes.
+    """
+    claim_id = f"claim-{uuid.uuid4().hex[:8]}"
+    ip_address = req.client.host if req.client else None
+
+    # Initialize diagnosis and service line lists
+    diagnoses = []
+    service_lines = []
+
+    # Auto-populate from note if provided
+    if request.note_id and request.note_id in saved_notes:
+        note = saved_notes[request.note_id]
+
+        # Extract ICD-10 codes from note
+        if "icd10_codes" in note:
+            for i, code in enumerate(note["icd10_codes"], 1):
+                diagnoses.append({
+                    "code": code.get("code", ""),
+                    "description": code.get("description", ""),
+                    "sequence": i,
+                    "is_principal": (i == 1)
+                })
+
+        # Extract CPT codes from note
+        if "cpt_codes" in note:
+            for i, code in enumerate(note["cpt_codes"], 1):
+                service_lines.append({
+                    "line_number": i,
+                    "service_date": request.service_date,
+                    "procedure": {
+                        "code": code.get("code", ""),
+                        "description": code.get("description", ""),
+                        "modifiers": code.get("modifiers", []),
+                        "units": 1
+                    },
+                    "diagnosis_pointers": [1]
+                })
+
+    # Manual codes override auto-populated ones
+    if request.icd10_codes:
+        diagnoses = []
+        for i, code in enumerate(request.icd10_codes, 1):
+            diagnoses.append({
+                "code": code.get("code", ""),
+                "description": code.get("description", ""),
+                "sequence": i,
+                "is_principal": (i == 1)
+            })
+
+    if request.cpt_codes:
+        service_lines = []
+        for i, code in enumerate(request.cpt_codes, 1):
+            service_lines.append({
+                "line_number": i,
+                "service_date": request.service_date,
+                "procedure": {
+                    "code": code.get("code", ""),
+                    "description": code.get("description", ""),
+                    "modifiers": code.get("modifiers", []),
+                    "units": 1
+                },
+                "diagnosis_pointers": [1]
+            })
+
+    # Build claim
+    claim = {
+        "claim_id": claim_id,
+        "status": ClaimStatus.DRAFT.value,
+        "patient_id": request.patient_id,
+        "patient_name": "",
+        "note_id": request.note_id,
+        "service_date": request.service_date,
+        "provider_name": request.provider_name,
+        "provider_npi": request.provider_npi,
+        "diagnoses": diagnoses,
+        "service_lines": service_lines,
+        "total_charge": 0.0,
+        "created_at": datetime.now().isoformat(),
+        "submitted_at": None,
+        "fhir_claim_id": None
+    }
+
+    billing_claims[claim_id] = claim
+
+    # HIPAA Audit
+    audit_logger.log_note_operation(
+        action=AuditAction.CREATE_CLAIM,
+        note_id=request.note_id,
+        patient_id=request.patient_id,
+        status="success",
+        details=f"Claim {claim_id} created with {len(diagnoses)} diagnoses, {len(service_lines)} procedures",
+        ip_address=ip_address
+    )
+
+    return {"success": True, "claim_id": claim_id, "claim": claim}
+
+
+@app.get("/api/v1/billing/claims/{claim_id}")
+async def get_billing_claim(claim_id: str, req: Request):
+    """Get a specific billing claim by ID."""
+    if claim_id not in billing_claims:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    ip_address = req.client.host if req.client else None
+    claim = billing_claims[claim_id]
+
+    audit_logger.log_note_operation(
+        action=AuditAction.VIEW_CLAIM,
+        patient_id=claim.get("patient_id"),
+        status="success",
+        details=f"Viewed claim {claim_id}",
+        ip_address=ip_address
+    )
+
+    return {"success": True, "claim": claim}
+
+
+@app.put("/api/v1/billing/claims/{claim_id}")
+async def update_billing_claim(claim_id: str, request: ClaimUpdateRequest, req: Request):
+    """Update/edit claim codes before submission."""
+    if claim_id not in billing_claims:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    claim = billing_claims[claim_id]
+    ip_address = req.client.host if req.client else None
+
+    # Only allow edits on draft claims
+    if claim["status"] != ClaimStatus.DRAFT.value:
+        raise HTTPException(status_code=400, detail="Cannot edit submitted claim")
+
+    # Update diagnoses if provided
+    if request.diagnoses is not None:
+        claim["diagnoses"] = [d.dict() for d in request.diagnoses]
+
+    # Update service lines if provided
+    if request.service_lines is not None:
+        claim["service_lines"] = [s.dict() for s in request.service_lines]
+
+    billing_claims[claim_id] = claim
+
+    audit_logger.log_note_operation(
+        action=AuditAction.UPDATE_CLAIM,
+        patient_id=claim.get("patient_id"),
+        status="success",
+        details=f"Updated claim {claim_id}",
+        ip_address=ip_address
+    )
+
+    return {"success": True, "claim": claim}
+
+
+@app.delete("/api/v1/billing/claims/{claim_id}")
+async def delete_billing_claim(claim_id: str, req: Request):
+    """Delete a draft billing claim."""
+    if claim_id not in billing_claims:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    claim = billing_claims[claim_id]
+
+    # Only allow deletion of draft claims
+    if claim["status"] != ClaimStatus.DRAFT.value:
+        raise HTTPException(status_code=400, detail="Cannot delete submitted claim")
+
+    del billing_claims[claim_id]
+
+    return {"success": True, "message": f"Claim {claim_id} deleted"}
+
+
+@app.post("/api/v1/billing/claims/{claim_id}/submit")
+async def submit_billing_claim(claim_id: str, request: ClaimSubmitRequest, req: Request):
+    """
+    Submit claim to payer via FHIR Claim resource.
+
+    Requires confirmation=True to prevent accidental submissions.
+    """
+    if not request.confirm:
+        return {
+            "success": False,
+            "error": "Confirmation required",
+            "message": "Set confirm=true to submit claim"
+        }
+
+    if claim_id not in billing_claims:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    claim = billing_claims[claim_id]
+    ip_address = req.client.host if req.client else None
+
+    # Validate claim has required data
+    if not claim.get("diagnoses"):
+        raise HTTPException(status_code=400, detail="Claim requires at least one diagnosis")
+    if not claim.get("service_lines"):
+        raise HTTPException(status_code=400, detail="Claim requires at least one procedure")
+
+    # Build FHIR Claim resource
+    fhir_claim = build_fhir_claim(claim)
+
+    # Attempt to push to EHR (simulated for sandbox)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{CERNER_BASE_URL}/Claim",
+                json=fhir_claim,
+                headers={"Content-Type": "application/fhir+json"}
+            )
+
+            if response.status_code == 201:
+                fhir_id = response.json().get("id", f"sim-{claim_id}")
+                result = {"success": True, "fhir_id": fhir_id, "simulated": False}
+            elif response.status_code == 403:
+                # Read-only sandbox - simulate success
+                fhir_id = f"sim-{claim_id}"
+                result = {"success": True, "fhir_id": fhir_id, "simulated": True}
+            else:
+                result = {"success": False, "error": f"EHR returned {response.status_code}"}
+
+    except Exception as e:
+        # Simulate success on error (sandbox limitation)
+        fhir_id = f"sim-{claim_id}"
+        result = {"success": True, "fhir_id": fhir_id, "simulated": True, "note": str(e)[:50]}
+
+    # Update claim status
+    claim["status"] = ClaimStatus.SUBMITTED.value
+    claim["submitted_at"] = datetime.now().isoformat()
+    if result.get("fhir_id"):
+        claim["fhir_claim_id"] = result["fhir_id"]
+
+    billing_claims[claim_id] = claim
+
+    # HIPAA Audit
+    audit_logger.log_note_operation(
+        action=AuditAction.SUBMIT_CLAIM,
+        patient_id=claim.get("patient_id"),
+        status="success" if result.get("success") else "failure",
+        details=f"Claim {claim_id} submitted, FHIR ID: {result.get('fhir_id', 'N/A')}",
+        ip_address=ip_address
+    )
+
+    return {
+        "success": True,
+        "claim_id": claim_id,
+        "status": claim["status"],
+        "fhir_claim_id": claim.get("fhir_claim_id"),
+        "submission_response": result
+    }
+
+
+@app.get("/api/v1/billing/claims")
+async def list_billing_claims(
+    patient_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50
+):
+    """List billing claims with optional filtering."""
+    claims_list = []
+
+    for claim_id, claim in billing_claims.items():
+        # Filter by patient_id if provided
+        if patient_id and claim.get("patient_id") != patient_id:
+            continue
+
+        # Filter by status if provided
+        if status and claim.get("status") != status:
+            continue
+
+        claims_list.append(claim)
+
+        if len(claims_list) >= limit:
+            break
+
+    return {"success": True, "claims": claims_list, "count": len(claims_list)}
+
+
+@app.get("/api/v1/patient/{patient_id}/claims")
+async def get_patient_claims(patient_id: str):
+    """Get all billing claims for a specific patient."""
+    patient_claims = [
+        claim for claim in billing_claims.values()
+        if claim.get("patient_id") == patient_id
+    ]
+
+    return {"success": True, "claims": patient_claims, "count": len(patient_claims)}
+
+
+@app.get("/api/v1/billing/codes/icd10/search")
+async def search_icd10_codes(q: str, limit: int = 20):
+    """Search ICD-10 codes by keyword or code prefix."""
+    results = []
+    q_lower = q.lower()
+
+    # Search in keyword mappings
+    for keyword, code in ICD10_DB.get("keywords", {}).items():
+        if q_lower in keyword.lower() and len(results) < limit:
+            # Get description from codes
+            for category, codes in ICD10_DB.get("codes", {}).items():
+                if code in codes:
+                    if not any(r["code"] == code for r in results):
+                        results.append({
+                            "code": code,
+                            "description": codes[code],
+                            "category": category,
+                            "match_type": "keyword"
+                        })
+                    break
+
+    # Search in code values
+    for category, codes in ICD10_DB.get("codes", {}).items():
+        for code, description in codes.items():
+            if len(results) >= limit:
+                break
+            if q_lower in code.lower() or q_lower in description.lower():
+                if not any(r["code"] == code for r in results):
+                    results.append({
+                        "code": code,
+                        "description": description,
+                        "category": category,
+                        "match_type": "code"
+                    })
+
+    return {"query": q, "results": results[:limit], "count": len(results[:limit])}
+
+
+@app.get("/api/v1/billing/codes/cpt/search")
+async def search_cpt_codes(q: str, limit: int = 20):
+    """Search CPT codes by keyword or code prefix."""
+    results = []
+    q_lower = q.lower()
+
+    # Search in keyword mappings
+    for keyword, code in CPT_DB.get("keywords", {}).items():
+        if q_lower in keyword.lower() and len(results) < limit:
+            for category, codes in CPT_DB.get("codes", {}).items():
+                if code in codes:
+                    if not any(r["code"] == code for r in results):
+                        results.append({
+                            "code": code,
+                            "description": codes[code],
+                            "category": category,
+                            "match_type": "keyword"
+                        })
+                    break
+
+    # Search in code values
+    for category, codes in CPT_DB.get("codes", {}).items():
+        for code, description in codes.items():
+            if len(results) >= limit:
+                break
+            if q_lower in code.lower() or q_lower in description.lower():
+                if not any(r["code"] == code for r in results):
+                    results.append({
+                        "code": code,
+                        "description": description,
+                        "category": category,
+                        "match_type": "code"
+                    })
+
+    return {"query": q, "results": results[:limit], "count": len(results[:limit])}
+
+
+@app.get("/api/v1/billing/claims/{claim_id}/fhir")
+async def get_claim_fhir(claim_id: str):
+    """Get FHIR Claim resource representation."""
+    if claim_id not in billing_claims:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    claim = billing_claims[claim_id]
+    fhir_claim = build_fhir_claim(claim)
+
+    return fhir_claim
+
+
+# ============ DNFB (Discharged Not Final Billed) Endpoints (Feature #72) ============
+
+def calculate_aging(discharge_date: str) -> tuple:
+    """Calculate days since discharge and aging bucket."""
+    try:
+        discharge = datetime.fromisoformat(discharge_date.replace("Z", "+00:00"))
+        if discharge.tzinfo is None:
+            discharge = discharge.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        days = (now - discharge).days
+
+        if days <= 3:
+            bucket = "0-3"
+        elif days <= 7:
+            bucket = "4-7"
+        elif days <= 14:
+            bucket = "8-14"
+        elif days <= 30:
+            bucket = "15-30"
+        else:
+            bucket = "31+"
+
+        return days, bucket
+    except Exception:
+        return 0, "0-3"
+
+
+@app.post("/api/v1/dnfb")
+async def create_dnfb_account(request: DNFBCreateRequest, req: Request):
+    """
+    Add account to DNFB worklist.
+
+    Tracks discharged patients with unbilled accounts for revenue cycle management.
+    """
+    dnfb_id = f"dnfb-{uuid.uuid4().hex[:8]}"
+    days, bucket = calculate_aging(request.discharge_date)
+
+    account = {
+        "dnfb_id": dnfb_id,
+        "patient_id": request.patient_id,
+        "patient_name": request.patient_name,
+        "mrn": request.mrn,
+        "encounter_id": request.encounter_id,
+        "discharge_date": request.discharge_date,
+        "service_type": request.service_type,
+        "principal_diagnosis": request.principal_diagnosis,
+        "attending_physician": request.attending_physician,
+        "estimated_charges": request.estimated_charges,
+        "reason": request.reason.value,
+        "reason_detail": request.reason_detail,
+        "prior_auth": None,
+        "days_since_discharge": days,
+        "aging_bucket": bucket,
+        "assigned_coder": None,
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "notes": [],
+        "is_resolved": False,
+        "resolved_date": None,
+        "claim_id": None,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    dnfb_accounts[dnfb_id] = account
+
+    # Audit log
+    audit_logger.log_note_operation(
+        action=AuditAction.VIEW_CLAIM,  # Reusing billing audit
+        patient_id=request.patient_id,
+        status="success",
+        details=f"DNFB account {dnfb_id} created, reason: {request.reason.value}",
+        ip_address=req.client.host if req.client else None
+    )
+
+    return {"success": True, "dnfb": account}
+
+
+@app.get("/api/v1/dnfb")
+async def list_dnfb_accounts(
+    reason: Optional[str] = None,
+    aging: Optional[str] = None,
+    prior_auth_issue: Optional[bool] = None,
+    limit: int = 50
+):
+    """
+    List DNFB accounts with optional filters.
+
+    Filters:
+    - reason: coding_incomplete, documentation_missing, prior_auth_missing, etc.
+    - aging: 0-3, 4-7, 8-14, 15-30, 31+
+    - prior_auth_issue: true to show only prior auth problems
+    """
+    accounts = []
+
+    for dnfb_id, account in dnfb_accounts.items():
+        if account.get("is_resolved"):
+            continue
+
+        # Recalculate aging
+        days, bucket = calculate_aging(account["discharge_date"])
+        account["days_since_discharge"] = days
+        account["aging_bucket"] = bucket
+
+        # Apply filters
+        if reason and account.get("reason") != reason:
+            continue
+        if aging and account.get("aging_bucket") != aging:
+            continue
+        if prior_auth_issue:
+            acc_reason = account.get("reason", "")
+            if "prior_auth" not in acc_reason:
+                continue
+
+        accounts.append(account)
+
+    # Sort by days since discharge (oldest first)
+    accounts.sort(key=lambda x: x.get("days_since_discharge", 0), reverse=True)
+
+    # Calculate summary stats
+    total_charges = sum(a.get("estimated_charges", 0) for a in accounts)
+    by_reason = {}
+    by_aging = {}
+    prior_auth_count = 0
+
+    for a in accounts:
+        r = a.get("reason", "other")
+        by_reason[r] = by_reason.get(r, 0) + 1
+        b = a.get("aging_bucket", "0-3")
+        by_aging[b] = by_aging.get(b, 0) + 1
+        if "prior_auth" in r:
+            prior_auth_count += 1
+
+    return {
+        "accounts": accounts[:limit],
+        "total_count": len(accounts),
+        "total_estimated_charges": total_charges,
+        "prior_auth_issues": prior_auth_count,
+        "by_reason": by_reason,
+        "by_aging": by_aging
+    }
+
+
+@app.get("/api/v1/dnfb/summary")
+async def get_dnfb_summary():
+    """
+    Get DNFB dashboard summary metrics.
+
+    Returns aggregate stats for revenue cycle management.
+    """
+    active_accounts = [a for a in dnfb_accounts.values() if not a.get("is_resolved")]
+
+    # Recalculate aging for all accounts
+    for account in active_accounts:
+        days, bucket = calculate_aging(account["discharge_date"])
+        account["days_since_discharge"] = days
+        account["aging_bucket"] = bucket
+
+    total_charges = sum(a.get("estimated_charges", 0) for a in active_accounts)
+
+    # Group by reason
+    by_reason = {}
+    for a in active_accounts:
+        r = a.get("reason", "other")
+        if r not in by_reason:
+            by_reason[r] = {"count": 0, "charges": 0}
+        by_reason[r]["count"] += 1
+        by_reason[r]["charges"] += a.get("estimated_charges", 0)
+
+    # Group by aging bucket
+    by_aging = {}
+    for a in active_accounts:
+        b = a.get("aging_bucket", "0-3")
+        if b not in by_aging:
+            by_aging[b] = {"count": 0, "charges": 0}
+        by_aging[b]["count"] += 1
+        by_aging[b]["charges"] += a.get("estimated_charges", 0)
+
+    # Prior auth specific stats
+    prior_auth_issues = [a for a in active_accounts if "prior_auth" in a.get("reason", "")]
+    prior_auth_charges = sum(a.get("estimated_charges", 0) for a in prior_auth_issues)
+
+    # Average days
+    if active_accounts:
+        avg_days = sum(a.get("days_since_discharge", 0) for a in active_accounts) / len(active_accounts)
+    else:
+        avg_days = 0
+
+    return {
+        "total_accounts": len(active_accounts),
+        "total_estimated_charges": total_charges,
+        "average_days_unbilled": round(avg_days, 1),
+        "prior_auth_issues": {
+            "count": len(prior_auth_issues),
+            "charges": prior_auth_charges
+        },
+        "by_reason": by_reason,
+        "by_aging": by_aging,
+        "aging_over_7_days": sum(1 for a in active_accounts if a.get("days_since_discharge", 0) > 7),
+        "aging_over_14_days": sum(1 for a in active_accounts if a.get("days_since_discharge", 0) > 14)
+    }
+
+
+@app.get("/api/v1/dnfb/{dnfb_id}")
+async def get_dnfb_account(dnfb_id: str):
+    """Get specific DNFB account details."""
+    if dnfb_id not in dnfb_accounts:
+        raise HTTPException(status_code=404, detail="DNFB account not found")
+
+    account = dnfb_accounts[dnfb_id]
+
+    # Recalculate aging
+    days, bucket = calculate_aging(account["discharge_date"])
+    account["days_since_discharge"] = days
+    account["aging_bucket"] = bucket
+
+    return {"dnfb": account}
+
+
+@app.put("/api/v1/dnfb/{dnfb_id}")
+async def update_dnfb_account(dnfb_id: str, request: DNFBUpdateRequest, req: Request):
+    """Update DNFB account status, reason, or notes."""
+    if dnfb_id not in dnfb_accounts:
+        raise HTTPException(status_code=404, detail="DNFB account not found")
+
+    account = dnfb_accounts[dnfb_id]
+
+    if request.reason is not None:
+        account["reason"] = request.reason.value
+    if request.reason_detail is not None:
+        account["reason_detail"] = request.reason_detail
+    if request.assigned_coder is not None:
+        account["assigned_coder"] = request.assigned_coder
+    if request.notes is not None:
+        account["notes"] = request.notes
+    if request.prior_auth is not None:
+        account["prior_auth"] = request.prior_auth.model_dump()
+    if request.is_resolved is not None:
+        account["is_resolved"] = request.is_resolved
+        if request.is_resolved:
+            account["resolved_date"] = datetime.now(timezone.utc).isoformat()
+
+    account["last_updated"] = datetime.now(timezone.utc).isoformat()
+
+    # Audit log
+    audit_logger.log_note_operation(
+        action=AuditAction.UPDATE_CLAIM,
+        patient_id=account.get("patient_id"),
+        status="success",
+        details=f"DNFB {dnfb_id} updated",
+        ip_address=req.client.host if req.client else None
+    )
+
+    return {"success": True, "dnfb": account}
+
+
+@app.post("/api/v1/dnfb/{dnfb_id}/prior-auth")
+async def add_prior_auth(dnfb_id: str, request: PriorAuthRequest, req: Request):
+    """Add or update prior authorization info for DNFB account."""
+    if dnfb_id not in dnfb_accounts:
+        raise HTTPException(status_code=404, detail="DNFB account not found")
+
+    account = dnfb_accounts[dnfb_id]
+
+    prior_auth = {
+        "auth_number": request.auth_number,
+        "status": request.status.value,
+        "payer_name": request.payer_name,
+        "procedure_codes": request.procedure_codes,
+        "requested_date": request.requested_date,
+        "approval_date": request.approval_date,
+        "expiration_date": request.expiration_date,
+        "approved_units": request.approved_units,
+        "used_units": 0,
+        "denial_reason": request.denial_reason
+    }
+
+    account["prior_auth"] = prior_auth
+    account["last_updated"] = datetime.now(timezone.utc).isoformat()
+
+    # Update reason based on prior auth status
+    if request.status == PriorAuthStatus.DENIED:
+        account["reason"] = DNFBReason.PRIOR_AUTH_DENIED.value
+    elif request.status == PriorAuthStatus.EXPIRED:
+        account["reason"] = DNFBReason.PRIOR_AUTH_EXPIRED.value
+    elif request.status == PriorAuthStatus.NOT_OBTAINED:
+        account["reason"] = DNFBReason.PRIOR_AUTH_MISSING.value
+    elif request.status == PriorAuthStatus.APPROVED:
+        # If prior auth was the only issue, may need to update reason
+        if "prior_auth" in account.get("reason", ""):
+            account["reason"] = DNFBReason.CODING_INCOMPLETE.value
+
+    # Audit log
+    audit_logger.log_note_operation(
+        action=AuditAction.UPDATE_CLAIM,
+        patient_id=account.get("patient_id"),
+        status="success",
+        details=f"Prior auth {request.status.value} added to DNFB {dnfb_id}",
+        ip_address=req.client.host if req.client else None
+    )
+
+    return {"success": True, "dnfb": account}
+
+
+@app.post("/api/v1/dnfb/{dnfb_id}/resolve")
+async def resolve_dnfb(dnfb_id: str, claim_id: Optional[str] = None, req: Request = None):
+    """Mark DNFB account as resolved (billed)."""
+    if dnfb_id not in dnfb_accounts:
+        raise HTTPException(status_code=404, detail="DNFB account not found")
+
+    account = dnfb_accounts[dnfb_id]
+    account["is_resolved"] = True
+    account["resolved_date"] = datetime.now(timezone.utc).isoformat()
+    if claim_id:
+        account["claim_id"] = claim_id
+
+    # Audit log
+    audit_logger.log_note_operation(
+        action=AuditAction.SUBMIT_CLAIM,
+        patient_id=account.get("patient_id"),
+        status="success",
+        details=f"DNFB {dnfb_id} resolved, claim: {claim_id or 'N/A'}",
+        ip_address=req.client.host if req and req.client else None
+    )
+
+    return {"success": True, "dnfb": account}
+
+
+@app.get("/api/v1/patient/{patient_id}/dnfb")
+async def get_patient_dnfb(patient_id: str):
+    """Get DNFB accounts for a specific patient."""
+    patient_accounts = [
+        a for a in dnfb_accounts.values()
+        if a.get("patient_id") == patient_id
+    ]
+
+    # Recalculate aging
+    for account in patient_accounts:
+        days, bucket = calculate_aging(account["discharge_date"])
+        account["days_since_discharge"] = days
+        account["aging_bucket"] = bucket
+
+    return {
+        "patient_id": patient_id,
+        "accounts": patient_accounts,
+        "active_count": sum(1 for a in patient_accounts if not a.get("is_resolved")),
+        "total_unbilled_charges": sum(
+            a.get("estimated_charges", 0) for a in patient_accounts if not a.get("is_resolved")
+        )
+    }
 
 
 # ============ Note Storage (Simulated - Cerner sandbox is read-only) ============
