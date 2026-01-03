@@ -444,12 +444,50 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 - [ ] Ensure training data includes underrepresented groups
 - [ ] Don't just target wealthy academic medical centers
 
+### Racial Medicine Awareness - IMPLEMENTED (Feature #79)
+
+**First-of-its-kind feature addressing the "white default" problem in medicine.**
+
+- [x] **Fitzpatrick Skin Type Tracking** - I through VI classification
+- [x] **Pulse Oximeter Accuracy Alerts** - Warns of 1-4% overestimation on darker skin
+- [x] **Skin Assessment Guidance** - Techniques for melanin-rich skin (cyanosis, jaundice, pallor, erythema)
+- [x] **Pharmacogenomic Medication Guidance** - ACE inhibitors, beta-blockers (African ancestry), warfarin (Asian ancestry)
+- [x] **Maternal Mortality Risk Alerts** - 3-4x higher for Black women prompts
+- [x] **Sickle Cell Pain Protocol** - 60-minute treatment target reminder
+- [x] **Pain Assessment Bias Reminders** - Prompts for equitable pain management
+- [x] **Race-Free Calculator Warnings** - Uses CKD-EPI 2021 eGFR
+- [x] **Backend API Endpoints** - `/api/v1/racial-medicine/*`
+
+### Cultural Care Preferences - IMPLEMENTED (Feature #80)
+
+- [x] **Religious Healthcare Preferences** - JW blood products, Islam, Judaism, Hinduism, Buddhism, Sikhism
+- [x] **Blood Product Preference Tracking** - Individual conscience items for JW patients
+- [x] **Dietary Medication Concerns** - Gelatin, alcohol, lactose, animal-derived alerts
+- [x] **Ramadan Fasting Timing** - Medication scheduling guidance
+- [x] **Modesty Requirements** - Same-gender provider preferences
+- [x] **Family Decision-Making Styles** - Individual, family-centered, patriarch-led, shared
+- [x] **End-of-Life Preferences** - Cultural/religious alignment
+- [x] **Traditional Medicine Tracking** - TCM, Ayurveda, curanderismo
+- [x] **Backend API Endpoints** - `/api/v1/cultural-care/*`
+
+### Equity Features - Next Phase
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Android Voice Commands (#79-80)** | Wire up "skin type", "pulse ox warning", "cultural preferences" | TODO |
+| **Implicit Bias Alerts** | Prompt for bias check during pain assessment documentation | TODO |
+| **Maternal Health Monitoring** | High-risk OB alerts, postpartum warning signs for Black mothers | TODO |
+| **Web Dashboard Equity UI** | Configure skin type, ancestry, cultural preferences | TODO |
+| **SDOH Integration** | Housing, food security, transportation - affects adherence | TODO |
+| **Health Literacy Assessment** | Adjust discharge instruction complexity | TODO |
+| **Interpreter Integration** | Real-time translation beyond UI language | TODO |
+
 ### Health Equity TODOs
 
-- [ ] **Immediate**
-  - [ ] Audit current voice recognition for accent bias
-  - [ ] Review all clinical calculators for race adjustments
-  - [ ] Document our equity principles publicly
+- [x] **Immediate** (COMPLETED)
+  - [x] ~~Audit current voice recognition for accent bias~~ - 5 languages with accent-insensitive matching
+  - [x] ~~Review all clinical calculators for race adjustments~~ - Using CKD-EPI 2021 race-free eGFR
+  - [x] ~~Document our equity principles publicly~~ - RACIAL_MEDICINE_DISPARITIES.md, CULTURAL_CARE_PREFERENCES.md
 
 - [ ] **Short-term**
   - [ ] Build bias testing framework
@@ -474,7 +512,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 
 ## 6. Current Technical Foundation
 
-### What We've Built (66 Features)
+### What We've Built (80 Features)
 
 #### Voice & Documentation
 - Real-time transcription (AssemblyAI/Deepgram)

@@ -221,6 +221,21 @@ class MainActivity : AppCompatActivity() {
     private var lastCopilotQuestion: String = ""
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // RACIAL MEDICINE AWARENESS (Feature #79) - Addressing "white default" in medicine
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var currentPatientSkinType: String? = null  // Fitzpatrick I-VI
+    private var currentPatientAncestry: String? = null  // For pharmacogenomics
+    private var racialMedicineAlerts: MutableList<JSONObject> = mutableListOf()
+    private var skinAssessmentGuidance: JSONObject? = null
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CULTURAL CARE PREFERENCES (Feature #80) - Religious/cultural healthcare needs
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var culturalCarePreferences: JSONObject? = null
+    private var culturalCareAlerts: MutableList<JSONObject> = mutableListOf()
+    private var religiousGuidance: JSONObject? = null
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
     // ═══════════════════════════════════════════════════════════════════════════
     private var isAmbientMode: Boolean = false  // Continuous background listening
@@ -16329,6 +16344,1152 @@ SOFA Score: [X]
         Log.d(TAG, "Copilot history cleared")
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // RACIAL MEDICINE AWARENESS (Feature #79) - Addressing "white default" in medicine
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Set patient Fitzpatrick skin type (I-VI).
+     * Used for pulse oximeter accuracy alerts and skin assessment guidance.
+     */
+    private fun setSkinType(type: String) {
+        currentPatientSkinType = type
+        val typeDesc = when (type) {
+            "I" -> "Type 1 - Very light, always burns"
+            "II" -> "Type 2 - Light, burns easily"
+            "III" -> "Type 3 - Medium, burns moderately"
+            "IV" -> "Type 4 - Olive, burns minimally"
+            "V" -> "Type 5 - Brown, rarely burns"
+            "VI" -> "Type 6 - Dark brown/black, never burns"
+            else -> type
+        }
+        speakFeedback("Skin type set to $typeDesc")
+        Toast.makeText(this, "Skin type: $type", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Skin type set to $type")
+
+        // Automatically fetch alerts for types V and VI
+        if (type in listOf("V", "VI")) {
+            fetchRacialMedicineAlerts()
+        }
+    }
+
+    /**
+     * Set patient ancestry for pharmacogenomics guidance.
+     */
+    private fun setPatientAncestry(ancestry: String) {
+        currentPatientAncestry = ancestry
+        val displayName = ancestry.replace("_", " ").replaceFirstChar { it.uppercase() }
+        speakFeedback("Ancestry set to $displayName. Checking medication considerations.")
+        Toast.makeText(this, "Ancestry: $displayName", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Patient ancestry set to $ancestry")
+
+        // Fetch medication considerations
+        fetchMedicationAncestryConsiderations(ancestry)
+    }
+
+    /**
+     * Show pulse oximeter accuracy warning for darker skin.
+     */
+    private fun showPulseOxWarning() {
+        val skinType = currentPatientSkinType
+        if (skinType == null) {
+            speakFeedback("No skin type set. Say set skin type followed by a number 1 through 6.")
+            return
+        }
+
+        val warning = when (skinType) {
+            "V", "VI" -> {
+                """
+                |⚠️ PULSE OXIMETER ACCURACY ALERT
+                |
+                |Patient Skin Type: $skinType (melanin-rich)
+                |
+                |CLINICAL IMPLICATIONS:
+                |• SpO2 readings may overestimate by 1-4%
+                |• A reading of 94% may actually be 90-93%
+                |• Consider arterial blood gas for critical decisions
+                |
+                |FDA GUIDANCE (Jan 2025):
+                |• Pulse oximeters less accurate on darker skin
+                |• 3x more likely to miss hypoxemia
+                |
+                |RECOMMENDATIONS:
+                |• Use ABG for precise oxygen assessment
+                |• Monitor trends rather than single values
+                |• Consider lower SpO2 thresholds for intervention
+                |• Document skin type in chart
+                """.trimMargin()
+            }
+            "IV" -> {
+                """
+                |ℹ️ PULSE OXIMETER NOTE
+                |
+                |Patient Skin Type: $skinType (olive)
+                |
+                |• Moderate melanin may affect accuracy
+                |• SpO2 overestimation possible: 0.5-2%
+                |• Use clinical judgment with borderline readings
+                |• Consider ABG if SpO2 94-96% with symptoms
+                """.trimMargin()
+            }
+            else -> {
+                """
+                |✓ PULSE OXIMETER
+                |
+                |Patient Skin Type: $skinType
+                |
+                |Standard pulse oximetry accuracy expected.
+                |No specific melanin-related adjustments needed.
+                """.trimMargin()
+            }
+        }
+
+        showDataOverlay("Pulse Ox Warning", warning)
+        if (skinType in listOf("V", "VI")) {
+            speakFeedback("Warning: Pulse oximeter may overestimate oxygen saturation by up to 4 percent on melanin-rich skin. Consider arterial blood gas for critical decisions.")
+        }
+    }
+
+    /**
+     * Show skin assessment guidance for current skin type.
+     */
+    private fun showSkinAssessmentGuidance() {
+        val skinType = currentPatientSkinType
+        if (skinType == null) {
+            speakFeedback("No skin type set. Say set skin type followed by a number 1 through 6.")
+            return
+        }
+
+        // Fetch guidance from backend
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/racial-medicine/skin-guidance?skin_type=$skinType")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Accept", "application/json")
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    skinAssessmentGuidance = JSONObject(response)
+
+                    runOnUiThread {
+                        displaySkinAssessmentGuidance(skinAssessmentGuidance!!)
+                    }
+                } else {
+                    runOnUiThread {
+                        showDefaultSkinGuidance(skinType)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch skin guidance: ${e.message}")
+                runOnUiThread {
+                    showDefaultSkinGuidance(skinType)
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Display skin assessment guidance from backend or default.
+     */
+    private fun displaySkinAssessmentGuidance(guidance: JSONObject) {
+        val sb = StringBuilder()
+        sb.appendLine("🔬 SKIN ASSESSMENT GUIDANCE")
+        sb.appendLine("Fitzpatrick Type: ${guidance.optString("skin_type", currentPatientSkinType)}")
+        sb.appendLine()
+
+        val assessments = guidance.optJSONObject("assessments")
+        assessments?.keys()?.forEach { condition ->
+            val detail = assessments.optJSONObject(condition)
+            sb.appendLine("━━━ ${condition.uppercase()} ━━━")
+            sb.appendLine("Look for: ${detail?.optString("look_for", "N/A")}")
+            sb.appendLine("Technique: ${detail?.optString("technique", "N/A")}")
+            sb.appendLine()
+        }
+
+        showDataOverlay("Skin Assessment", sb.toString())
+        speakFeedback("Skin assessment guidance displayed for type ${currentPatientSkinType}.")
+    }
+
+    /**
+     * Default skin guidance when backend unavailable.
+     */
+    private fun showDefaultSkinGuidance(skinType: String) {
+        val isMelaninRich = skinType in listOf("IV", "V", "VI")
+        val guidance = if (isMelaninRich) {
+            """
+            |🔬 SKIN ASSESSMENT - MELANIN-RICH SKIN
+            |Fitzpatrick Type: $skinType
+            |
+            |━━━ CYANOSIS ━━━
+            |Look for: Gray or ashen hue on mucous membranes
+            |Check: Conjunctivae, oral mucosa, nail beds, palms
+            |Note: Blue discoloration harder to detect on skin
+            |
+            |━━━ JAUNDICE ━━━
+            |Look for: Yellow in sclera and hard palate
+            |Check: Palms, soles may show yellow tinge
+            |Note: Skin jaundice may appear green-brown
+            |
+            |━━━ PALLOR ━━━
+            |Look for: Ashen gray or loss of red undertones
+            |Check: Lower eyelid conjunctivae, oral mucosa, palms
+            |Note: Skin may appear dull rather than pale
+            |
+            |━━━ ERYTHEMA ━━━
+            |Look for: Increased warmth, edema, tenderness
+            |Check: Palpate for heat; compare to unaffected areas
+            |Note: Redness may not be visible; rely on touch
+            |
+            |━━━ PETECHIAE/BRUISING ━━━
+            |Look for: Dark purple or black discoloration
+            |Check: Conjunctivae, oral mucosa for petechiae
+            |Note: Use tangential lighting at skin surface
+            """.trimMargin()
+        } else {
+            """
+            |🔬 SKIN ASSESSMENT
+            |Fitzpatrick Type: $skinType
+            |
+            |Standard visual assessment techniques apply.
+            |
+            |━━━ CYANOSIS ━━━
+            |Look for: Bluish discoloration of skin/mucosa
+            |
+            |━━━ JAUNDICE ━━━
+            |Look for: Yellowing of skin and sclera
+            |
+            |━━━ PALLOR ━━━
+            |Look for: Pale or washed-out skin color
+            |
+            |━━━ ERYTHEMA ━━━
+            |Look for: Redness, warmth, swelling
+            """.trimMargin()
+        }
+
+        showDataOverlay("Skin Assessment", guidance)
+        if (isMelaninRich) {
+            speakFeedback("Skin assessment guidance for melanin-rich skin. Check mucous membranes and use palpation for erythema.")
+        }
+    }
+
+    /**
+     * Show medication considerations based on ancestry.
+     */
+    private fun showMedicationAncestryGuidance() {
+        val ancestry = currentPatientAncestry
+        if (ancestry == null) {
+            speakFeedback("No ancestry set. Say set ancestry followed by the ancestry group.")
+            return
+        }
+        fetchMedicationAncestryConsiderations(ancestry)
+    }
+
+    /**
+     * Fetch medication considerations from backend.
+     */
+    private fun fetchMedicationAncestryConsiderations(ancestry: String) {
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/racial-medicine/medication-considerations/$ancestry")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+
+                    runOnUiThread {
+                        displayMedicationConsiderations(ancestry, json)
+                    }
+                } else {
+                    runOnUiThread {
+                        showDefaultMedicationConsiderations(ancestry)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch medication considerations: ${e.message}")
+                runOnUiThread {
+                    showDefaultMedicationConsiderations(ancestry)
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Display medication considerations.
+     */
+    private fun displayMedicationConsiderations(ancestry: String, json: JSONObject) {
+        val sb = StringBuilder()
+        val displayName = ancestry.replace("_", " ").replaceFirstChar { it.uppercase() }
+        sb.appendLine("💊 PHARMACOGENOMIC CONSIDERATIONS")
+        sb.appendLine("Ancestry: $displayName")
+        sb.appendLine()
+
+        val considerations = json.optJSONArray("considerations")
+        considerations?.let {
+            for (i in 0 until it.length()) {
+                val item = it.getJSONObject(i)
+                sb.appendLine("━━━ ${item.optString("medication_class", "Unknown")} ━━━")
+                sb.appendLine(item.optString("guidance", ""))
+                sb.appendLine()
+            }
+        }
+
+        if (considerations == null || considerations.length() == 0) {
+            sb.appendLine("No specific pharmacogenomic considerations on file.")
+            sb.appendLine("Standard dosing guidelines apply.")
+        }
+
+        showDataOverlay("Medication Guidance", sb.toString())
+    }
+
+    /**
+     * Default medication considerations when backend unavailable.
+     */
+    private fun showDefaultMedicationConsiderations(ancestry: String) {
+        val displayName = ancestry.replace("_", " ").replaceFirstChar { it.uppercase() }
+        val guidance = when (ancestry) {
+            "african" -> """
+                |💊 PHARMACOGENOMIC CONSIDERATIONS
+                |Ancestry: $displayName
+                |
+                |━━━ ACE INHIBITORS ━━━
+                |• May be less effective as monotherapy for HTN
+                |• Consider thiazide or CCB as first-line
+                |• Or use ACE + thiazide combination
+                |
+                |━━━ BETA-BLOCKERS ━━━
+                |• Reduced efficacy for hypertension
+                |• Still effective for heart failure, CAD
+                |• Consider higher doses if needed for BP
+                |
+                |━━━ CLOPIDOGREL ━━━
+                |• CYP2C19 variants more common
+                |• Consider genetic testing for ACS/PCI
+                |• Ticagrelor may be preferred alternative
+                """.trimMargin()
+
+            "east_asian", "south_asian" -> """
+                |💊 PHARMACOGENOMIC CONSIDERATIONS
+                |Ancestry: $displayName
+                |
+                |━━━ WARFARIN ━━━
+                |• Lower dose requirements common
+                |• Start at reduced dose (2-3mg)
+                |• VKORC1 variants affect sensitivity
+                |
+                |━━━ CLOPIDOGREL ━━━
+                |• Higher CYP2C19 poor metabolizer rates
+                |• Consider prasugrel or ticagrelor
+                |• Genetic testing recommended for ACS
+                |
+                |━━━ STATINS ━━━
+                |• May need lower doses for efficacy
+                |• Higher myopathy risk at standard doses
+                |• Start rosuvastatin at 5mg
+                """.trimMargin()
+
+            else -> """
+                |💊 PHARMACOGENOMIC CONSIDERATIONS
+                |Ancestry: $displayName
+                |
+                |No specific population-level considerations.
+                |
+                |Standard dosing guidelines apply.
+                |Consider individual genetic testing if available.
+                """.trimMargin()
+        }
+
+        showDataOverlay("Medication Guidance", guidance)
+        speakFeedback("Medication considerations for $displayName ancestry displayed.")
+    }
+
+    /**
+     * Fetch racial medicine alerts from backend.
+     */
+    private fun fetchRacialMedicineAlerts() {
+        val skinType = currentPatientSkinType ?: return
+        val patientId = currentPatientData?.optString("patient_id") ?: return
+
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/racial-medicine/alerts")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+
+                val requestBody = JSONObject().apply {
+                    put("patient_id", patientId)
+                    put("skin_type", skinType)
+                    currentPatientAncestry?.let { put("ancestry", it) }
+                }
+
+                connection.outputStream.bufferedWriter().use { it.write(requestBody.toString()) }
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+                    val alerts = json.optJSONArray("alerts")
+
+                    runOnUiThread {
+                        racialMedicineAlerts.clear()
+                        alerts?.let {
+                            for (i in 0 until it.length()) {
+                                racialMedicineAlerts.add(it.getJSONObject(i))
+                            }
+                        }
+                        Log.d(TAG, "Fetched ${racialMedicineAlerts.size} racial medicine alerts")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch racial medicine alerts: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Show all racial medicine alerts.
+     */
+    private fun showRacialMedicineAlerts() {
+        if (racialMedicineAlerts.isEmpty()) {
+            fetchRacialMedicineAlerts()
+            speakFeedback("Checking for racial medicine alerts. Please wait.")
+            android.os.Handler(mainLooper).postDelayed({
+                displayRacialMedicineAlerts()
+            }, 1500)
+        } else {
+            displayRacialMedicineAlerts()
+        }
+    }
+
+    private fun displayRacialMedicineAlerts() {
+        if (racialMedicineAlerts.isEmpty()) {
+            showDataOverlay("Racial Medicine Alerts", "No alerts for current patient.\n\nSet skin type and ancestry to enable alerts.")
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("⚕️ RACIAL MEDICINE ALERTS")
+        sb.appendLine("Addressing healthcare disparities")
+        sb.appendLine()
+
+        racialMedicineAlerts.forEach { alert ->
+            val severity = alert.optString("severity", "info")
+            val icon = when (severity) {
+                "critical" -> "🔴"
+                "warning" -> "🟡"
+                else -> "🔵"
+            }
+            sb.appendLine("$icon ${alert.optString("title", "Alert")}")
+            sb.appendLine(alert.optString("message", ""))
+            sb.appendLine("→ ${alert.optString("recommendation", "")}")
+            sb.appendLine()
+        }
+
+        showDataOverlay("Equity Alerts", sb.toString())
+        speakFeedback("${racialMedicineAlerts.size} racial medicine alerts displayed.")
+    }
+
+    /**
+     * Show maternal mortality risk alert.
+     */
+    private fun showMaternalRiskAlert() {
+        val ancestry = currentPatientAncestry
+        val alert = if (ancestry == "african") {
+            """
+            |🚨 MATERNAL MORTALITY RISK ALERT
+            |
+            |Patient ancestry: African American
+            |
+            |CRITICAL DATA:
+            |• Black women 3-4x higher maternal mortality
+            |• Risk persists across all income/education levels
+            |• Leading causes: Cardiovascular, cardiomyopathy,
+            |  hemorrhage, preeclampsia/eclampsia
+            |
+            |HIGH-RISK SIGNS - ESCALATE IMMEDIATELY:
+            |• Headache unrelieved by medication
+            |• Chest pain or shortness of breath
+            |• Swelling of face or hands
+            |• Visual changes
+            |• Fever or chills postpartum
+            |• Heavy bleeding (soaking pad hourly)
+            |
+            |RECOMMENDATIONS:
+            |• Lower threshold for intervention
+            |• Believe patient-reported symptoms
+            |• Consider implicit bias in assessment
+            |• Close postpartum follow-up
+            |• Screen for cardiomyopathy if symptomatic
+            """.trimMargin()
+        } else {
+            """
+            |ℹ️ MATERNAL HEALTH
+            |
+            |No elevated risk based on current ancestry data.
+            |
+            |Standard obstetric monitoring applies.
+            |
+            |Always be alert to warning signs:
+            |• Severe headache
+            |• Visual changes
+            |• Chest pain
+            |• Heavy bleeding
+            |• Fever
+            """.trimMargin()
+        }
+
+        showDataOverlay("Maternal Risk", alert)
+        if (ancestry == "african") {
+            speakFeedback("Maternal mortality alert. Black women have 3 to 4 times higher risk. Review warning signs.")
+        }
+    }
+
+    /**
+     * Show sickle cell pain crisis protocol.
+     */
+    private fun showSickleCellProtocol() {
+        val protocol = """
+            |🩸 SICKLE CELL PAIN CRISIS PROTOCOL
+            |
+            |GOAL: Analgesia within 60 minutes of arrival
+            |
+            |IMMEDIATE ACTIONS:
+            |1. Triage as urgent - do not delay for labs
+            |2. IV access and fluids
+            |3. Pain assessment using patient's reported level
+            |4. Administer analgesia per protocol
+            |
+            |PAIN MANAGEMENT:
+            |• Patient's home opioid dose as baseline
+            |• IV morphine or hydromorphone preferred
+            |• Reassess pain q15-30 min
+            |• Do NOT undertreat due to bias concerns
+            |
+            |⚠️ PAIN BIAS REMINDER:
+            |Studies show sickle cell patients wait longer
+            |and receive less analgesia than other pain crises.
+            |Trust the patient's pain report.
+            |
+            |WORKUP:
+            |• CBC with reticulocyte count
+            |• CMP, LDH, bilirubin
+            |• Type and screen if severe
+            |• Chest X-ray if fever or respiratory symptoms
+            |
+            |ADMIT CRITERIA:
+            |• Severe pain uncontrolled in ED
+            |• Fever >38.5°C
+            |• Acute chest syndrome
+            |• Neurologic symptoms
+            |• Aplastic crisis
+            """.trimMargin()
+
+        showDataOverlay("Sickle Cell Protocol", protocol)
+        speakFeedback("Sickle cell pain crisis protocol. Goal: analgesia within 60 minutes. Trust patient's pain report.")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // CULTURAL CARE PREFERENCES (Feature #80) - Religious/cultural healthcare needs
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Set patient religion for cultural care.
+     */
+    private fun setPatientReligion(religion: String) {
+        if (culturalCarePreferences == null) {
+            culturalCarePreferences = JSONObject()
+        }
+        culturalCarePreferences?.put("religion", religion)
+        val displayName = religion.replace("_", " ").replaceFirstChar { it.uppercase() }
+        speakFeedback("Religion set to $displayName. Loading care preferences.")
+        Toast.makeText(this, "Religion: $displayName", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Patient religion set to $religion")
+
+        // Fetch religious guidance
+        fetchReligiousGuidance(religion)
+    }
+
+    /**
+     * Fetch religious care guidance from backend.
+     */
+    private fun fetchReligiousGuidance(religion: String) {
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/cultural-care/religious-guidance/$religion")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    religiousGuidance = JSONObject(response)
+
+                    runOnUiThread {
+                        displayReligiousGuidance(religiousGuidance!!)
+                    }
+                } else {
+                    runOnUiThread {
+                        showDefaultReligiousGuidance(religion)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch religious guidance: ${e.message}")
+                runOnUiThread {
+                    showDefaultReligiousGuidance(religion)
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Display religious guidance from backend.
+     */
+    private fun displayReligiousGuidance(guidance: JSONObject) {
+        val sb = StringBuilder()
+        sb.appendLine("🙏 RELIGIOUS CARE CONSIDERATIONS")
+        sb.appendLine("Religion: ${guidance.optString("religion", "Unknown")}")
+        sb.appendLine()
+
+        guidance.optJSONArray("considerations")?.let { considerations ->
+            for (i in 0 until considerations.length()) {
+                sb.appendLine("• ${considerations.getString(i)}")
+            }
+        }
+
+        showDataOverlay("Religious Care", sb.toString())
+        speakFeedback("Religious care guidance displayed.")
+    }
+
+    /**
+     * Default religious guidance when backend unavailable.
+     */
+    private fun showDefaultReligiousGuidance(religion: String) {
+        val displayName = religion.replace("_", " ").replaceFirstChar { it.uppercase() }
+        val guidance = when (religion) {
+            "jehovah_witness" -> """
+                |🙏 JEHOVAH'S WITNESS CARE
+                |
+                |🩸 BLOOD PRODUCTS - CRITICAL:
+                |• NO whole blood, red cells, white cells, plasma, platelets
+                |• Individual conscience items (may accept):
+                |  - Albumin, immunoglobulins, clotting factors
+                |  - Cell salvage (some accept)
+                |  - Hemodilution, heart-lung bypass
+                |
+                |✓ ALWAYS ACCEPTED:
+                |• All non-blood medications
+                |• Saline, Ringer's lactate
+                |• Volume expanders (non-blood based)
+                |• EPO, iron supplementation
+                |
+                |RECOMMENDATIONS:
+                |• Document specific preferences in detail
+                |• Have Advance Directive on file
+                |• Contact Hospital Liaison Committee
+                |• Plan for bloodless surgery techniques
+                |• Consider iron optimization preoperatively
+                """.trimMargin()
+
+            "islam" -> """
+                |🙏 ISLAMIC CARE CONSIDERATIONS
+                |
+                |🍽️ DIETARY:
+                |• Halal food only (no pork, proper slaughter)
+                |• Check medications for gelatin, alcohol
+                |• Porcine insulin may be accepted if no alternative
+                |
+                |🌙 RAMADAN:
+                |• Fasting dawn to sunset
+                |• May skip medications during fast
+                |• Discuss which meds are essential
+                |• IV medications during fast - consult patient
+                |
+                |👤 MODESTY:
+                |• Same-gender provider preferred
+                |• Minimize exposure during exams
+                |• Private space for prayer (5x daily)
+                |
+                |⚰️ END OF LIFE:
+                |• Family involvement in decisions
+                |• Imam may be requested
+                |• Burial within 24 hours preferred
+                """.trimMargin()
+
+            "judaism" -> """
+                |🙏 JEWISH CARE CONSIDERATIONS
+                |
+                |🍽️ DIETARY (if observant):
+                |• Kosher food requirements
+                |• No mixing meat and dairy
+                |• No pork or shellfish
+                |• Check medication ingredients
+                |
+                |📅 SABBATH (Friday sunset - Saturday sunset):
+                |• May not use electronics
+                |• May not sign documents
+                |• Pikuach nefesh: life-saving care overrides
+                |• Discuss advance consent if needed
+                |
+                |🙏 RELIGIOUS ITEMS:
+                |• Men may wear kippah (head covering)
+                |• Tefillin for morning prayers
+                |• May request rabbi visit
+                |
+                |⚰️ END OF LIFE:
+                |• No hastening death
+                |• Burial usually within 24 hours
+                |• Chevra kadisha (burial society)
+                """.trimMargin()
+
+            "hinduism" -> """
+                |🙏 HINDU CARE CONSIDERATIONS
+                |
+                |🍽️ DIETARY:
+                |• Vegetarian (many adherents)
+                |• No beef (cow is sacred)
+                |• Some avoid onion and garlic
+                |• Fasting days vary by tradition
+                |
+                |💊 MEDICATIONS:
+                |• Check for gelatin (bovine or porcine)
+                |• May prefer vegetarian alternatives
+                |
+                |🙏 PRACTICES:
+                |• Prayer and meditation important
+                |• May have religious items (mala beads)
+                |• Pandit (priest) may be requested
+                |
+                |⚰️ END OF LIFE:
+                |• Family involvement in decisions
+                |• Cremation preferred
+                |• Last rites by family member
+                |• May wish to die at home
+                """.trimMargin()
+
+            else -> """
+                |🙏 CULTURAL CARE CONSIDERATIONS
+                |Religion: $displayName
+                |
+                |• Ask patient about specific preferences
+                |• Dietary restrictions
+                |• Modesty requirements
+                |• Family involvement in decisions
+                |• End-of-life preferences
+                |• Religious items or practices
+                |
+                |Document preferences in chart.
+                """.trimMargin()
+        }
+
+        showDataOverlay("Religious Care", guidance)
+        speakFeedback("$displayName care considerations displayed.")
+    }
+
+    /**
+     * Show cultural care preferences for current patient.
+     */
+    private fun showCulturalCarePreferences() {
+        if (culturalCarePreferences == null) {
+            showDataOverlay("Cultural Care", "No cultural preferences recorded.\n\nSay 'set religion' to add preferences.")
+            speakFeedback("No cultural preferences on file. Say set religion to begin.")
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("🌍 CULTURAL CARE PREFERENCES")
+        sb.appendLine()
+
+        culturalCarePreferences?.let { prefs ->
+            prefs.optString("religion", "").takeIf { it.isNotEmpty() }?.let {
+                sb.appendLine("Religion: ${it.replace("_", " ").replaceFirstChar { c -> c.uppercase() }}")
+            }
+            prefs.optString("decision_making_style", "").takeIf { it.isNotEmpty() }?.let {
+                sb.appendLine("Decision Making: ${it.replace("_", " ")}")
+            }
+            prefs.optJSONArray("dietary_restrictions")?.let { diet ->
+                if (diet.length() > 0) {
+                    sb.appendLine("\nDietary: ${(0 until diet.length()).map { diet.getString(it) }.joinToString(", ")}")
+                }
+            }
+            prefs.optBoolean("same_gender_provider_preferred", false).takeIf { it }?.let {
+                sb.appendLine("\n⚠️ Same-gender provider preferred")
+            }
+        }
+
+        showDataOverlay("Cultural Preferences", sb.toString())
+        speakFeedback("Cultural care preferences displayed.")
+    }
+
+    /**
+     * Show religious preferences.
+     */
+    private fun showReligiousPreferences() {
+        val religion = culturalCarePreferences?.optString("religion")
+        if (religion.isNullOrEmpty()) {
+            speakFeedback("No religion recorded. Say set religion followed by the faith.")
+            return
+        }
+        showDefaultReligiousGuidance(religion)
+    }
+
+    /**
+     * Show blood product preferences (especially for JW patients).
+     */
+    private fun showBloodProductPreferences() {
+        val religion = culturalCarePreferences?.optString("religion")
+        if (religion == "jehovah_witness") {
+            val prefs = """
+                |🩸 BLOOD PRODUCT PREFERENCES
+                |Religion: Jehovah's Witness
+                |
+                |REFUSED (Standard JW Position):
+                |❌ Whole blood
+                |❌ Red blood cells
+                |❌ White blood cells
+                |❌ Platelets
+                |❌ Plasma
+                |
+                |INDIVIDUAL CONSCIENCE (Ask Patient):
+                |❓ Albumin
+                |❓ Immunoglobulins
+                |❓ Clotting factors (VIII, IX)
+                |❓ Cell salvage (intraoperative)
+                |❓ Hemodilution
+                |❓ Heart-lung bypass
+                |❓ Dialysis
+                |❓ Epidural blood patch
+                |
+                |✅ ALWAYS ACCEPTED:
+                |• Non-blood volume expanders
+                |• Saline, Ringer's lactate
+                |• EPO, iron supplementation
+                |• All standard medications
+                |
+                |⚠️ DOCUMENT SPECIFIC PREFERENCES
+                |Patient must indicate each item individually.
+                |Get Advance Directive signed.
+                |Contact Hospital Liaison Committee.
+                """.trimMargin()
+
+            showDataOverlay("Blood Preferences", prefs)
+            speakFeedback("Blood product preferences for Jehovah's Witness patient. Individual items require specific consent.")
+        } else {
+            showDataOverlay("Blood Preferences", "No blood product restrictions on file.\n\nStandard consent process applies.")
+        }
+    }
+
+    /**
+     * Show dietary restrictions.
+     */
+    private fun showDietaryRestrictions() {
+        val religion = culturalCarePreferences?.optString("religion", "")
+        val restrictions = culturalCarePreferences?.optJSONArray("dietary_restrictions")
+
+        val sb = StringBuilder()
+        sb.appendLine("🍽️ DIETARY CONSIDERATIONS")
+        sb.appendLine()
+
+        when (religion) {
+            "islam" -> {
+                sb.appendLine("Religion: Islam")
+                sb.appendLine()
+                sb.appendLine("FOOD:")
+                sb.appendLine("• Halal food required")
+                sb.appendLine("• No pork or pork products")
+                sb.appendLine("• No alcohol")
+                sb.appendLine()
+                sb.appendLine("MEDICATIONS - Check for:")
+                sb.appendLine("• Gelatin (porcine or bovine)")
+                sb.appendLine("• Alcohol-based liquids")
+                sb.appendLine("• Porcine-derived insulin")
+                sb.appendLine()
+                sb.appendLine("Note: Life-saving medications may override")
+            }
+            "judaism" -> {
+                sb.appendLine("Religion: Judaism")
+                sb.appendLine()
+                sb.appendLine("FOOD (if observant):")
+                sb.appendLine("• Kosher food required")
+                sb.appendLine("• No pork or shellfish")
+                sb.appendLine("• No mixing meat and dairy")
+                sb.appendLine()
+                sb.appendLine("MEDICATIONS:")
+                sb.appendLine("• Check for non-kosher ingredients")
+                sb.appendLine("• Pikuach nefesh: health overrides dietary law")
+            }
+            "hinduism" -> {
+                sb.appendLine("Religion: Hinduism")
+                sb.appendLine()
+                sb.appendLine("FOOD:")
+                sb.appendLine("• Often vegetarian")
+                sb.appendLine("• No beef (cow is sacred)")
+                sb.appendLine("• Some avoid onion and garlic")
+                sb.appendLine()
+                sb.appendLine("MEDICATIONS:")
+                sb.appendLine("• Check for bovine gelatin")
+                sb.appendLine("• Vegetarian alternatives preferred")
+            }
+            else -> {
+                if (restrictions != null && restrictions.length() > 0) {
+                    sb.appendLine("Recorded restrictions:")
+                    for (i in 0 until restrictions.length()) {
+                        sb.appendLine("• ${restrictions.getString(i)}")
+                    }
+                } else {
+                    sb.appendLine("No dietary restrictions recorded.")
+                    sb.appendLine()
+                    sb.appendLine("Ask patient about:")
+                    sb.appendLine("• Religious dietary laws")
+                    sb.appendLine("• Vegetarian/vegan preferences")
+                    sb.appendLine("• Food allergies")
+                    sb.appendLine("• Medication ingredient concerns")
+                }
+            }
+        }
+
+        showDataOverlay("Dietary Restrictions", sb.toString())
+    }
+
+    /**
+     * Show decision-making preference.
+     */
+    private fun showDecisionMakingPreference() {
+        val style = culturalCarePreferences?.optString("decision_making_style", "individual")
+        val religion = culturalCarePreferences?.optString("religion", "")
+
+        val guidance = """
+            |👥 DECISION-MAKING PREFERENCES
+            |
+            |Current Setting: ${style?.replace("_", " ")?.replaceFirstChar { it.uppercase() } ?: "Not specified"}
+            |
+            |STYLES:
+            |
+            |INDIVIDUAL AUTONOMY:
+            |• Patient makes own decisions
+            |• Standard Western medical ethics
+            |• Family informed per patient wishes
+            |
+            |FAMILY-CENTERED:
+            |• Family involved in all decisions
+            |• Patient may defer to family
+            |• Common in many Asian, Hispanic cultures
+            |
+            |PATRIARCH/MATRIARCH-LED:
+            |• Senior family member makes decisions
+            |• Patient consults family elder first
+            |• Common in some Middle Eastern, Asian cultures
+            |
+            |SHARED (PATIENT + FAMILY):
+            |• Collaborative decision-making
+            |• Both patient and family preferences considered
+            |• Seek consensus before proceeding
+            |
+            |RECOMMENDATIONS:
+            |• Ask patient: "Who should be involved in decisions?"
+            |• "Should we discuss with family first?"
+            |• Document preference in chart
+            |• Respect cultural norms while ensuring patient voice
+            """.trimMargin()
+
+        showDataOverlay("Decision Making", guidance)
+    }
+
+    /**
+     * Show modesty preferences.
+     */
+    private fun showModestyPreferences() {
+        val religion = culturalCarePreferences?.optString("religion", "")
+        val sameGender = culturalCarePreferences?.optBoolean("same_gender_provider_preferred", false) ?: false
+
+        val sb = StringBuilder()
+        sb.appendLine("👤 MODESTY PREFERENCES")
+        sb.appendLine()
+
+        if (sameGender || religion in listOf("islam", "judaism")) {
+            sb.appendLine("⚠️ SAME-GENDER PROVIDER PREFERRED")
+            sb.appendLine()
+        }
+
+        when (religion) {
+            "islam" -> {
+                sb.appendLine("Islamic Modesty Guidelines:")
+                sb.appendLine("• Female patients prefer female providers")
+                sb.appendLine("• Male patients may accept female provider")
+                sb.appendLine("• Minimize body exposure during exams")
+                sb.appendLine("• Allow hijab/head covering to remain")
+                sb.appendLine("• Knock and announce before entering")
+                sb.appendLine("• Private space for 5x daily prayers")
+            }
+            "judaism" -> {
+                sb.appendLine("Jewish Modesty Guidelines (Orthodox):")
+                sb.appendLine("• Same-gender provider when possible")
+                sb.appendLine("• Modest clothing/gowns")
+                sb.appendLine("• Men may keep kippah on")
+                sb.appendLine("• Women may keep head covering")
+            }
+            else -> {
+                if (sameGender) {
+                    sb.appendLine("Patient has requested same-gender providers")
+                    sb.appendLine("when possible for examinations.")
+                } else {
+                    sb.appendLine("No specific modesty preferences recorded.")
+                    sb.appendLine()
+                    sb.appendLine("Always ask patients about:")
+                    sb.appendLine("• Provider gender preferences")
+                    sb.appendLine("• Chaperone requests")
+                    sb.appendLine("• Clothing/covering preferences")
+                }
+            }
+        }
+
+        showDataOverlay("Modesty Preferences", sb.toString())
+    }
+
+    /**
+     * Show end-of-life preferences.
+     */
+    private fun showEndOfLifePreferences() {
+        val religion = culturalCarePreferences?.optString("religion", "")
+
+        val sb = StringBuilder()
+        sb.appendLine("⚰️ END-OF-LIFE PREFERENCES")
+        sb.appendLine()
+
+        when (religion) {
+            "jehovah_witness" -> {
+                sb.appendLine("Jehovah's Witness:")
+                sb.appendLine("• No blood products even at end of life")
+                sb.appendLine("• Comfort care acceptable")
+                sb.appendLine("• Elders may visit for spiritual support")
+                sb.appendLine("• Burial preferred, but cremation acceptable")
+            }
+            "islam" -> {
+                sb.appendLine("Islamic End-of-Life:")
+                sb.appendLine("• Family presence important")
+                sb.appendLine("• Imam may be requested")
+                sb.appendLine("• Face patient toward Mecca (SE in US)")
+                sb.appendLine("• Recitation of Quran at bedside")
+                sb.appendLine("• Burial within 24 hours preferred")
+                sb.appendLine("• No cremation")
+                sb.appendLine("• Body washed by same-gender Muslims")
+            }
+            "judaism" -> {
+                sb.appendLine("Jewish End-of-Life:")
+                sb.appendLine("• No hastening of death")
+                sb.appendLine("• May remove impediments to natural death")
+                sb.appendLine("• Shema prayer at death")
+                sb.appendLine("• Eyes closed by family member")
+                sb.appendLine("• Chevra kadisha (burial society) prepares body")
+                sb.appendLine("• Burial usually within 24 hours")
+                sb.appendLine("• No cremation (Orthodox)")
+                sb.appendLine("• Shiva mourning period follows")
+            }
+            "hinduism" -> {
+                sb.appendLine("Hindu End-of-Life:")
+                sb.appendLine("• Family involvement essential")
+                sb.appendLine("• Pandit (priest) may perform last rites")
+                sb.appendLine("• Ganges water may be given")
+                sb.appendLine("• Mantras recited")
+                sb.appendLine("• May wish to die at home")
+                sb.appendLine("• Cremation preferred")
+                sb.appendLine("• Ashes scattered in sacred water")
+            }
+            "buddhism" -> {
+                sb.appendLine("Buddhist End-of-Life:")
+                sb.appendLine("• Peaceful environment important")
+                sb.appendLine("• Chanting may be performed")
+                sb.appendLine("• Monk may be requested")
+                sb.appendLine("• Mindfulness at time of death")
+                sb.appendLine("• Cremation common")
+                sb.appendLine("• Some traditions have waiting periods")
+            }
+            else -> {
+                sb.appendLine("No specific religious end-of-life preferences recorded.")
+                sb.appendLine()
+                sb.appendLine("DISCUSS WITH PATIENT/FAMILY:")
+                sb.appendLine("• Advance directives")
+                sb.appendLine("• DNR/DNI preferences")
+                sb.appendLine("• Spiritual/religious needs")
+                sb.appendLine("• Family notification preferences")
+                sb.appendLine("• Burial vs. cremation")
+                sb.appendLine("• Organ donation wishes")
+            }
+        }
+
+        showDataOverlay("End-of-Life Care", sb.toString())
+    }
+
+    /**
+     * Show Ramadan fasting medication guidance.
+     */
+    private fun showRamadanGuidance() {
+        val guidance = """
+            |🌙 RAMADAN FASTING GUIDANCE
+            |
+            |FASTING PERIOD: Dawn to Sunset
+            |• No food, drink, or oral medications
+            |
+            |MEDICATION TIMING OPTIONS:
+            |
+            |ONCE DAILY:
+            |• Take after sunset (iftar) meal
+            |
+            |TWICE DAILY:
+            |• Take at pre-dawn (suhur) and sunset
+            |
+            |THREE TIMES DAILY:
+            |• May need regimen change
+            |• Consider long-acting alternatives
+            |• Two doses at non-fasting hours if possible
+            |
+            |GENERALLY ACCEPTABLE DURING FAST:
+            |• Eye drops, ear drops
+            |• Injections (insulin, vaccines)
+            |• Topical medications
+            |• Inhalers (some scholars differ)
+            |• Suppositories (some scholars differ)
+            |
+            |BREAKS THE FAST:
+            |• Oral medications with water
+            |• IV fluids (if not life-saving)
+            |• Sublingual tablets
+            |
+            |⚠️ PATIENT MAY BE EXEMPT FROM FASTING IF:
+            |• Illness that fasting would worsen
+            |• Diabetes with hypoglycemia risk
+            |• Pregnancy or breastfeeding
+            |• Elderly with health conditions
+            |
+            |Always discuss with patient - they may still
+            |choose to fast despite medical advice.
+            """.trimMargin()
+
+        showDataOverlay("Ramadan Guidance", guidance)
+        speakFeedback("Ramadan fasting medication guidance displayed.")
+    }
+
+    /**
+     * Show all cultural care alerts.
+     */
+    private fun showCulturalCareAlerts() {
+        if (culturalCareAlerts.isEmpty()) {
+            showDataOverlay("Cultural Alerts", "No cultural care alerts.\n\nSet patient religion and preferences to enable alerts.")
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("🌍 CULTURAL CARE ALERTS")
+        sb.appendLine()
+
+        culturalCareAlerts.forEach { alert ->
+            sb.appendLine("• ${alert.optString("message", "Alert")}")
+        }
+
+        showDataOverlay("Cultural Alerts", sb.toString())
+    }
+
     // ============ Patient History Methods ============
 
     /**
@@ -19090,6 +20251,139 @@ SOFA Score: [X]
             }
             lower.contains("wink status") || lower.contains("wink mode") -> {
                 speakWinkStatus()
+            }
+            // ═══ RACIAL MEDICINE AWARENESS COMMANDS (Feature #79) ═══
+            lower.contains("skin type") && (lower.contains("set") || Regex("[1-6]|one|two|three|four|five|six").containsMatchIn(lower)) -> {
+                // Set Fitzpatrick skin type: "set skin type 5", "skin type six"
+                val typeMatch = Regex("([1-6]|one|two|three|four|five|six)").find(lower)
+                val type = when (typeMatch?.value) {
+                    "1", "one" -> "I"
+                    "2", "two" -> "II"
+                    "3", "three" -> "III"
+                    "4", "four" -> "IV"
+                    "5", "five" -> "V"
+                    "6", "six" -> "VI"
+                    else -> null
+                }
+                if (type != null) {
+                    setSkinType(type)
+                } else {
+                    speakFeedback("Say skin type followed by a number 1 through 6.")
+                }
+            }
+            lower.contains("pulse ox warning") || lower.contains("oximeter warning") ||
+            lower.contains("spo2 alert") || lower.contains("oxygen alert") -> {
+                // Show pulse oximeter accuracy alert for current patient
+                showPulseOxWarning()
+            }
+            lower.contains("skin assessment") || lower.contains("skin guidance") ||
+            lower.contains("examine skin") || lower.contains("dermatology guidance") -> {
+                // Show skin assessment guidance for current skin type
+                showSkinAssessmentGuidance()
+            }
+            lower.contains("medication ancestry") || lower.contains("pharmacogenomics") ||
+            lower.contains("drug ancestry") || lower.contains("ancestry meds") -> {
+                // Show medication considerations for patient ancestry
+                showMedicationAncestryGuidance()
+            }
+            lower.contains("set ancestry") || (lower.contains("ancestry") &&
+            (lower.contains("african") || lower.contains("asian") || lower.contains("european") ||
+             lower.contains("hispanic") || lower.contains("middle eastern"))) -> {
+                // Set patient ancestry for pharmacogenomics
+                val ancestry = when {
+                    lower.contains("african") -> "african"
+                    lower.contains("east asian") || lower.contains("asian") -> "east_asian"
+                    lower.contains("south asian") -> "south_asian"
+                    lower.contains("european") || lower.contains("caucasian") -> "european"
+                    lower.contains("hispanic") || lower.contains("latino") -> "hispanic"
+                    lower.contains("middle eastern") -> "middle_eastern"
+                    else -> null
+                }
+                if (ancestry != null) {
+                    setPatientAncestry(ancestry)
+                } else {
+                    speakFeedback("Say set ancestry followed by African, Asian, European, Hispanic, or Middle Eastern.")
+                }
+            }
+            lower.contains("racial medicine") || lower.contains("racial alerts") ||
+            lower.contains("equity alerts") || lower.contains("disparity alerts") -> {
+                // Show all racial medicine alerts for current patient
+                showRacialMedicineAlerts()
+            }
+            lower.contains("maternal risk") || lower.contains("pregnancy risk") ||
+            lower.contains("obstetric risk") -> {
+                // Show maternal mortality risk alert
+                showMaternalRiskAlert()
+            }
+            lower.contains("sickle cell") || lower.contains("pain crisis") -> {
+                // Show sickle cell pain protocol reminder
+                showSickleCellProtocol()
+            }
+            // ═══ CULTURAL CARE PREFERENCES COMMANDS (Feature #80) ═══
+            lower.contains("cultural preferences") || lower.contains("cultural care") ||
+            lower.contains("patient culture") || lower.contains("culture preferences") -> {
+                // Show cultural care preferences for current patient
+                showCulturalCarePreferences()
+            }
+            lower.contains("religious preferences") || lower.contains("religion") ||
+            lower.contains("faith preferences") || lower.contains("spiritual care") -> {
+                // Show religious healthcare preferences
+                showReligiousPreferences()
+            }
+            lower.contains("blood preference") || lower.contains("blood product") ||
+            lower.contains("transfusion preference") -> {
+                // Show blood product preferences (esp. JW patients)
+                showBloodProductPreferences()
+            }
+            lower.contains("dietary restrictions") || lower.contains("dietary preference") ||
+            lower.contains("food restrictions") || lower.contains("halal") || lower.contains("kosher") -> {
+                // Show dietary restrictions/preferences
+                showDietaryRestrictions()
+            }
+            lower.contains("decision making") || lower.contains("family decision") ||
+            lower.contains("who decides") || lower.contains("consent preference") -> {
+                // Show decision-making style preference
+                showDecisionMakingPreference()
+            }
+            lower.contains("modesty") || lower.contains("same gender") ||
+            lower.contains("female provider") || lower.contains("male provider") -> {
+                // Show modesty/provider gender preferences
+                showModestyPreferences()
+            }
+            lower.contains("end of life") || lower.contains("advance directive") ||
+            lower.contains("death preference") || lower.contains("dying wish") -> {
+                // Show end-of-life cultural preferences
+                showEndOfLifePreferences()
+            }
+            lower.contains("set religion") || (lower.contains("patient is") &&
+            (lower.contains("jehovah") || lower.contains("muslim") || lower.contains("jewish") ||
+             lower.contains("hindu") || lower.contains("buddhist") || lower.contains("sikh") ||
+             lower.contains("christian") || lower.contains("catholic"))) -> {
+                // Set patient religion for cultural care
+                val religion = when {
+                    lower.contains("jehovah") || lower.contains("witness") -> "jehovah_witness"
+                    lower.contains("muslim") || lower.contains("islam") -> "islam"
+                    lower.contains("jewish") || lower.contains("judaism") -> "judaism"
+                    lower.contains("hindu") -> "hinduism"
+                    lower.contains("buddhist") || lower.contains("buddhism") -> "buddhism"
+                    lower.contains("sikh") -> "sikhism"
+                    lower.contains("catholic") -> "catholic"
+                    lower.contains("christian") -> "christian"
+                    else -> null
+                }
+                if (religion != null) {
+                    setPatientReligion(religion)
+                } else {
+                    speakFeedback("Specify a religion: Jehovah's Witness, Muslim, Jewish, Hindu, Buddhist, Sikh, Christian, or Catholic.")
+                }
+            }
+            lower.contains("ramadan") || lower.contains("fasting") -> {
+                // Show Ramadan fasting medication guidance
+                showRamadanGuidance()
+            }
+            lower.contains("cultural alerts") || lower.contains("care alerts") -> {
+                // Show all cultural care alerts
+                showCulturalCareAlerts()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
