@@ -1043,6 +1043,140 @@ class CopilotResponse(BaseModel):
     timestamp: str
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# RACIAL MEDICINE AWARENESS MODELS (Feature #79)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class FitzpatrickSkinType(str, Enum):
+    """Fitzpatrick Skin Type Scale (I-VI)"""
+    TYPE_I = "I"      # Very light, always burns, never tans
+    TYPE_II = "II"    # Light, burns easily, tans minimally
+    TYPE_III = "III"  # Medium, burns moderately, tans gradually
+    TYPE_IV = "IV"    # Olive, burns minimally, tans well
+    TYPE_V = "V"      # Brown, rarely burns, tans darkly
+    TYPE_VI = "VI"    # Dark brown/black, never burns
+
+
+class RacialMedicineAlert(BaseModel):
+    """Clinical alert for racial medicine considerations"""
+    alert_type: str  # "pulse_ox", "medication", "skin_assessment", "algorithm", "pain", "maternal", "sickle_cell"
+    severity: str  # "info", "warning", "critical"
+    title: str
+    message: str
+    recommendation: str
+    evidence_source: Optional[str] = None
+
+
+class PatientPhysiologicProfile(BaseModel):
+    """Physiologic factors that may affect clinical care - NOT race-based assumptions"""
+    fitzpatrick_type: Optional[FitzpatrickSkinType] = None
+    self_reported_ancestry: Optional[List[str]] = None  # For pharmacogenomics context
+    pharmacogenomic_tested: bool = False
+    known_genetic_variants: Optional[List[str]] = None  # e.g., ["GRK5", "CYP2D6"]
+    sickle_cell_status: Optional[str] = None  # "trait", "disease", "negative", "unknown"
+    g6pd_status: Optional[str] = None  # "deficient", "normal", "unknown"
+
+
+class RacialMedicineRequest(BaseModel):
+    """Request for racial medicine clinical decision support"""
+    patient_id: str
+    fitzpatrick_type: Optional[FitzpatrickSkinType] = None
+    self_reported_ancestry: Optional[List[str]] = None
+    clinical_context: Optional[str] = None  # "vitals", "medication", "skin_exam", "pain", "obstetric"
+    current_readings: Optional[Dict] = None  # e.g., {"spo2": 94}
+    pending_orders: Optional[List[str]] = None  # Medications being ordered
+
+
+class RacialMedicineResponse(BaseModel):
+    """Response with racial medicine alerts and guidance"""
+    alerts: List[RacialMedicineAlert] = []
+    skin_assessment_guidance: Optional[Dict] = None
+    medication_considerations: Optional[List[Dict]] = None
+    calculator_warnings: Optional[List[str]] = None
+    timestamp: str
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CULTURAL CARE PREFERENCES MODELS (Feature #80)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class BloodProductPreference(BaseModel):
+    """Blood product acceptance preferences (esp. for Jehovah's Witnesses)"""
+    whole_blood: bool = True
+    red_cells: bool = True
+    white_cells: bool = True
+    platelets: bool = True
+    plasma: bool = True
+    albumin: Optional[bool] = None  # Individual conscience
+    immunoglobulins: Optional[bool] = None
+    clotting_factors: Optional[bool] = None
+    cell_salvage: Optional[bool] = None
+    hemodilution: Optional[bool] = None
+
+
+class DecisionMakingStyle(str, Enum):
+    """Family involvement in healthcare decisions"""
+    INDIVIDUAL = "individual"  # Patient decides alone
+    FAMILY_CENTERED = "family_centered"  # Family makes decisions together
+    PATRIARCH_LED = "patriarch_led"  # Elder/head of family decides
+    SHARED = "shared"  # Shared between patient and family
+    DEFER_TO_PHYSICIAN = "defer_to_physician"  # Doctor decides
+
+
+class CommunicationPreference(str, Enum):
+    """How patient prefers to receive health information"""
+    DIRECT = "direct"  # Tell patient directly
+    INDIRECT = "indirect"  # Soften/gradual disclosure
+    FAMILY_FIRST = "family_first"  # Tell family, they tell patient
+    FAMILY_PRESENT = "family_present"  # Tell patient with family present
+
+
+class CulturalCarePreferences(BaseModel):
+    """Patient cultural and religious care preferences"""
+    religion: Optional[str] = None
+    dietary_restrictions: List[str] = []  # "halal", "kosher", "vegetarian", "vegan"
+    blood_product_preferences: Optional[BloodProductPreference] = None
+    decision_making_style: DecisionMakingStyle = DecisionMakingStyle.INDIVIDUAL
+    primary_decision_maker: Optional[str] = None  # Name/relationship if not patient
+    communication_preference: CommunicationPreference = CommunicationPreference.DIRECT
+    provider_gender_preference: Optional[str] = None  # "female", "male", "no_preference"
+    interpreter_needed: bool = False
+    preferred_language: str = "en"
+    modesty_requirements: List[str] = []  # "same_gender_provider", "chaperone", "minimal_exposure"
+    religious_garments: List[str] = []  # "hijab", "turban", "kippah"
+    fasting_status: Optional[str] = None  # "ramadan", "yom_kippur", "lent", None
+    traditional_medicine: List[str] = []  # "tcm", "ayurveda", "curanderismo"
+    end_of_life_preferences: Optional[Dict] = None  # AD info
+    family_contacts_for_decisions: List[Dict] = []  # [{name, relationship, phone}]
+
+
+class CulturalCareAlert(BaseModel):
+    """Alert for cultural care considerations"""
+    alert_type: str  # "dietary", "blood_product", "modesty", "fasting", "religious", "family"
+    severity: str  # "info", "warning", "action_required"
+    title: str
+    message: str
+    recommendation: str
+
+
+class CulturalCareRequest(BaseModel):
+    """Request cultural care guidance"""
+    patient_id: str
+    preferences: Optional[CulturalCarePreferences] = None
+    clinical_context: Optional[str] = None  # "medication_order", "procedure", "exam", "eol"
+    pending_orders: Optional[List[str]] = None
+
+
+class CulturalCareResponse(BaseModel):
+    """Response with cultural care alerts and guidance"""
+    alerts: List[CulturalCareAlert] = []
+    dietary_medication_concerns: List[Dict] = []  # Medications with restricted ingredients
+    blood_product_guidance: Optional[Dict] = None
+    modesty_accommodations: List[str] = []
+    communication_guidance: Optional[str] = None
+    timestamp: str
+
+
 # Billing/Claim Models (Feature #71)
 class ClaimStatus(str, Enum):
     """Claim lifecycle status"""
@@ -4200,6 +4334,553 @@ async def copilot_chat(request: CopilotRequest, req: Request):
             details={"error": str(e)[:100]}
         )
         raise HTTPException(status_code=500, detail=f"Co-pilot error: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RACIAL MEDICINE AWARENESS ENDPOINTS (Feature #79)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Skin assessment guidance for melanin-rich skin
+SKIN_ASSESSMENT_GUIDANCE = {
+    "cyanosis": {
+        "light_skin": "Blue discoloration of lips, nail beds, and skin",
+        "dark_skin": "Gray or white appearance of oral mucosa, conjunctiva, nail beds. Check tongue and inner lips.",
+        "recommendation": "For Fitzpatrick IV-VI, assess oral mucosa and conjunctiva rather than nail beds alone."
+    },
+    "jaundice": {
+        "light_skin": "Yellow discoloration of skin and sclera",
+        "dark_skin": "Check sclera, hard palate, palms, and soles. Skin yellowing may not be visible.",
+        "recommendation": "Examine sclera in natural light. Check palms and soles for yellow tinge."
+    },
+    "pallor": {
+        "light_skin": "Pale or white appearance of skin",
+        "dark_skin": "Grayish, ashen appearance. Mucous membranes may appear pale gray.",
+        "recommendation": "Assess conjunctiva, oral mucosa, and palms for pallor rather than facial skin."
+    },
+    "erythema": {
+        "light_skin": "Pink or red discoloration",
+        "dark_skin": "May appear purple, dark brown, or as increased warmth without visible color change.",
+        "recommendation": "Palpate for warmth and edema. Look for subtle color darkening or purple tones."
+    },
+    "petechiae": {
+        "light_skin": "Red pinpoint dots",
+        "dark_skin": "Dark purple or brown dots. May only be visible on palms, soles, oral mucosa.",
+        "recommendation": "Examine oral mucosa, conjunctiva, palms, and soles for petechiae."
+    },
+    "bruising": {
+        "light_skin": "Blue, purple, green, yellow progression",
+        "dark_skin": "Darker than surrounding skin, may appear black. Palpate for tenderness.",
+        "recommendation": "Palpation is key. Color changes may be subtle or not visible."
+    },
+    "rash": {
+        "light_skin": "Red, raised, or flat lesions",
+        "dark_skin": "May appear hyperpigmented, hypopigmented, or purple. Texture changes important.",
+        "recommendation": "Focus on texture (papules, vesicles) and distribution pattern. Color may not be reliable."
+    },
+    "melanoma": {
+        "light_skin": "Asymmetric pigmented lesion, irregular borders",
+        "dark_skin": "Check acral sites: palms, soles, nail beds, mucous membranes. Subungual melanoma more common.",
+        "recommendation": "ABCDE criteria still apply but examine acral sites routinely."
+    }
+}
+
+# Medication considerations based on ancestry (pharmacogenomics)
+MEDICATION_ANCESTRY_CONSIDERATIONS = {
+    "african": {
+        "ace_inhibitors": {
+            "alert": "ACE inhibitors may have reduced efficacy for hypertension",
+            "recommendation": "Consider thiazide diuretic or CCB as first-line. If ACE inhibitor needed, may require higher doses.",
+            "evidence": "Multiple trials show reduced BP response in African-descent patients"
+        },
+        "beta_blockers": {
+            "alert": "Beta-blockers may have reduced antihypertensive effect",
+            "recommendation": "Consider alternative first-line agents. If used, monitor closely.",
+            "evidence": "VA Cooperative Trial, ALLHAT"
+        },
+        "bidil": {
+            "alert": "BiDil (isosorbide dinitrate/hydralazine) FDA-approved for heart failure",
+            "recommendation": "Consider for heart failure in self-identified African American patients",
+            "evidence": "A-HeFT trial"
+        }
+    },
+    "asian": {
+        "warfarin": {
+            "alert": "May require lower warfarin doses",
+            "recommendation": "Start at lower dose, monitor INR closely",
+            "evidence": "CYP2C9/VKORC1 variants more common"
+        },
+        "clopidogrel": {
+            "alert": "Higher prevalence of CYP2C19 poor metabolizers",
+            "recommendation": "Consider alternative antiplatelet or genetic testing",
+            "evidence": "Up to 15-25% may be poor metabolizers"
+        }
+    }
+}
+
+
+def generate_racial_medicine_alerts(request: RacialMedicineRequest) -> RacialMedicineResponse:
+    """Generate clinical decision support alerts for racial medicine considerations."""
+    alerts = []
+    skin_guidance = None
+    med_considerations = []
+    calc_warnings = []
+
+    fitzpatrick = request.fitzpatrick_type
+    ancestry = request.self_reported_ancestry or []
+    context = request.clinical_context
+    readings = request.current_readings or {}
+    orders = request.pending_orders or []
+
+    # Pulse oximeter accuracy alert for darker skin tones
+    if fitzpatrick in [FitzpatrickSkinType.TYPE_IV, FitzpatrickSkinType.TYPE_V, FitzpatrickSkinType.TYPE_VI]:
+        if context == "vitals" or "spo2" in readings:
+            spo2 = readings.get("spo2")
+            alerts.append(RacialMedicineAlert(
+                alert_type="pulse_ox",
+                severity="warning",
+                title="Pulse Oximeter Accuracy",
+                message=f"SpO2 readings may overestimate actual oxygen saturation by 1-4% on darker skin tones (Fitzpatrick {fitzpatrick.value}).",
+                recommendation="Consider ABG for critical decisions. Studies show 3x higher occult hypoxemia rates in Black patients. SpO2 94% may actually be 90-93%.",
+                evidence_source="NEJM 2020, FDA Draft Guidance 2025"
+            ))
+
+    # Skin assessment guidance for melanin-rich skin
+    if fitzpatrick in [FitzpatrickSkinType.TYPE_IV, FitzpatrickSkinType.TYPE_V, FitzpatrickSkinType.TYPE_VI]:
+        if context == "skin_exam" or context == "physical_exam":
+            skin_guidance = SKIN_ASSESSMENT_GUIDANCE
+            alerts.append(RacialMedicineAlert(
+                alert_type="skin_assessment",
+                severity="info",
+                title="Skin Assessment Guidance",
+                message="Standard skin findings present differently on melanin-rich skin.",
+                recommendation="See skin assessment guidance for modified examination techniques.",
+                evidence_source="PMC, MIT 2024"
+            ))
+
+    # Medication considerations based on ancestry
+    ancestry_lower = [a.lower() for a in ancestry]
+    for anc in ancestry_lower:
+        if anc in ["african", "african american", "black"]:
+            if any("ace" in o.lower() or "lisinopril" in o.lower() or "enalapril" in o.lower() or "ramipril" in o.lower() for o in orders):
+                med_considerations.append(MEDICATION_ANCESTRY_CONSIDERATIONS["african"]["ace_inhibitors"])
+            if any("metoprolol" in o.lower() or "atenolol" in o.lower() or "propranolol" in o.lower() for o in orders):
+                med_considerations.append(MEDICATION_ANCESTRY_CONSIDERATIONS["african"]["beta_blockers"])
+            # Always mention BiDil for heart failure context
+            if context == "heart_failure" or any("heart failure" in o.lower() for o in orders):
+                med_considerations.append(MEDICATION_ANCESTRY_CONSIDERATIONS["african"]["bidil"])
+
+    # Maternal health alert
+    if context == "obstetric" and any(a.lower() in ["african", "african american", "black"] for a in ancestry):
+        alerts.append(RacialMedicineAlert(
+            alert_type="maternal",
+            severity="warning",
+            title="Elevated Maternal Risk",
+            message="Black women face 3-4x higher maternal mortality rates, regardless of income or education.",
+            recommendation="Lower threshold for escalation. Document all patient-reported symptoms. Monitor closely for preeclampsia, hemorrhage, cardiomyopathy.",
+            evidence_source="KFF, CDC MMWR"
+        ))
+
+    # Pain management bias reminder
+    if context == "pain":
+        alerts.append(RacialMedicineAlert(
+            alert_type="pain",
+            severity="info",
+            title="Pain Assessment Reminder",
+            message="Research shows racial bias affects pain treatment decisions.",
+            recommendation="Use standardized pain scales. Document patient-reported levels without subjective interpretation. False beliefs about biological differences lead to undertreatment.",
+            evidence_source="PNAS 2016, JAMA Network Open"
+        ))
+
+    # Sickle cell alert
+    if context == "sickle_cell" or context == "pain_crisis":
+        alerts.append(RacialMedicineAlert(
+            alert_type="sickle_cell",
+            severity="critical",
+            title="Sickle Cell Pain Crisis Protocol",
+            message="Vaso-occlusive crisis is a MEDICAL EMERGENCY. Target: pain medication within 60 minutes.",
+            recommendation="Use patient's individualized pain plan. High-dose opioids often medically necessary. Do not delay treatment. Monitor for stroke, acute chest syndrome.",
+            evidence_source="ASH Guidelines, Hematology.org"
+        ))
+
+    # Calculator bias warnings
+    calc_warnings = [
+        "eGFR: Use CKD-EPI 2021 race-free equation (NKF/ASN recommendation)",
+        "Pulmonary function: Race-based 'corrections' are being phased out",
+        "VBAC calculator: Some versions have race adjustments that may underestimate success"
+    ]
+
+    return RacialMedicineResponse(
+        alerts=alerts,
+        skin_assessment_guidance=skin_guidance,
+        medication_considerations=med_considerations if med_considerations else None,
+        calculator_warnings=calc_warnings if context == "calculator" else None,
+        timestamp=datetime.utcnow().isoformat()
+    )
+
+
+@app.post("/api/v1/racial-medicine/alerts")
+async def get_racial_medicine_alerts(request: RacialMedicineRequest, req: Request):
+    """
+    Get racial medicine clinical decision support alerts.
+
+    Returns alerts and guidance based on patient's Fitzpatrick skin type,
+    ancestry, and clinical context. Addresses pulse oximeter accuracy,
+    medication considerations, skin assessment, and more.
+    """
+    # Audit log
+    audit_logger._log_event(
+        event_type="CDS",
+        action="RACIAL_MEDICINE_ALERT",
+        patient_id=request.patient_id,
+        status="request",
+        details={"context": request.clinical_context, "fitzpatrick": request.fitzpatrick_type.value if request.fitzpatrick_type else None}
+    )
+
+    response = generate_racial_medicine_alerts(request)
+
+    audit_logger._log_event(
+        event_type="CDS",
+        action="RACIAL_MEDICINE_ALERT",
+        patient_id=request.patient_id,
+        status="success",
+        details={"alerts_count": len(response.alerts)}
+    )
+
+    return response
+
+
+@app.get("/api/v1/racial-medicine/skin-guidance")
+async def get_skin_assessment_guidance():
+    """Get skin assessment guidance for melanin-rich skin."""
+    return {
+        "guidance": SKIN_ASSESSMENT_GUIDANCE,
+        "note": "Standard skin findings present differently on Fitzpatrick IV-VI skin types. Use these modified assessment techniques.",
+        "sources": [
+            "MIT News 2024 - Diagnostic accuracy on darker skin",
+            "PMC - Skin Inclusion in Medical Education",
+            "JAAD - Representation in dermatology"
+        ]
+    }
+
+
+@app.get("/api/v1/racial-medicine/medication-considerations/{ancestry}")
+async def get_medication_considerations(ancestry: str):
+    """Get medication considerations for specific ancestry."""
+    ancestry_key = ancestry.lower()
+    if ancestry_key in ["african", "african_american", "black"]:
+        return MEDICATION_ANCESTRY_CONSIDERATIONS.get("african", {})
+    elif ancestry_key in ["asian", "east_asian", "south_asian"]:
+        return MEDICATION_ANCESTRY_CONSIDERATIONS.get("asian", {})
+    else:
+        return {"message": "No specific considerations on file. Consider pharmacogenomic testing for personalized guidance."}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CULTURAL CARE PREFERENCES ENDPOINTS (Feature #80)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Medications with potentially restricted ingredients
+DIETARY_MEDICATION_CONCERNS = {
+    "gelatin_capsules": {
+        "concern": "May contain pork-derived gelatin",
+        "affected_diets": ["halal", "kosher", "vegetarian", "vegan"],
+        "alternatives": "Request tablet form or vegetarian capsules if available"
+    },
+    "alcohol_preparations": {
+        "concern": "Contains alcohol as solvent/preservative",
+        "affected_diets": ["halal", "some_christian"],
+        "alternatives": "Request alcohol-free formulation if available"
+    },
+    "lactose_fillers": {
+        "concern": "Contains lactose as tablet filler",
+        "affected_diets": ["vegan", "lactose_intolerant"],
+        "alternatives": "Check for lactose-free alternatives"
+    },
+    "animal_derived": {
+        "concern": "May contain animal-derived ingredients (stearic acid, etc.)",
+        "affected_diets": ["vegetarian", "vegan", "jain"],
+        "alternatives": "Consult pharmacist for plant-based alternatives"
+    }
+}
+
+# Religious considerations database
+RELIGIOUS_CARE_CONSIDERATIONS = {
+    "jehovahs_witness": {
+        "blood_products": {
+            "refused": ["whole_blood", "red_cells", "white_cells", "platelets", "plasma"],
+            "individual_conscience": ["albumin", "immunoglobulins", "clotting_factors", "cell_salvage"],
+            "note": "ALWAYS confirm individual patient preferences. Some may accept individual conscience items."
+        },
+        "alternatives": "Consider EPO, iron supplementation, cell salvage, meticulous surgical hemostasis",
+        "resources": "Contact JW Hospital Liaison Committee for support"
+    },
+    "islam": {
+        "dietary": ["halal", "no_pork", "no_alcohol"],
+        "fasting": {
+            "ramadan": "Dawn to sunset fasting. Adjust medication timing. IV meds generally acceptable.",
+            "exemptions": "Illness may exempt from fasting - encourage discussion with imam"
+        },
+        "modesty": "Strong preference for same-gender providers, especially for women",
+        "prayer": "Five daily prayers - accommodate timing when possible",
+        "end_of_life": "Assisted suicide prohibited. DNR requires structured process."
+    },
+    "judaism": {
+        "dietary": ["kosher", "no_pork", "no_shellfish", "meat_dairy_separation"],
+        "sabbath": "Friday sunset to Saturday sunset. Emergency care always permitted (pikuach nefesh).",
+        "modesty": "Orthodox women may prefer female providers",
+        "end_of_life": "Complex - generally oppose hastening death but accept comfort care"
+    },
+    "hinduism": {
+        "dietary": ["vegetarian", "no_beef"],
+        "modesty": "May prefer same-gender providers",
+        "traditional_medicine": "May use Ayurvedic remedies alongside Western medicine",
+        "family": "Extended family often involved in decisions"
+    },
+    "buddhism": {
+        "dietary": ["vegetarian_common"],
+        "end_of_life": "May refuse sedation to maintain awareness at death",
+        "organ_donation": "Generally supported as act of compassion"
+    },
+    "sikhism": {
+        "five_ks": "Kesh (uncut hair), Kangha, Kara, Kachera, Kirpan - discuss before surgical prep",
+        "turban": "Religious head covering - minimize removal",
+        "dietary": ["vegetarian_common", "no_halal_meat"]
+    }
+}
+
+# In-memory storage for patient cultural preferences (in production, use database)
+patient_cultural_preferences: Dict[str, CulturalCarePreferences] = {}
+
+
+def generate_cultural_care_alerts(request: CulturalCareRequest) -> CulturalCareResponse:
+    """Generate cultural care alerts and guidance."""
+    alerts = []
+    dietary_concerns = []
+    blood_guidance = None
+    modesty_accommodations = []
+    comm_guidance = None
+
+    prefs = request.preferences
+    if not prefs:
+        # Try to load from storage
+        prefs = patient_cultural_preferences.get(request.patient_id)
+
+    if not prefs:
+        return CulturalCareResponse(
+            alerts=[CulturalCareAlert(
+                alert_type="info",
+                severity="info",
+                title="No Cultural Preferences on File",
+                message="Cultural care preferences not documented for this patient.",
+                recommendation="Consider asking about cultural/religious preferences during intake."
+            )],
+            dietary_medication_concerns=[],
+            blood_product_guidance=None,
+            modesty_accommodations=[],
+            communication_guidance=None,
+            timestamp=datetime.utcnow().isoformat()
+        )
+
+    # Religion-specific alerts
+    if prefs.religion:
+        religion_lower = prefs.religion.lower().replace(" ", "_").replace("'", "")
+        if religion_lower in RELIGIOUS_CARE_CONSIDERATIONS:
+            rel_info = RELIGIOUS_CARE_CONSIDERATIONS[religion_lower]
+            alerts.append(CulturalCareAlert(
+                alert_type="religious",
+                severity="info",
+                title=f"Religious Considerations: {prefs.religion}",
+                message=f"Patient identifies as {prefs.religion}. See religious care guidance.",
+                recommendation="Review religion-specific considerations and confirm preferences with patient."
+            ))
+
+    # Blood product preferences (especially JW)
+    if prefs.blood_product_preferences:
+        bp = prefs.blood_product_preferences
+        refused = []
+        if not bp.whole_blood:
+            refused.append("whole blood")
+        if not bp.red_cells:
+            refused.append("red cells")
+        if not bp.white_cells:
+            refused.append("white cells")
+        if not bp.platelets:
+            refused.append("platelets")
+        if not bp.plasma:
+            refused.append("plasma")
+
+        if refused:
+            alerts.append(CulturalCareAlert(
+                alert_type="blood_product",
+                severity="critical",
+                title="Blood Product Restrictions",
+                message=f"Patient declines: {', '.join(refused)}",
+                recommendation="Use patient blood management strategies. Confirm individual conscience items. Document refusal."
+            ))
+            blood_guidance = {
+                "refused": refused,
+                "individual_conscience": {
+                    "albumin": bp.albumin,
+                    "immunoglobulins": bp.immunoglobulins,
+                    "clotting_factors": bp.clotting_factors,
+                    "cell_salvage": bp.cell_salvage
+                },
+                "alternatives": ["EPO", "iron supplementation", "cell salvage", "acute normovolemic hemodilution", "meticulous hemostasis"]
+            }
+
+    # Dietary medication concerns
+    if prefs.dietary_restrictions:
+        for restriction in prefs.dietary_restrictions:
+            for med_type, concern_info in DIETARY_MEDICATION_CONCERNS.items():
+                if restriction.lower() in [d.lower() for d in concern_info["affected_diets"]]:
+                    dietary_concerns.append({
+                        "restriction": restriction,
+                        "concern": concern_info["concern"],
+                        "alternative": concern_info["alternatives"]
+                    })
+
+        if dietary_concerns:
+            alerts.append(CulturalCareAlert(
+                alert_type="dietary",
+                severity="warning",
+                title="Dietary Medication Restrictions",
+                message=f"Patient has dietary restrictions: {', '.join(prefs.dietary_restrictions)}",
+                recommendation="Review medications for restricted ingredients. See dietary concerns list."
+            ))
+
+    # Fasting status
+    if prefs.fasting_status:
+        alerts.append(CulturalCareAlert(
+            alert_type="fasting",
+            severity="warning",
+            title=f"Currently Fasting: {prefs.fasting_status.title()}",
+            message="Patient is currently observing a religious fast.",
+            recommendation="Adjust oral medication timing to non-fasting hours. Discuss exemptions for illness if appropriate."
+        ))
+
+    # Modesty requirements
+    if prefs.modesty_requirements:
+        modesty_accommodations = prefs.modesty_requirements
+        if "same_gender_provider" in prefs.modesty_requirements:
+            alerts.append(CulturalCareAlert(
+                alert_type="modesty",
+                severity="action_required",
+                title="Same-Gender Provider Preferred",
+                message="Patient prefers same-gender provider for care.",
+                recommendation="Arrange same-gender provider if possible. If not available, explain necessity and offer chaperone."
+            ))
+
+    # Provider gender preference
+    if prefs.provider_gender_preference and prefs.provider_gender_preference != "no_preference":
+        modesty_accommodations.append(f"provider_gender_{prefs.provider_gender_preference}")
+
+    # Communication preference
+    if prefs.communication_preference != CommunicationPreference.DIRECT:
+        comm_guidance = {
+            "style": prefs.communication_preference.value,
+            "guidance": {
+                "indirect": "Use softer language. Deliver serious news gradually. Allow time for processing.",
+                "family_first": "Share information with designated family member first. They will share with patient.",
+                "family_present": "Ensure designated family members present for important discussions."
+            }.get(prefs.communication_preference.value, "")
+        }
+        if prefs.decision_making_style != DecisionMakingStyle.INDIVIDUAL:
+            comm_guidance["decision_making"] = f"Decision style: {prefs.decision_making_style.value}"
+            if prefs.primary_decision_maker:
+                comm_guidance["decision_maker"] = prefs.primary_decision_maker
+
+    # Family involvement
+    if prefs.decision_making_style != DecisionMakingStyle.INDIVIDUAL:
+        alerts.append(CulturalCareAlert(
+            alert_type="family",
+            severity="info",
+            title=f"Family Involvement: {prefs.decision_making_style.value.replace('_', ' ').title()}",
+            message="Patient prefers family involvement in healthcare decisions.",
+            recommendation=f"Include family in discussions. Primary decision maker: {prefs.primary_decision_maker or 'Not specified'}"
+        ))
+
+    return CulturalCareResponse(
+        alerts=alerts,
+        dietary_medication_concerns=dietary_concerns,
+        blood_product_guidance=blood_guidance,
+        modesty_accommodations=modesty_accommodations,
+        communication_guidance=comm_guidance.get("guidance") if comm_guidance else None,
+        timestamp=datetime.utcnow().isoformat()
+    )
+
+
+@app.post("/api/v1/cultural-care/alerts")
+async def get_cultural_care_alerts(request: CulturalCareRequest, req: Request):
+    """
+    Get cultural care alerts and guidance for patient.
+
+    Returns alerts based on patient's cultural/religious preferences,
+    dietary restrictions, blood product preferences, and communication style.
+    """
+    audit_logger._log_event(
+        event_type="CDS",
+        action="CULTURAL_CARE_ALERT",
+        patient_id=request.patient_id,
+        status="request",
+        details={"context": request.clinical_context}
+    )
+
+    response = generate_cultural_care_alerts(request)
+
+    audit_logger._log_event(
+        event_type="CDS",
+        action="CULTURAL_CARE_ALERT",
+        patient_id=request.patient_id,
+        status="success",
+        details={"alerts_count": len(response.alerts)}
+    )
+
+    return response
+
+
+@app.post("/api/v1/cultural-care/preferences/{patient_id}")
+async def save_cultural_preferences(patient_id: str, preferences: CulturalCarePreferences, req: Request):
+    """Save cultural care preferences for a patient."""
+    patient_cultural_preferences[patient_id] = preferences
+
+    audit_logger._log_event(
+        event_type="PHI_UPDATE",
+        action="SAVE_CULTURAL_PREFERENCES",
+        patient_id=patient_id,
+        status="success",
+        details={"religion": preferences.religion, "dietary_count": len(preferences.dietary_restrictions)}
+    )
+
+    return {"status": "saved", "patient_id": patient_id}
+
+
+@app.get("/api/v1/cultural-care/preferences/{patient_id}")
+async def get_cultural_preferences(patient_id: str, req: Request):
+    """Get cultural care preferences for a patient."""
+    prefs = patient_cultural_preferences.get(patient_id)
+    if not prefs:
+        raise HTTPException(status_code=404, detail="No cultural preferences on file")
+
+    audit_logger._log_event(
+        event_type="PHI_ACCESS",
+        action="GET_CULTURAL_PREFERENCES",
+        patient_id=patient_id,
+        status="success"
+    )
+
+    return prefs
+
+
+@app.get("/api/v1/cultural-care/religious-guidance/{religion}")
+async def get_religious_guidance(religion: str):
+    """Get religious care considerations for a specific religion."""
+    religion_key = religion.lower().replace(" ", "_").replace("'", "")
+    if religion_key in RELIGIOUS_CARE_CONSIDERATIONS:
+        return {
+            "religion": religion,
+            "considerations": RELIGIOUS_CARE_CONSIDERATIONS[religion_key]
+        }
+    return {"religion": religion, "message": "No specific guidance on file. Ask patient about their preferences."}
 
 
 # ============ Medical Image Analysis (Feature #70) ============

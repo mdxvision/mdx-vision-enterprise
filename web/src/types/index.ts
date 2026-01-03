@@ -172,3 +172,136 @@ export interface PaginatedResponse<T> {
   hasNext: boolean;
   hasPrevious: boolean;
 }
+
+// DNFB (Discharged Not Final Billed) Types
+export type DNFBReason =
+  | 'CODING_INCOMPLETE'
+  | 'DOCUMENTATION_MISSING'
+  | 'CHARGES_PENDING'
+  | 'PRIOR_AUTH_MISSING'
+  | 'PRIOR_AUTH_EXPIRED'
+  | 'PRIOR_AUTH_DENIED'
+  | 'INSURANCE_VERIFICATION'
+  | 'CLINICAL_REVIEW'
+  | 'PHYSICIAN_QUERY'
+  | 'COMPLIANCE_HOLD'
+  | 'SYSTEM_ERROR'
+  | 'OTHER';
+
+export type PriorAuthStatus =
+  | 'NOT_REQUIRED'
+  | 'PENDING'
+  | 'APPROVED'
+  | 'DENIED'
+  | 'EXPIRED'
+  | 'NOT_OBTAINED';
+
+export type DNFBStatus = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'ESCALATED';
+
+export type AgingBucket = '0-3' | '4-7' | '8-14' | '15-30' | '31+';
+
+export interface PriorAuthInfo {
+  authNumber?: string;
+  status: PriorAuthStatus;
+  requestDate?: string;
+  expirationDate?: string;
+  denialReason?: string;
+  payerName?: string;
+  payerPhone?: string;
+}
+
+export interface DNFBAccount {
+  dnfbId: string;
+  patientId: string;
+  patientName?: string;
+  mrn?: string;
+  accountNumber?: string;
+  dischargeDate: string;
+  reason: DNFBReason;
+  status: DNFBStatus;
+  priorAuth?: PriorAuthInfo;
+  daysSinceDischarge: number;
+  agingBucket: AgingBucket;
+  estimatedCharges?: number;
+  assignedTo?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  claimId?: string;
+}
+
+export interface DNFBSummary {
+  totalAccounts: number;
+  totalAtRiskRevenue: number;
+  byReason: Record<DNFBReason, { count: number; revenue: number }>;
+  byAgingBucket: Record<AgingBucket, { count: number; revenue: number }>;
+  priorAuthIssues: number;
+  priorAuthAtRisk: number;
+  avgDaysSinceDischarge: number;
+}
+
+export interface DNFBFilters {
+  reason?: DNFBReason;
+  status?: DNFBStatus;
+  agingBucket?: AgingBucket;
+  priorAuthStatus?: PriorAuthStatus;
+  assignedTo?: string;
+  minDays?: number;
+  maxDays?: number;
+}
+
+// Billing Claim Types
+export type ClaimStatus = 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'PAID' | 'DENIED';
+
+export interface DiagnosisCode {
+  code: string;
+  description: string;
+  sequence: number;
+  isPrincipal: boolean;
+}
+
+export interface ProcedureCode {
+  code: string;
+  description: string;
+  modifiers: string[];
+  units: number;
+}
+
+export interface ServiceLine {
+  lineNumber: number;
+  serviceDate: string;
+  procedure: ProcedureCode;
+  diagnosisPointers: number[];
+  chargeAmount: number;
+}
+
+export interface BillingClaim {
+  claimId: string;
+  status: ClaimStatus;
+  patientId: string;
+  patientName?: string;
+  mrn?: string;
+  noteId?: string;
+  serviceDate: string;
+  diagnoses: DiagnosisCode[];
+  serviceLines: ServiceLine[];
+  totalCharges: number;
+  paidAmount?: number;
+  denialReason?: string;
+  payerName?: string;
+  createdAt: string;
+  submittedAt?: string;
+  paidAt?: string;
+}
+
+export interface BillingSummary {
+  totalClaims: number;
+  totalCharges: number;
+  totalPaid: number;
+  pendingAmount: number;
+  byStatus: Record<ClaimStatus, { count: number; amount: number }>;
+  denialRate: number;
+  avgDaysToPayment: number;
+}

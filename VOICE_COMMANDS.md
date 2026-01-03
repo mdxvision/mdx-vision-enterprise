@@ -438,4 +438,33 @@ Complete list of voice commands for MDx Vision AR glasses. Updated regularly as 
 
 ---
 
-*Last updated: Feature #78 (AI Clinical Co-pilot)*
+## Racial Medicine Awareness (Feature #79)
+
+| Command | What it Does | How to Use |
+|---------|--------------|------------|
+| "skin assessment guidance" | Display melanin-specific exam tips | For Fitzpatrick IV-VI patients |
+| "pulse ox warning" | Show SpO2 accuracy alert | Darker skin tones |
+| "medication considerations" | Show ancestry-relevant drug info | Based on patient ancestry |
+| "check calculator bias" | Verify race-free algorithms | eGFR, lung function |
+| "sickle cell protocol" | Display rapid treatment protocol | Pain crisis management |
+| "pain protocol" | Show bias-aware pain assessment | Any pain evaluation |
+| "maternal risk" | Show elevated risk alerts | Obstetric patients |
+
+---
+
+## Cultural Care Preferences (Feature #80)
+
+| Command | What it Does | How to Use |
+|---------|--------------|------------|
+| "show cultural preferences" | Display patient's preferences | After loading patient |
+| "dietary restrictions" | Show dietary/medication restrictions | Halal, Kosher, vegetarian |
+| "blood product preferences" | Show blood acceptance/refusal | Jehovah's Witness, etc. |
+| "religious considerations" | Display religious care guidance | Based on patient religion |
+| "modesty preferences" | Show modesty requirements | Gender preferences, chaperone |
+| "family involvement" | Show decision-making preferences | Who to include |
+| "fasting status" | Check if patient is fasting | Ramadan, other fasts |
+| "save cultural preferences" | Save patient's preferences | After collecting info |
+
+---
+
+*Last updated: Feature #80 (Cultural Care Preferences)*

@@ -398,13 +398,22 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 76. **Wink Gesture (Micro-Tilt)** - Quick head dip gesture for rapid selection on Vuzix Blade 2; alternative to full nod for faster interaction; lower threshold (0.8-1.5 rad/s vs 1.8+ for nod); faster duration requirement (<200ms); 300ms cooldown for rapid selection; dismisses overlays, selects worklist patients, acknowledges alerts; voice commands ("enable wink", "disable wink", "wink status"); distinct from full nod to prevent gesture confusion; 14 unit tests for wink detection
 77. **Voice Biometric Continuous Auth** - Extends Feature #66 with periodic re-verification during active sessions; VoiceprintSession model with confidence decay (1% per minute); configurable re-verify interval (default 5 minutes); server-side session storage with timestamps; background monitoring during transcription/ambient modes; auto-prompt when verification expires; sensitive operations require fresh voiceprint (push notes, vitals, orders, allergies, medication updates); X-Device-ID header enables enforcement; voice commands ("verify me", "verify my voice", "verification status", "set verify interval [N] minutes"); API endpoints (/api/v1/auth/voiceprint/{device_id}/check, /api/v1/auth/voiceprint/{device_id}/re-verify, /api/v1/auth/voiceprint/{device_id}/interval)
 78. **AI Clinical Co-pilot** - Interactive AI dialogue during clinical documentation; conversational context with 6-message history; patient context integration (conditions, medications, allergies, chief complaint); TTS-optimized responses (3 bullets, 15 words each); actionable suggestions (orders, calculators) with voice prompts; natural language triggers ("what should I...", "what do you think..."); follow-up support ("tell me more", "what next"); Claude claude-3-haiku for fast responses; voice commands ("hey copilot", "copilot [question]", "tell me more", "elaborate", "suggest next", "clear copilot"); API endpoint (/api/v1/copilot/chat); HIPAA audit logging (chief complaint only, no full PHI)
+79. **Racial Medicine Awareness** - Clinical decision support addressing the "white default" problem in medicine; Fitzpatrick skin type tracking (I-VI); pulse oximeter accuracy alerts for darker skin (1-4% overestimation warning); skin assessment guidance for melanin-rich skin (cyanosis, jaundice, pallor, erythema, petechiae, bruising, rash, melanoma with modified examination techniques); pharmacogenomic medication considerations (ACE inhibitors, beta-blockers for African ancestry; warfarin, clopidogrel for Asian ancestry); maternal mortality risk alerts (3-4x higher for Black women); sickle cell pain crisis protocol (60-minute treatment target); pain assessment bias reminders; calculator bias warnings (race-free eGFR CKD-EPI 2021); API endpoints (/api/v1/racial-medicine/alerts, /api/v1/racial-medicine/skin-guidance, /api/v1/racial-medicine/medication-considerations/{ancestry}); HIPAA audit logging; first-of-its-kind feature not available in any commercial EHR or AR system
+80. **Cultural Care Preferences** - Comprehensive religious and cultural healthcare preferences; religion-specific care considerations (Jehovah's Witness blood products, Islam dietary/fasting/modesty, Judaism kosher/Sabbath, Hinduism, Buddhism, Sikhism); blood product preference tracking with individual conscience items; dietary medication concerns (gelatin, alcohol, lactose, animal-derived); Ramadan fasting medication timing; modesty requirements and same-gender provider preferences; family decision-making styles (individual, family-centered, patriarch-led, shared); communication preferences (direct, indirect, family-first); end-of-life preferences; traditional medicine tracking (TCM, Ayurveda, curanderismo); API endpoints (/api/v1/cultural-care/alerts, /api/v1/cultural-care/preferences/{patient_id}, /api/v1/cultural-care/religious-guidance/{religion}); HIPAA audit logging
+
+## Research Documents
+
+| Document | Description |
+|----------|-------------|
+| `RACIAL_MEDICINE_DISPARITIES.md` | Comprehensive research on racial disparities in medicine with implementation guidance |
+| `CULTURAL_CARE_PREFERENCES.md` | Research on cultural/religious care preferences with clinical recommendations |
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 78 features implemented |
+| All medium effort items completed! | 80 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)
