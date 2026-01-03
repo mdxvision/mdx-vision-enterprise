@@ -391,15 +391,15 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 70. **Medical Image Recognition** - Claude Vision-powered image analysis (claude-3-5-sonnet) for medical images; captures wounds, rashes, X-rays via camera activity; returns clinical assessment, findings with confidence levels, ICD-10 codes, recommendations, red flags, differential considerations; context types: wound, rash, xray, general; voice commands ("take photo", "capture image", "analyze wound", "analyze rash", "analyze xray", "read analysis", "image results"); safety disclaimer "For clinical decision support only"; 15MB size limit; HIPAA audit logging (no image data in logs)
 71. **Billing/Coding Submission** - Create billing claims from saved clinical notes; auto-populate ICD-10 diagnoses and CPT procedures; review/edit codes before submission; add/remove diagnoses by voice ("add diagnosis J06.9", "remove diagnosis 2"); add/remove procedures ("add procedure 99213"); CPT modifier support ("add modifier 25 to 1"); code search ("search icd hypertension", "search cpt office visit"); submit with confirmation workflow; FHIR Claim resource generation (R4); claim history per patient ("show claims", "claim history"); voice commands ("create claim", "bill this", "submit claim", "confirm", "close billing"); HIPAA audit logging for all billing operations
 72. **DNFB (Discharged Not Final Billed)** - Revenue cycle management for unbilled discharged accounts; aging bucket tracking (0-3, 4-7, 8-14, 15-30, 31+ days); reason codes (coding incomplete, documentation missing, charges pending, prior auth issues); prior authorization tracking (pending, approved, denied, expired, not obtained); prior auth issue filtering with at-risk revenue calculation; DNFB summary metrics with breakdown by reason and aging; patient-specific DNFB status; resolve accounts and link to billing claims; voice commands ("show DNFB", "DNFB summary", "prior auth issues", "over 7 days", "resolve 1", "patient DNFB"); HIPAA audit logging
+73. **Vuzix HUD Native Overlay** - Always-on patient info HUD for Vuzix Blade 2 AR glasses (1280x720); Foreground Service with WindowManager overlay; two modes: compact (320x180dp) showing patient name, allergies, meds count, room, and expanded (768x400dp) with full details; auto-updates when patient data changes; voice commands ("show HUD", "hide HUD", "expand HUD", "minimize HUD", "toggle HUD"); non-blocking FLAG_NOT_FOCUSABLE overlay; dark theme (#0A1628) with high-contrast text; Vuzix SDK integration (hud-actionmenu:2.9.0, hud-resources:2.3.0); auto-detects Vuzix device; graceful fallback on non-Vuzix devices
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 72 features implemented |
+| All medium effort items completed! | 73 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)
-2. Vuzix HUD native overlay
-3. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog
+2. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog

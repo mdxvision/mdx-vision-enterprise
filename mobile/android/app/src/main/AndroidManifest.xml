@@ -30,6 +30,14 @@
     <!-- Wake lock for continuous listening -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- System overlay for HUD display -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Foreground service for persistent HUD -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- AR Glasses Hardware Features -->
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
@@ -88,6 +96,16 @@
             android:label="Pair Device"
             android:screenOrientation="landscape"
             android:exported="false" />
+
+        <!-- Vuzix HUD Overlay Service (Feature #73) -->
+        <service
+            android:name=".VuzixHudService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="ar_hud_overlay" />
+        </service>
 
     </application>
 </manifest>

@@ -80,6 +80,13 @@ dependencies {
     // Security - Encrypted SharedPreferences
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // Vuzix Blade 2 SDK - HUD and Voice
+    implementation("com.vuzix:hud-actionmenu:2.9.0")
+    implementation("com.vuzix:hud-resources:2.3.0")
+
+    // LocalBroadcastManager for HUD communication
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
     // Unit Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")

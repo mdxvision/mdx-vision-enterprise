@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
 /**
  * MDx Vision - Main Activity
@@ -2543,8 +2544,9 @@ SOFA Score: [X]
 
         // Check if running on Vuzix
         if (isVuzixDevice()) {
-            Log.d(TAG, "Vuzix device detected")
+            Log.d(TAG, "Vuzix device detected - starting HUD service")
             statusText.text = "MDx Vision - Vuzix Mode"
+            startVuzixHudService()
         } else {
             statusText.text = "MDx Vision - Standard Mode"
         }
@@ -14086,6 +14088,7 @@ SOFA Score: [X]
                                     }
 
                                     showPatientDataOverlay(patient)
+                                    notifyHudPatientUpdate()  // Update Vuzix HUD
                                 } catch (e: Exception) {
                                     showDataOverlay("Patient Found", body ?: "No response")
                                 }
@@ -14181,6 +14184,7 @@ SOFA Score: [X]
                             speakMedicationInteractions(patient)
                             speakLabTrends(patient)
                             speakVitalTrends(patient)
+                            notifyHudPatientUpdate()  // Update Vuzix HUD
                         } catch (e: Exception) {
                             showDataOverlay("Parse Error", body)
                             speakFeedback("Error loading patient")
@@ -14252,6 +14256,48 @@ SOFA Score: [X]
         val manufacturer = android.os.Build.MANUFACTURER.lowercase()
         val model = android.os.Build.MODEL.lowercase()
         return manufacturer.contains("vuzix") || model.contains("blade")
+    }
+
+    // ============ Vuzix HUD Methods (Feature #73) ============
+
+    private fun startVuzixHudService() {
+        val intent = Intent(this, VuzixHudService::class.java)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+        Log.d(TAG, "Vuzix HUD service started")
+    }
+
+    private fun stopVuzixHudService() {
+        val intent = Intent(this, VuzixHudService::class.java)
+        stopService(intent)
+        Log.d(TAG, "Vuzix HUD service stopped")
+    }
+
+    private fun notifyHudPatientUpdate() {
+        if (!isVuzixDevice()) return
+
+        val patientData = currentPatientData ?: return
+        val intent = Intent(VuzixHudService.ACTION_UPDATE_PATIENT).apply {
+            putExtra(VuzixHudService.EXTRA_PATIENT_DATA, patientData.toString())
+        }
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        Log.d(TAG, "Notified HUD of patient update")
+    }
+
+    private fun sendHudCommand(action: String) {
+        if (!isVuzixDevice()) {
+            speakFeedback("HUD only available on Vuzix glasses")
+            return
+        }
+
+        val intent = Intent(action)
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+
+        val commandName = action.substringAfterLast("_").lowercase()
+        speakFeedback("HUD $commandName")
     }
 
     // ============ Offline Cache Methods ============
@@ -18283,6 +18329,22 @@ SOFA Score: [X]
                 // Show current patient's DNFB status
                 showPatientDNFB()
             }
+            // ═══ VUZIX HUD VOICE COMMANDS (Feature #73) ═══
+            lower.contains("show hud") || lower.contains("display hud") -> {
+                sendHudCommand(VuzixHudService.ACTION_SHOW)
+            }
+            lower.contains("hide hud") -> {
+                sendHudCommand(VuzixHudService.ACTION_HIDE)
+            }
+            lower.contains("expand hud") || lower.contains("full hud") || lower.contains("full details") -> {
+                sendHudCommand(VuzixHudService.ACTION_EXPAND)
+            }
+            lower.contains("minimize hud") || lower.contains("compact hud") || lower.contains("compact view") -> {
+                sendHudCommand(VuzixHudService.ACTION_MINIMIZE)
+            }
+            lower.contains("toggle hud") -> {
+                sendHudCommand(VuzixHudService.ACTION_TOGGLE)
+            }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
                 // Generate note from pending transcript
@@ -19177,6 +19239,7 @@ SOFA Score: [X]
                                     else -> patient.optString("display_text", "No data")
                                 }
                                 showDataOverlay(title, content)
+                                notifyHudPatientUpdate()  // Update Vuzix HUD
                             } catch (e: Exception) {
                                 showDataOverlay("Error", "Parse error: ${e.message}")
                             }
