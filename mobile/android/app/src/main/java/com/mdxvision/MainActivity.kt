@@ -14325,6 +14325,10 @@ SOFA Score: [X]
             override fun onDoubleNod() {
                 runOnUiThread { sendHudCommand(VuzixHudService.ACTION_TOGGLE) }
             }
+
+            override fun onWink() {
+                runOnUiThread { handleWinkSelect() }
+            }
         })
         headGestureDetector?.initialize()
         Log.d(TAG, "Gesture control initialized")
@@ -14415,6 +14419,35 @@ SOFA Score: [X]
     }
 
     /**
+     * Handle wink gesture (quick head micro-tilt) - quick select/dismiss
+     * Feature #76 - Faster and subtler than full nod
+     */
+    private fun handleWinkSelect() {
+        updateLastActivity()
+
+        // Check for pending alerts to dismiss
+        if (dataOverlay?.visibility == android.view.View.VISIBLE) {
+            hideDataOverlay()
+            speakFeedback("Dismissed")
+            return
+        }
+
+        // Quick select from worklist
+        if (worklistPatients.isNotEmpty()) {
+            val currentIndex = worklistPosition
+            if (currentIndex in worklistPatients.indices) {
+                val patient = worklistPatients[currentIndex]
+                speakFeedback("Loading ${patient.name.split(" ").firstOrNull() ?: "patient"}")
+                fetchPatientData(patient.patientId)
+                return
+            }
+        }
+
+        // Default feedback
+        speakFeedback("Wink")
+    }
+
+    /**
      * Enable gesture control via voice command
      */
     private fun enableGestureControl() {
@@ -14438,6 +14471,30 @@ SOFA Score: [X]
     private fun speakGestureStatus() {
         val status = headGestureDetector?.getStatusDescription()
             ?: if (isGestureControlEnabled) "Gesture control enabled" else "Gesture control disabled"
+        speakFeedback(status)
+    }
+
+    /**
+     * Enable wink detection via voice command
+     */
+    private fun enableWinkDetection() {
+        headGestureDetector?.enableWink()
+        speakFeedback("Wink detection enabled. Quick head dip to select.")
+    }
+
+    /**
+     * Disable wink detection via voice command
+     */
+    private fun disableWinkDetection() {
+        headGestureDetector?.disableWink()
+        speakFeedback("Wink detection disabled")
+    }
+
+    /**
+     * Report wink detection status via voice command
+     */
+    private fun speakWinkStatus() {
+        val status = headGestureDetector?.getWinkStatusDescription() ?: "Wink detection status unknown"
         speakFeedback(status)
     }
 
@@ -18495,6 +18552,16 @@ SOFA Score: [X]
             }
             lower.contains("gesture status") || lower.contains("gesture mode") -> {
                 speakGestureStatus()
+            }
+            // ═══ WINK DETECTION VOICE COMMANDS (Feature #76) ═══
+            lower.contains("enable wink") || lower.contains("wink on") -> {
+                enableWinkDetection()
+            }
+            lower.contains("disable wink") || lower.contains("wink off") -> {
+                disableWinkDetection()
+            }
+            lower.contains("wink status") || lower.contains("wink mode") -> {
+                speakWinkStatus()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {

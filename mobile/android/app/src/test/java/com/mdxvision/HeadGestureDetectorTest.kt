@@ -5,18 +5,20 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Unit tests for Head Gesture Detector (Feature #75)
+ * Unit tests for Head Gesture Detector (Features #75, #76)
  * Tests gesture detection state machine, thresholds, and cooldowns
  */
 class HeadGestureDetectorTest {
 
     private lateinit var nodDetector: TestableNodDetector
     private lateinit var shakeDetector: TestableShakeDetector
+    private lateinit var winkDetector: TestableWinkDetector
 
     @Before
     fun setUp() {
         nodDetector = TestableNodDetector()
         shakeDetector = TestableShakeDetector()
+        winkDetector = TestableWinkDetector()
     }
 
     // ==================== NOD DETECTION TESTS ====================
@@ -146,6 +148,114 @@ class HeadGestureDetectorTest {
         assertEquals(ShakeState.IDLE, shakeDetector.state)
     }
 
+    // ==================== WINK DETECTION TESTS (Feature #76) ====================
+
+    @Test
+    fun `wink detector starts in IDLE state`() {
+        assertEquals(WinkState.IDLE, winkDetector.state)
+    }
+
+    @Test
+    fun `small rotation in wink range transitions to DOWN`() {
+        winkDetector.processGyro(1.0f, 0L)  // In range 0.8-1.5
+        assertEquals(WinkState.DOWN, winkDetector.state)
+    }
+
+    @Test
+    fun `complete wink gesture detected`() {
+        winkDetector.processGyro(1.0f, 0L)   // Start wink
+        winkDetector.processGyro(0.1f, 100L) // Return to neutral
+        assertTrue(winkDetector.wasWinkDetected)
+    }
+
+    @Test
+    fun `wink too slow is not detected`() {
+        winkDetector.processGyro(1.0f, 0L)   // Start wink
+        winkDetector.checkTimeout(250L)       // Exceeds 200ms
+        assertEquals(WinkState.IDLE, winkDetector.state)
+        assertFalse(winkDetector.wasWinkDetected)
+    }
+
+    @Test
+    fun `rotation above wink max becomes nod not wink`() {
+        winkDetector.processGyro(1.0f, 0L)   // Start in wink range
+        winkDetector.processGyro(1.6f, 50L)  // Goes above wink max (1.5)
+        assertEquals(WinkState.IDLE, winkDetector.state)
+        assertFalse(winkDetector.wasWinkDetected)
+    }
+
+    @Test
+    fun `rotation below wink min is ignored`() {
+        winkDetector.processGyro(0.5f, 0L)   // Below 0.8 threshold
+        assertEquals(WinkState.IDLE, winkDetector.state)
+    }
+
+    @Test
+    fun `wink cooldown prevents rapid detection`() {
+        // First wink
+        winkDetector.processGyro(1.0f, 0L)
+        winkDetector.processGyro(0.1f, 100L)
+        assertTrue(winkDetector.wasWinkDetected)
+
+        winkDetector.wasWinkDetected = false
+
+        // Second wink too soon (within 300ms cooldown)
+        winkDetector.processGyro(1.0f, 200L)
+        assertEquals(WinkState.IDLE, winkDetector.state)
+    }
+
+    @Test
+    fun `wink after cooldown is detected`() {
+        // First wink at time 0
+        winkDetector.processGyro(1.0f, 0L)
+        winkDetector.processGyro(0.1f, 100L)
+        assertTrue(winkDetector.wasWinkDetected)
+        winkDetector.wasWinkDetected = false
+
+        // Second wink after cooldown (100 + 300 = 400ms minimum)
+        winkDetector.processGyro(1.0f, 450L)
+        winkDetector.processGyro(0.1f, 500L)
+        assertTrue(winkDetector.wasWinkDetected)
+    }
+
+    @Test
+    fun `wink enable and disable toggle works`() {
+        assertTrue(winkDetector.isEnabled)
+        winkDetector.disable()
+        assertFalse(winkDetector.isEnabled)
+        winkDetector.enable()
+        assertTrue(winkDetector.isEnabled)
+    }
+
+    @Test
+    fun `disabled wink ignores input`() {
+        winkDetector.disable()
+        winkDetector.processGyro(1.0f, 0L)
+        assertEquals(WinkState.IDLE, winkDetector.state)
+    }
+
+    // ==================== WINK THRESHOLD TESTS ====================
+
+    @Test
+    fun `wink min threshold is correct`() {
+        assertEquals(0.8f, TestableWinkDetector.MIN_THRESHOLD, 0.01f)
+    }
+
+    @Test
+    fun `wink max threshold is correct`() {
+        assertEquals(1.5f, TestableWinkDetector.MAX_THRESHOLD, 0.01f)
+    }
+
+    @Test
+    fun `wink max duration is 200ms`() {
+        assertEquals(200L, TestableWinkDetector.MAX_DURATION_MS)
+    }
+
+    @Test
+    fun `wink cooldown is 300ms`() {
+        assertEquals(300L, TestableWinkDetector.COOLDOWN_MS)
+    }
+
     // ==================== THRESHOLD TESTS ====================
 
     @Test
@@ -223,6 +333,7 @@ class HeadGestureDetectorTest {
 
 enum class NodState { IDLE, DOWN, UP }
 enum class ShakeState { IDLE, LEFT, RIGHT, LEFT2 }
+enum class WinkState { IDLE, DOWN }
 
 /**
  * Testable nod detector
@@ -349,4 +460,70 @@ class TestableShakeDetector {
         }
         state = ShakeState.IDLE
     }
+}
+
+/**
+ * Testable wink detector (Feature #76)
+ */
+class TestableWinkDetector {
+    companion object {
+        const val MIN_THRESHOLD = 0.8f
+        const val MAX_THRESHOLD = 1.5f
+        const val MAX_DURATION_MS = 200L
+        const val COOLDOWN_MS = 300L
+        const val RETURN_THRESHOLD = 0.3f
+    }
+
+    var state = WinkState.IDLE
+    var wasWinkDetected = false
+    var isEnabled = true
+
+    private var winkStartTime = 0L
+    private var lastWinkTime = 0L
+
+    fun processGyro(pitch: Float, time: Long) {
+        if (!isEnabled) return
+        // Only apply cooldown if a wink was actually detected
+        if (state == WinkState.IDLE && lastWinkTime > 0 && time - lastWinkTime < COOLDOWN_MS) return
+
+        when (state) {
+            WinkState.IDLE -> {
+                if (pitch >= MIN_THRESHOLD && pitch < MAX_THRESHOLD) {
+                    state = WinkState.DOWN
+                    winkStartTime = time
+                }
+            }
+            WinkState.DOWN -> {
+                val duration = time - winkStartTime
+
+                // Timeout - too slow
+                if (duration > MAX_DURATION_MS) {
+                    state = WinkState.IDLE
+                    return
+                }
+
+                // If pitch goes above max, it's becoming a nod
+                if (pitch >= MAX_THRESHOLD) {
+                    state = WinkState.IDLE
+                    return
+                }
+
+                // Quick return to neutral = wink detected
+                if (Math.abs(pitch) < RETURN_THRESHOLD && duration >= 50L) {
+                    wasWinkDetected = true
+                    lastWinkTime = time
+                    state = WinkState.IDLE
+                }
+            }
+        }
+    }
+
+    fun checkTimeout(time: Long) {
+        if (state != WinkState.IDLE && time - winkStartTime > MAX_DURATION_MS) {
+            state = WinkState.IDLE
+        }
+    }
+
+    fun enable() { isEnabled = true }
+    fun disable() { isEnabled = false }
 }

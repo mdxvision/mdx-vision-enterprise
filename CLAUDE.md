@@ -395,13 +395,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 73. **Vuzix HUD Native Overlay** - Always-on patient info HUD for Vuzix Blade 2 AR glasses (1280x720); Foreground Service with WindowManager overlay; two modes: compact (320x180dp) showing patient name, allergies, meds count, room, and expanded (768x400dp) with full details; auto-updates when patient data changes; voice commands ("show HUD", "hide HUD", "expand HUD", "minimize HUD", "toggle HUD"); non-blocking FLAG_NOT_FOCUSABLE overlay; dark theme (#0A1628) with high-contrast text; Vuzix SDK integration (hud-actionmenu:2.9.0, hud-resources:2.3.0); auto-detects Vuzix device; graceful fallback on non-Vuzix devices
 74. **Audit Log Viewer Dashboard** - Web UI for viewing HIPAA audit logs; stats cards (PHI Access, Note Operations, Safety Alerts, Unique Patients); filterable log table with search by patient ID, event type, and action filters; date range selection; pagination (25/50/100 per page); real-time refresh; 4 API endpoints (/api/v1/audit/logs, /api/v1/audit/stats, /api/v1/audit/actions, /api/v1/audit/patient/{id}); accessible at /dashboard/audit
 75. **Gesture Control** - Head gesture recognition for Vuzix Blade 2 AR glasses; gyroscope-based state machine detection; nod (yes) for confirm/approve actions, shake (no) for cancel/dismiss, double nod for HUD toggle; touchpad DPAD navigation (left/right for worklist, up/down for HUD expand/minimize, center for select); integrates with order confirmations, billing submissions, worklist navigation; voice commands ("enable gestures", "disable gestures", "gesture status"); cooldown timers prevent false positives; TTS feedback for all gesture actions
+76. **Wink Gesture (Micro-Tilt)** - Quick head dip gesture for rapid selection on Vuzix Blade 2; alternative to full nod for faster interaction; lower threshold (0.8-1.5 rad/s vs 1.8+ for nod); faster duration requirement (<200ms); 300ms cooldown for rapid selection; dismisses overlays, selects worklist patients, acknowledges alerts; voice commands ("enable wink", "disable wink", "wink status"); distinct from full nod to prevent gesture confusion; 14 unit tests for wink detection
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 75 features implemented |
+| All medium effort items completed! | 76 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

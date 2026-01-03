@@ -9,14 +9,15 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * HeadGestureDetector - Feature #75
- * Detects head gestures (nod, shake, double nod) using gyroscope and accelerometer sensors
+ * HeadGestureDetector - Features #75, #76
+ * Detects head gestures (nod, shake, double nod, wink) using gyroscope and accelerometer sensors
  * for hands-free interaction on Vuzix Blade 2 AR glasses.
  *
  * Gesture Mappings:
- * - Head Nod (Yes): X-axis rotation (pitch) - up-down motion
- * - Head Shake (No): Y-axis rotation (yaw) - left-right motion
+ * - Head Nod (Yes): X-axis rotation (pitch) - up-down motion (1.8+ rad/s)
+ * - Head Shake (No): Y-axis rotation (yaw) - left-right motion (2.0+ rad/s)
  * - Double Nod: Two quick nods within 600ms - toggles HUD
+ * - Wink (micro-tilt): Quick small head dip (0.8-1.5 rad/s, <200ms) - select/dismiss
  *
  * Uses state machine pattern for reliable gesture recognition with cooldown
  * timers to prevent false positives from normal head movement.
@@ -33,6 +34,7 @@ class HeadGestureDetector(
         fun onHeadNod()      // Yes gesture - confirm action
         fun onHeadShake()    // No gesture - cancel action
         fun onDoubleNod()    // Toggle HUD visibility
+        fun onWink()         // Quick select/dismiss gesture
     }
 
     companion object {
@@ -45,6 +47,13 @@ class HeadGestureDetector(
         private const val DOUBLE_NOD_WINDOW_MS = 600L        // Time window for double nod
         private const val MIN_GESTURE_DURATION_MS = 100L     // Minimum gesture duration
 
+        // Wink detection thresholds (Feature #76)
+        private const val WINK_MIN_THRESHOLD = 0.8f          // Lower bound for wink
+        private const val WINK_MAX_THRESHOLD = 1.5f          // Upper bound (above = nod)
+        private const val WINK_MAX_DURATION_MS = 200L        // Must be quick
+        private const val WINK_COOLDOWN_MS = 300L            // Fast repeat allowed
+        private const val WINK_RETURN_THRESHOLD = 0.3f       // Return to neutral threshold
+
         // State machine states
         private const val STATE_IDLE = 0
         private const val STATE_NOD_DOWN = 1
@@ -52,6 +61,7 @@ class HeadGestureDetector(
         private const val STATE_SHAKE_LEFT = 3
         private const val STATE_SHAKE_RIGHT = 4
         private const val STATE_SHAKE_LEFT2 = 5
+        private const val STATE_WINK_DOWN = 6
     }
 
     // Sensor references
@@ -62,20 +72,26 @@ class HeadGestureDetector(
     // State tracking
     private var nodState = STATE_IDLE
     private var shakeState = STATE_IDLE
+    private var winkState = STATE_IDLE
     private var lastNodTime = 0L
     private var lastShakeTime = 0L
+    private var lastWinkTime = 0L
     private var lastNodCompletionTime = 0L
     private var nodCount = 0
     private var gestureStartTime = 0L
+    private var winkStartTime = 0L
 
     // Enable/disable control
     var isEnabled = true
+        private set
+    var isWinkEnabled = true
         private set
 
     // Handler for timeout management
     private val handler = Handler(Looper.getMainLooper())
     private val resetNodStateRunnable = Runnable { resetNodState() }
     private val resetShakeStateRunnable = Runnable { resetShakeState() }
+    private val resetWinkStateRunnable = Runnable { resetWinkState() }
 
     /**
      * Initialize sensors
@@ -108,6 +124,7 @@ class HeadGestureDetector(
         handler.removeCallbacksAndMessages(null)
         resetNodState()
         resetShakeState()
+        resetWinkState()
     }
 
     /**
@@ -126,6 +143,21 @@ class HeadGestureDetector(
         stopDetection()
     }
 
+    /**
+     * Enable wink detection
+     */
+    fun enableWink() {
+        isWinkEnabled = true
+    }
+
+    /**
+     * Disable wink detection
+     */
+    fun disableWink() {
+        isWinkEnabled = false
+        resetWinkState()
+    }
+
     override fun onSensorChanged(event: SensorEvent) {
         if (!isEnabled) return
 
@@ -141,14 +173,19 @@ class HeadGestureDetector(
 
     /**
      * Process gyroscope data for gesture detection
-     * values[0] = X-axis (pitch) - nod detection
+     * values[0] = X-axis (pitch) - nod/wink detection
      * values[1] = Y-axis (yaw) - shake detection
      * values[2] = Z-axis (roll) - not used
      */
     private fun processGyroscopeData(event: SensorEvent) {
-        val pitchVelocity = event.values[0]  // X-axis rotation (nod)
+        val pitchVelocity = event.values[0]  // X-axis rotation (nod/wink)
         val yawVelocity = event.values[1]    // Y-axis rotation (shake)
         val currentTime = System.currentTimeMillis()
+
+        // Detect wink (quick micro-tilt) - check first, before nod
+        if (isWinkEnabled) {
+            detectWink(pitchVelocity, currentTime)
+        }
 
         // Detect head nod (pitch - up/down motion)
         detectNod(pitchVelocity, currentTime)
@@ -200,6 +237,52 @@ class HeadGestureDetector(
                     handleNodDetected(currentTime)
                 }
                 resetNodState()
+            }
+        }
+    }
+
+    /**
+     * Detect wink gesture (quick micro-tilt) using state machine
+     * Pattern: Small DOWN (0.8-1.5 rad/s) -> Return to neutral (<200ms)
+     * Must be faster and smaller than full nod
+     */
+    private fun detectWink(pitchVelocity: Float, currentTime: Long) {
+        // Check cooldown
+        if (lastWinkTime > 0 && currentTime - lastWinkTime < WINK_COOLDOWN_MS) return
+
+        // Don't detect wink if nod is already in progress
+        if (nodState != STATE_IDLE) return
+
+        when (winkState) {
+            STATE_IDLE -> {
+                // Looking for small downward rotation (in wink range, below nod threshold)
+                if (pitchVelocity > WINK_MIN_THRESHOLD && pitchVelocity < WINK_MAX_THRESHOLD) {
+                    winkState = STATE_WINK_DOWN
+                    winkStartTime = currentTime
+                    scheduleWinkReset()
+                }
+            }
+            STATE_WINK_DOWN -> {
+                val duration = currentTime - winkStartTime
+
+                // Timeout - too slow, might be starting a nod
+                if (duration > WINK_MAX_DURATION_MS) {
+                    resetWinkState()
+                    return
+                }
+
+                // If velocity goes above wink max, it's becoming a nod - abort
+                if (pitchVelocity > WINK_MAX_THRESHOLD) {
+                    resetWinkState()
+                    return
+                }
+
+                // Quick return to neutral = wink detected
+                if (Math.abs(pitchVelocity) < WINK_RETURN_THRESHOLD && duration >= 50L) {
+                    lastWinkTime = currentTime
+                    listener.onWink()
+                    resetWinkState()
+                }
             }
         }
     }
@@ -296,6 +379,11 @@ class HeadGestureDetector(
         handler.postDelayed(resetShakeStateRunnable, GESTURE_TIMEOUT_MS)
     }
 
+    private fun scheduleWinkReset() {
+        handler.removeCallbacks(resetWinkStateRunnable)
+        handler.postDelayed(resetWinkStateRunnable, WINK_MAX_DURATION_MS)
+    }
+
     private fun resetNodState() {
         nodState = STATE_IDLE
         handler.removeCallbacks(resetNodStateRunnable)
@@ -306,14 +394,31 @@ class HeadGestureDetector(
         handler.removeCallbacks(resetShakeStateRunnable)
     }
 
+    private fun resetWinkState() {
+        winkState = STATE_IDLE
+        handler.removeCallbacks(resetWinkStateRunnable)
+    }
+
     /**
      * Get current gesture control status for voice feedback
      */
     fun getStatusDescription(): String {
         return if (isEnabled) {
-            "Gesture control is enabled. Nod to confirm, shake to cancel."
+            val winkStatus = if (isWinkEnabled) "Wink to select." else ""
+            "Gesture control is enabled. Nod to confirm, shake to cancel. $winkStatus".trim()
         } else {
             "Gesture control is disabled."
+        }
+    }
+
+    /**
+     * Get wink-specific status
+     */
+    fun getWinkStatusDescription(): String {
+        return if (isWinkEnabled) {
+            "Wink detection is enabled. Quick head dip to select."
+        } else {
+            "Wink detection is disabled."
         }
     }
 }
