@@ -1009,6 +1009,40 @@ class ImageAnalysisResponse(BaseModel):
     timestamp: str
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI CLINICAL CO-PILOT MODELS (Feature #78)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CopilotMessage(BaseModel):
+    """Single message in copilot conversation"""
+    role: str  # "user" or "assistant"
+    content: str
+
+
+class CopilotAction(BaseModel):
+    """Actionable suggestion from copilot"""
+    action_type: str  # "order", "calculate", "template", "lookup"
+    label: str  # Display text
+    command: str  # Voice command to execute
+
+
+class CopilotRequest(BaseModel):
+    """Request model for copilot chat"""
+    message: str
+    patient_context: Optional[Dict] = None  # Current patient summary
+    conversation_history: List[CopilotMessage] = []
+    include_actions: bool = True  # Whether to suggest actionable commands
+
+
+class CopilotResponse(BaseModel):
+    """Response model for copilot chat"""
+    response: str  # Main response text (TTS-optimized)
+    suggestions: List[str] = []  # Follow-up question prompts
+    actions: List[CopilotAction] = []  # Actionable commands
+    references: List[str] = []  # ICD-10 codes, guidelines mentioned
+    timestamp: str
+
+
 # Billing/Claim Models (Feature #71)
 class ClaimStatus(str, Enum):
     """Claim lifecycle status"""
@@ -3918,6 +3952,254 @@ async def generate_differential_diagnosis(request: DdxRequest, req: Request):
                 ip_address=ip_address
             )
             raise HTTPException(status_code=500, detail=f"DDx generation failed: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI CLINICAL CO-PILOT (Feature #78)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+COPILOT_SYSTEM_PROMPT = """You are a clinical co-pilot AI for a physician using AR smart glasses during patient encounters.
+Your responses will be spoken via text-to-speech, so keep them BRIEF and CLEAR.
+
+RESPONSE FORMAT:
+- Maximum 3 bullet points
+- Each bullet: 10-15 words maximum
+- Lead with most actionable info
+- End with ONE optional follow-up question
+
+You help with:
+1. Clinical reasoning - differential diagnosis discussion
+2. Next steps - what tests, exams, or referrals to consider
+3. Drug info - dosing, interactions, contraindications
+4. Guidelines - evidence-based recommendations
+5. Calculations - clinical scores and formulas
+
+CRITICAL RULES:
+- This is CLINICAL DECISION SUPPORT, not a diagnosis
+- Always note when physician judgment is needed
+- Flag urgent/emergent concerns prominently
+- Be concise - physician is mid-encounter
+
+Current patient context:
+{patient_context}
+"""
+
+
+async def generate_copilot_response(request: CopilotRequest) -> CopilotResponse:
+    """
+    Generate clinical co-pilot response using Claude.
+    Maintains conversation context and provides actionable suggestions.
+    """
+    if not CLAUDE_API_KEY:
+        # Fallback response when no API key
+        return CopilotResponse(
+            response="Clinical co-pilot requires Claude API configuration. Please check CLAUDE_API_KEY.",
+            suggestions=[],
+            actions=[],
+            references=[],
+            timestamp=datetime.now().isoformat()
+        )
+
+    # Build patient context summary
+    patient_summary = "No patient currently loaded."
+    if request.patient_context:
+        ctx = request.patient_context
+        parts = []
+        if ctx.get("name"):
+            parts.append(f"Patient: {ctx.get('name')}")
+        if ctx.get("age"):
+            parts.append(f"Age: {ctx.get('age')}")
+        if ctx.get("gender"):
+            parts.append(f"Gender: {ctx.get('gender')}")
+        if ctx.get("chief_complaint"):
+            parts.append(f"CC: {ctx.get('chief_complaint')}")
+        if ctx.get("conditions"):
+            conditions = ctx.get("conditions", [])
+            if conditions:
+                parts.append(f"Conditions: {', '.join(conditions[:5])}")
+        if ctx.get("medications"):
+            meds = ctx.get("medications", [])
+            if meds:
+                parts.append(f"Meds: {', '.join(meds[:5])}")
+        if ctx.get("allergies"):
+            allergies = ctx.get("allergies", [])
+            if allergies:
+                parts.append(f"Allergies: {', '.join(allergies[:3])}")
+        patient_summary = "; ".join(parts) if parts else "No patient details available."
+
+    # Build conversation messages
+    messages = []
+
+    # Add conversation history
+    for msg in request.conversation_history[-6:]:  # Keep last 6 messages for context
+        messages.append({
+            "role": msg.role,
+            "content": msg.content
+        })
+
+    # Add current user message
+    messages.append({
+        "role": "user",
+        "content": request.message
+    })
+
+    # Call Claude
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": CLAUDE_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-3-haiku-20240307",  # Fast, cost-effective
+                    "max_tokens": 500,
+                    "system": COPILOT_SYSTEM_PROMPT.format(patient_context=patient_summary),
+                    "messages": messages
+                }
+            )
+
+            if response.status_code != 200:
+                error_text = response.text
+                return CopilotResponse(
+                    response=f"Co-pilot temporarily unavailable. Please try again.",
+                    suggestions=["Try rephrasing your question"],
+                    actions=[],
+                    references=[],
+                    timestamp=datetime.now().isoformat()
+                )
+
+            result = response.json()
+            response_text = result.get("content", [{}])[0].get("text", "No response generated.")
+
+            # Parse for actionable suggestions
+            actions = []
+            suggestions = []
+
+            # Detect common actionable patterns
+            response_lower = response_text.lower()
+
+            # Lab orders
+            if "troponin" in response_lower or "ekg" in response_lower:
+                actions.append(CopilotAction(
+                    action_type="order",
+                    label="Order chest pain workup",
+                    command="order chest pain workup"
+                ))
+            if "cbc" in response_lower:
+                actions.append(CopilotAction(
+                    action_type="order",
+                    label="Order CBC",
+                    command="order CBC"
+                ))
+            if "d-dimer" in response_lower:
+                actions.append(CopilotAction(
+                    action_type="order",
+                    label="Order D-dimer",
+                    command="order D-dimer"
+                ))
+
+            # Calculations
+            if "wells" in response_lower:
+                actions.append(CopilotAction(
+                    action_type="calculate",
+                    label="Calculate Wells score",
+                    command="calculate Wells"
+                ))
+            if "chads" in response_lower:
+                actions.append(CopilotAction(
+                    action_type="calculate",
+                    label="Calculate CHADS-VASc",
+                    command="calculate CHADS-VASc"
+                ))
+
+            # Add follow-up suggestions
+            if "?" in response_text:
+                # Response already has a question, no need for extra suggestions
+                pass
+            else:
+                suggestions.append("Tell me more")
+                suggestions.append("What else should I consider?")
+
+            # Extract references (ICD-10 codes, guidelines)
+            references = []
+            import re
+            icd_matches = re.findall(r'[A-Z]\d{2}(?:\.\d{1,2})?', response_text)
+            references.extend(icd_matches[:3])
+
+            return CopilotResponse(
+                response=response_text,
+                suggestions=suggestions[:2],
+                actions=actions[:3],
+                references=references,
+                timestamp=datetime.now().isoformat()
+            )
+
+        except Exception as e:
+            return CopilotResponse(
+                response=f"Co-pilot error: {str(e)[:50]}. Try again.",
+                suggestions=["Try rephrasing your question"],
+                actions=[],
+                references=[],
+                timestamp=datetime.now().isoformat()
+            )
+
+
+@app.post("/api/v1/copilot/chat")
+async def copilot_chat(request: CopilotRequest, req: Request):
+    """
+    AI Clinical Co-pilot chat endpoint (Feature #78).
+
+    Provides conversational clinical decision support with:
+    - Context-aware responses using patient data
+    - Conversation history for follow-up questions
+    - Actionable suggestions (orders, calculators)
+    - TTS-optimized brief responses
+
+    Example:
+        POST /api/v1/copilot/chat
+        {
+            "message": "What workup for chest pain with dyspnea?",
+            "patient_context": {"age": 55, "gender": "male"},
+            "conversation_history": []
+        }
+    """
+    # Validate input
+    if not request.message or not request.message.strip():
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    # Audit log
+    ip_address = req.client.host if req.client else None
+    audit_logger._log_event(
+        event_type="AI",
+        action="COPILOT_CHAT",
+        status="processing",
+        details={"message_length": len(request.message), "has_context": bool(request.patient_context)}
+    )
+
+    try:
+        response = await generate_copilot_response(request)
+
+        # Audit success
+        audit_logger._log_event(
+            event_type="AI",
+            action="COPILOT_CHAT",
+            status="success",
+            details={"response_length": len(response.response), "actions_count": len(response.actions)}
+        )
+
+        return response
+
+    except Exception as e:
+        audit_logger._log_event(
+            event_type="AI",
+            action="COPILOT_CHAT",
+            status="failure",
+            details={"error": str(e)[:100]}
+        )
+        raise HTTPException(status_code=500, detail=f"Co-pilot error: {str(e)}")
 
 
 # ============ Medical Image Analysis (Feature #70) ============

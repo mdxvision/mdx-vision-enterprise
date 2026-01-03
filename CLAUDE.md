@@ -397,13 +397,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 75. **Gesture Control** - Head gesture recognition for Vuzix Blade 2 AR glasses; gyroscope-based state machine detection; nod (yes) for confirm/approve actions, shake (no) for cancel/dismiss, double nod for HUD toggle; touchpad DPAD navigation (left/right for worklist, up/down for HUD expand/minimize, center for select); integrates with order confirmations, billing submissions, worklist navigation; voice commands ("enable gestures", "disable gestures", "gesture status"); cooldown timers prevent false positives; TTS feedback for all gesture actions
 76. **Wink Gesture (Micro-Tilt)** - Quick head dip gesture for rapid selection on Vuzix Blade 2; alternative to full nod for faster interaction; lower threshold (0.8-1.5 rad/s vs 1.8+ for nod); faster duration requirement (<200ms); 300ms cooldown for rapid selection; dismisses overlays, selects worklist patients, acknowledges alerts; voice commands ("enable wink", "disable wink", "wink status"); distinct from full nod to prevent gesture confusion; 14 unit tests for wink detection
 77. **Voice Biometric Continuous Auth** - Extends Feature #66 with periodic re-verification during active sessions; VoiceprintSession model with confidence decay (1% per minute); configurable re-verify interval (default 5 minutes); server-side session storage with timestamps; background monitoring during transcription/ambient modes; auto-prompt when verification expires; sensitive operations require fresh voiceprint (push notes, vitals, orders, allergies, medication updates); X-Device-ID header enables enforcement; voice commands ("verify me", "verify my voice", "verification status", "set verify interval [N] minutes"); API endpoints (/api/v1/auth/voiceprint/{device_id}/check, /api/v1/auth/voiceprint/{device_id}/re-verify, /api/v1/auth/voiceprint/{device_id}/interval)
+78. **AI Clinical Co-pilot** - Interactive AI dialogue during clinical documentation; conversational context with 6-message history; patient context integration (conditions, medications, allergies, chief complaint); TTS-optimized responses (3 bullets, 15 words each); actionable suggestions (orders, calculators) with voice prompts; natural language triggers ("what should I...", "what do you think..."); follow-up support ("tell me more", "what next"); Claude claude-3-haiku for fast responses; voice commands ("hey copilot", "copilot [question]", "tell me more", "elaborate", "suggest next", "clear copilot"); API endpoint (/api/v1/copilot/chat); HIPAA audit logging (chief complaint only, no full PHI)
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 77 features implemented |
+| All medium effort items completed! | 78 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

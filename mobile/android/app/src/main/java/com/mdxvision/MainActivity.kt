@@ -214,6 +214,13 @@ class MainActivity : AppCompatActivity() {
     private var currentLocale: Locale = Locale.US
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // AI CLINICAL CO-PILOT (Feature #78)
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var copilotConversationHistory: MutableList<Pair<String, String>> = mutableListOf()  // (role, content)
+    private var isCopilotActive: Boolean = false
+    private var lastCopilotQuestion: String = ""
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
     // ═══════════════════════════════════════════════════════════════════════════
     private var isAmbientMode: Boolean = false  // Continuous background listening
@@ -16143,6 +16150,185 @@ SOFA Score: [X]
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // AI CLINICAL CO-PILOT METHODS (Feature #78)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Activate copilot mode for conversational AI assistance.
+     * Voice commands: "hey copilot", "ask copilot"
+     */
+    private fun activateCopilotMode() {
+        isCopilotActive = true
+        speakFeedback("Copilot ready. What's your question?")
+        Log.d(TAG, "Copilot mode activated")
+    }
+
+    /**
+     * Send a question to the clinical copilot.
+     * Includes patient context and conversation history.
+     */
+    private fun sendCopilotQuestion(question: String) {
+        if (question.isBlank()) {
+            speakFeedback("Please ask a question.")
+            return
+        }
+
+        lastCopilotQuestion = question
+        speakFeedback("Thinking...")
+
+        // Build conversation history for context
+        val historyArray = org.json.JSONArray()
+        copilotConversationHistory.takeLast(6).forEach { (role, content) ->
+            historyArray.put(JSONObject().apply {
+                put("role", role)
+                put("content", content)
+            })
+        }
+
+        // Build patient context if available
+        val patientContext = if (currentPatientData != null) {
+            JSONObject().apply {
+                put("name", currentPatientData?.optString("name", "Unknown"))
+                put("age", currentPatientData?.optString("age", ""))
+                put("gender", currentPatientData?.optString("gender", ""))
+                put("chief_complaint", extractedEntities.chiefComplaints.firstOrNull() ?: "")
+                put("conditions", currentPatientData?.optJSONArray("conditions")?.let { arr ->
+                    (0 until arr.length()).map { arr.getJSONObject(it).optString("display", "") }.take(5).joinToString(", ")
+                } ?: "")
+                put("medications", currentPatientData?.optJSONArray("medications")?.let { arr ->
+                    (0 until arr.length()).map { arr.getJSONObject(it).optString("display", "") }.take(5).joinToString(", ")
+                } ?: "")
+                put("allergies", currentPatientData?.optJSONArray("allergies")?.let { arr ->
+                    (0 until arr.length()).map { arr.getJSONObject(it).optString("display", "") }.take(5).joinToString(", ")
+                } ?: "")
+            }
+        } else null
+
+        // Build request
+        val requestBody = JSONObject().apply {
+            put("message", question)
+            if (patientContext != null) put("patient_context", patientContext)
+            put("conversation_history", historyArray)
+            put("include_actions", true)
+        }
+
+        // POST to copilot endpoint
+        val url = "$EHR_PROXY_URL/api/v1/copilot/chat"
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("X-Device-ID", deviceId)
+            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Copilot request failed", e)
+                    speakFeedback("Sorry, couldn't reach the copilot. Please try again.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val json = JSONObject(body)
+                            runOnUiThread { handleCopilotResponse(json) }
+                        }
+                    } else {
+                        runOnUiThread {
+                            speakFeedback("Copilot error. Please try again.")
+                        }
+                    }
+                }
+            }
+        })
+
+        Log.d(TAG, "Copilot question sent: $question")
+    }
+
+    /**
+     * Handle copilot response - speak it and track conversation.
+     */
+    private fun handleCopilotResponse(response: JSONObject) {
+        val responseText = response.optString("response", "")
+        val suggestions = response.optJSONArray("suggestions")
+        val actions = response.optJSONArray("actions")
+
+        if (responseText.isBlank()) {
+            speakFeedback("No response from copilot.")
+            return
+        }
+
+        // Add to conversation history
+        copilotConversationHistory.add(Pair("user", lastCopilotQuestion))
+        copilotConversationHistory.add(Pair("assistant", responseText))
+
+        // Trim history to last 10 exchanges
+        while (copilotConversationHistory.size > 20) {
+            copilotConversationHistory.removeAt(0)
+        }
+
+        // Speak the response
+        speakFeedback(responseText)
+
+        // Log suggestions if any
+        if (suggestions != null && suggestions.length() > 0) {
+            Log.d(TAG, "Copilot suggestions: ${(0 until suggestions.length()).map { suggestions.getString(it) }}")
+        }
+
+        // Handle actionable suggestions
+        if (actions != null && actions.length() > 0) {
+            val actionList = (0 until actions.length()).map { actions.getJSONObject(it) }
+            actionList.forEach { action ->
+                val actionType = action.optString("action_type", "")
+                val label = action.optString("label", "")
+                val command = action.optString("command", "")
+
+                when (actionType) {
+                    "order" -> {
+                        // Queue action prompt after main response
+                        android.os.Handler(mainLooper).postDelayed({
+                            speakFeedback("Say '$command' to $label")
+                        }, 3000)
+                    }
+                    "calculate" -> {
+                        android.os.Handler(mainLooper).postDelayed({
+                            speakFeedback("Say '$command' to $label")
+                        }, 3000)
+                    }
+                }
+            }
+        }
+
+        Log.d(TAG, "Copilot response handled: ${responseText.take(100)}...")
+    }
+
+    /**
+     * Send a follow-up question using context from previous response.
+     */
+    private fun sendCopilotFollowUp(followUp: String) {
+        if (copilotConversationHistory.isEmpty()) {
+            speakFeedback("No previous copilot conversation. Ask a question first.")
+            return
+        }
+        sendCopilotQuestion(followUp)
+    }
+
+    /**
+     * Clear copilot conversation history.
+     */
+    private fun clearCopilotHistory() {
+        copilotConversationHistory.clear()
+        lastCopilotQuestion = ""
+        isCopilotActive = false
+        speakFeedback("Copilot conversation cleared.")
+        Log.d(TAG, "Copilot history cleared")
+    }
+
     // ============ Patient History Methods ============
 
     /**
@@ -18635,6 +18821,42 @@ SOFA Score: [X]
             lower.contains("read ddx") || lower.contains("say differential") -> {
                 // TTS readout of differential diagnosis
                 speakDdxResults()
+            }
+            // ═══ AI CLINICAL CO-PILOT COMMANDS (Feature #78) ═══
+            lower.contains("hey copilot") || lower.contains("ask copilot") ||
+            lower.contains("activate copilot") -> {
+                // Activate copilot mode
+                activateCopilotMode()
+            }
+            lower.startsWith("copilot ") -> {
+                // Direct question to copilot: "copilot what should I order for chest pain"
+                val question = transcript.substringAfter("copilot ").trim()
+                if (question.isNotBlank()) {
+                    sendCopilotQuestion(question)
+                }
+            }
+            lower.contains("what should i") || lower.contains("what do you think") ||
+            lower.contains("can you suggest") || lower.contains("help me with") -> {
+                // Natural clinical question triggers (if copilot is active or question is clinical)
+                if (isCopilotActive || lower.contains("diagnos") || lower.contains("order") ||
+                    lower.contains("workup") || lower.contains("treat") || lower.contains("prescribe")) {
+                    sendCopilotQuestion(transcript)
+                }
+            }
+            lower.contains("tell me more") || lower.contains("elaborate") ||
+            lower.contains("explain further") || lower.contains("go on") -> {
+                // Follow-up request
+                sendCopilotFollowUp("Tell me more about that")
+            }
+            lower.contains("suggest next") || lower.contains("what next") ||
+            lower.contains("next steps") || lower.contains("what else") -> {
+                // Ask for next step suggestions
+                sendCopilotFollowUp("What should I do next?")
+            }
+            lower.contains("clear copilot") || lower.contains("reset copilot") ||
+            lower.contains("new conversation") -> {
+                // Clear copilot history
+                clearCopilotHistory()
             }
             // ═══ IMAGE ANALYSIS COMMANDS (Feature #70) ═══
             lower.contains("take photo") || lower.contains("capture image") ||
