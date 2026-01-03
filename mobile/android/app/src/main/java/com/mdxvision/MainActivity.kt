@@ -194,6 +194,10 @@ class MainActivity : AppCompatActivity() {
     private var sensorManager: android.hardware.SensorManager? = null
     private var isGlassesOnFace: Boolean = true
 
+    // Gesture Control (Feature #75) - Head nod (yes), shake (no), touchpad navigation
+    private var headGestureDetector: HeadGestureDetector? = null
+    private var isGestureControlEnabled: Boolean = true
+
     // Multi-language support (English, Spanish, Mandarin, Portuguese, Russian)
     private var currentLanguage: String = LANG_ENGLISH
     private var currentLocale: Locale = Locale.US
@@ -2547,6 +2551,7 @@ SOFA Score: [X]
             Log.d(TAG, "Vuzix device detected - starting HUD service")
             statusText.text = "MDx Vision - Vuzix Mode"
             startVuzixHudService()
+            initializeGestureControl()
         } else {
             statusText.text = "MDx Vision - Standard Mode"
         }
@@ -9732,6 +9737,7 @@ SOFA Score: [X]
     )
 
     private var worklistPatients = mutableListOf<WorklistPatient>()
+    private var worklistPosition: Int = 0  // Current position in worklist for touchpad navigation
     private var pendingOrderUpdate: Order? = null  // Order being updated
 
     /**
@@ -14300,6 +14306,141 @@ SOFA Score: [X]
         speakFeedback("HUD $commandName")
     }
 
+    // ============ Gesture Control Methods (Feature #75) ============
+
+    /**
+     * Initialize head gesture detector for Vuzix Blade 2
+     * Detects: nod (yes/confirm), shake (no/cancel), double nod (toggle HUD)
+     */
+    private fun initializeGestureControl() {
+        headGestureDetector = HeadGestureDetector(this, object : HeadGestureDetector.GestureListener {
+            override fun onHeadNod() {
+                runOnUiThread { handleGestureConfirm() }
+            }
+
+            override fun onHeadShake() {
+                runOnUiThread { handleGestureCancel() }
+            }
+
+            override fun onDoubleNod() {
+                runOnUiThread { sendHudCommand(VuzixHudService.ACTION_TOGGLE) }
+            }
+        })
+        headGestureDetector?.initialize()
+        Log.d(TAG, "Gesture control initialized")
+    }
+
+    /**
+     * Start gesture monitoring - call in onResume
+     */
+    private fun startGestureMonitoring() {
+        if (!isVuzixDevice() || !isGestureControlEnabled) return
+        headGestureDetector?.startDetection()
+        Log.d(TAG, "Gesture monitoring started")
+    }
+
+    /**
+     * Stop gesture monitoring - call in onPause
+     */
+    private fun stopGestureMonitoring() {
+        headGestureDetector?.stopDetection()
+        Log.d(TAG, "Gesture monitoring stopped")
+    }
+
+    /**
+     * Handle head nod gesture - confirm active dialog/action
+     */
+    private fun handleGestureConfirm() {
+        updateLastActivity()
+
+        // Check for pending order confirmation
+        if (pendingConfirmationOrder != null) {
+            Log.d(TAG, "Gesture confirm: confirming pending order")
+            confirmPendingOrder()
+            return
+        }
+
+        // Check for pending billing claim confirmation
+        if (isAwaitingClaimConfirmation) {
+            Log.d(TAG, "Gesture confirm: confirming billing claim")
+            confirmClaimSubmission()
+            return
+        }
+
+        // Check for worklist navigation - select current patient
+        if (worklistPatients.isNotEmpty()) {
+            val currentIndex = worklistPosition
+            if (currentIndex in worklistPatients.indices) {
+                val patient = worklistPatients[currentIndex]
+                speakFeedback("Loading patient ${currentIndex + 1}")
+                fetchPatientData(patient.patientId)
+                return
+            }
+        }
+
+        // Default feedback
+        speakFeedback("Nod confirmed")
+    }
+
+    /**
+     * Handle head shake gesture - cancel active dialog/action
+     */
+    private fun handleGestureCancel() {
+        updateLastActivity()
+
+        // Check for pending order confirmation
+        if (pendingConfirmationOrder != null) {
+            Log.d(TAG, "Gesture cancel: rejecting pending order")
+            rejectPendingOrder()
+            return
+        }
+
+        // Check for pending billing claim confirmation
+        if (isAwaitingClaimConfirmation) {
+            Log.d(TAG, "Gesture cancel: cancelling billing claim")
+            isAwaitingClaimConfirmation = false
+            speakFeedback("Claim cancelled")
+            return
+        }
+
+        // Close any open overlay
+        if (dataOverlay?.visibility == android.view.View.VISIBLE) {
+            hideDataOverlay()
+            speakFeedback("Dismissed")
+            return
+        }
+
+        // Default feedback
+        speakFeedback("Shake cancelled")
+    }
+
+    /**
+     * Enable gesture control via voice command
+     */
+    private fun enableGestureControl() {
+        isGestureControlEnabled = true
+        headGestureDetector?.enable()
+        speakFeedback("Gesture control enabled. Nod to confirm, shake to cancel.")
+    }
+
+    /**
+     * Disable gesture control via voice command
+     */
+    private fun disableGestureControl() {
+        isGestureControlEnabled = false
+        headGestureDetector?.disable()
+        speakFeedback("Gesture control disabled")
+    }
+
+    /**
+     * Report gesture control status via voice command
+     */
+    private fun speakGestureStatus() {
+        val status = headGestureDetector?.getStatusDescription()
+            ?: if (isGestureControlEnabled) "Gesture control enabled" else "Gesture control disabled"
+        speakFeedback(status)
+    }
+
     // ============ Offline Cache Methods ============
 
     private fun isNetworkAvailable(): Boolean {
@@ -18345,6 +18486,16 @@ SOFA Score: [X]
             lower.contains("toggle hud") -> {
                 sendHudCommand(VuzixHudService.ACTION_TOGGLE)
             }
+            // ═══ GESTURE CONTROL VOICE COMMANDS (Feature #75) ═══
+            lower.contains("enable gesture") || lower.contains("enable gestures") || lower.contains("gestures on") -> {
+                enableGestureControl()
+            }
+            lower.contains("disable gesture") || lower.contains("disable gestures") || lower.contains("gestures off") -> {
+                disableGestureControl()
+            }
+            lower.contains("gesture status") || lower.contains("gesture mode") -> {
+                speakGestureStatus()
+            }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
                 // Generate note from pending transcript
@@ -19583,6 +19734,9 @@ SOFA Score: [X]
             startProximityMonitoring()
         }
 
+        // Start gesture monitoring for Vuzix (Feature #75)
+        startGestureMonitoring()
+
         // Check if TOTP is required (skip in debug mode)
         if (!DEBUG_SKIP_AUTH && isDevicePaired && sessionToken == null && !isSessionLocked) {
             showTotpLockScreen()
@@ -19600,6 +19754,8 @@ SOFA Score: [X]
         stopSessionTimeoutChecker()
         // Stop proximity monitoring
         stopProximityMonitoring()
+        // Stop gesture monitoring (Feature #75)
+        stopGestureMonitoring()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -19636,6 +19792,97 @@ SOFA Score: [X]
         unregisterNetworkCallback()
         // Clean up session timeout checker
         stopSessionTimeoutChecker()
+    }
+
+    // ============ Touchpad Navigation (Feature #75) ============
+
+    /**
+     * Handle Vuzix touchpad DPAD events for hands-free navigation
+     * Left/Right: Navigate worklist or sections
+     * Up/Down: Scroll content or expand/collapse HUD
+     * Center: Select/confirm
+     */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (!isVuzixDevice()) return super.onKeyDown(keyCode, event)
+
+        updateLastActivity()
+
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                handleTouchpadLeft()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                handleTouchpadRight()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_UP -> {
+                handleTouchpadUp()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                handleTouchpadDown()
+                return true
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER -> {
+                handleTouchpadSelect()
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private fun handleTouchpadLeft() {
+        // Navigate to previous patient in worklist
+        if (worklistPatients.isNotEmpty() && worklistPosition > 0) {
+            worklistPosition--
+            speakFeedback("Patient ${worklistPosition + 1} of ${worklistPatients.size}")
+            previewWorklistPatientByIndex(worklistPosition)
+        } else {
+            speakFeedback("Previous")
+        }
+    }
+
+    private fun handleTouchpadRight() {
+        // Navigate to next patient in worklist
+        if (worklistPatients.isNotEmpty() && worklistPosition < worklistPatients.size - 1) {
+            worklistPosition++
+            speakFeedback("Patient ${worklistPosition + 1} of ${worklistPatients.size}")
+            previewWorklistPatientByIndex(worklistPosition)
+        } else {
+            speakFeedback("Next")
+        }
+    }
+
+    private fun handleTouchpadUp() {
+        // Expand HUD or scroll up
+        if (isVuzixDevice()) {
+            sendHudCommand(VuzixHudService.ACTION_EXPAND)
+        }
+    }
+
+    private fun handleTouchpadDown() {
+        // Minimize HUD or scroll down
+        if (isVuzixDevice()) {
+            sendHudCommand(VuzixHudService.ACTION_MINIMIZE)
+        }
+    }
+
+    private fun handleTouchpadSelect() {
+        // Select current item (same as nod gesture)
+        handleGestureConfirm()
+    }
+
+    private fun previewWorklistPatientByIndex(index: Int) {
+        if (index in worklistPatients.indices) {
+            val patient = worklistPatients[index]
+            val preview = StringBuilder().apply {
+                append(patient.name)
+                patient.room?.let { if (it.isNotEmpty()) append(", Room ").append(it) }
+                patient.chiefComplaint?.let { if (it.isNotEmpty()) append(". ").append(it) }
+            }.toString()
+            speakFeedback(preview)
+        }
     }
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
