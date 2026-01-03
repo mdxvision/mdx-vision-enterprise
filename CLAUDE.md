@@ -172,6 +172,7 @@ web/src/app/
 | Notes | `/dashboard/notes` | Clinical documentation |
 | Billing | `/dashboard/billing` | Claims creation and submission |
 | DNFB | `/dashboard/dnfb` | Discharged Not Final Billed |
+| Audit Log | `/dashboard/audit` | HIPAA audit log viewer |
 | Devices | `/dashboard/devices` | AR glasses pairing and management |
 | Analytics | `/dashboard/analytics` | Usage metrics and trends |
 | Settings | `/dashboard/settings` | Configuration options |
@@ -392,13 +393,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 71. **Billing/Coding Submission** - Create billing claims from saved clinical notes; auto-populate ICD-10 diagnoses and CPT procedures; review/edit codes before submission; add/remove diagnoses by voice ("add diagnosis J06.9", "remove diagnosis 2"); add/remove procedures ("add procedure 99213"); CPT modifier support ("add modifier 25 to 1"); code search ("search icd hypertension", "search cpt office visit"); submit with confirmation workflow; FHIR Claim resource generation (R4); claim history per patient ("show claims", "claim history"); voice commands ("create claim", "bill this", "submit claim", "confirm", "close billing"); HIPAA audit logging for all billing operations
 72. **DNFB (Discharged Not Final Billed)** - Revenue cycle management for unbilled discharged accounts; aging bucket tracking (0-3, 4-7, 8-14, 15-30, 31+ days); reason codes (coding incomplete, documentation missing, charges pending, prior auth issues); prior authorization tracking (pending, approved, denied, expired, not obtained); prior auth issue filtering with at-risk revenue calculation; DNFB summary metrics with breakdown by reason and aging; patient-specific DNFB status; resolve accounts and link to billing claims; voice commands ("show DNFB", "DNFB summary", "prior auth issues", "over 7 days", "resolve 1", "patient DNFB"); HIPAA audit logging
 73. **Vuzix HUD Native Overlay** - Always-on patient info HUD for Vuzix Blade 2 AR glasses (1280x720); Foreground Service with WindowManager overlay; two modes: compact (320x180dp) showing patient name, allergies, meds count, room, and expanded (768x400dp) with full details; auto-updates when patient data changes; voice commands ("show HUD", "hide HUD", "expand HUD", "minimize HUD", "toggle HUD"); non-blocking FLAG_NOT_FOCUSABLE overlay; dark theme (#0A1628) with high-contrast text; Vuzix SDK integration (hud-actionmenu:2.9.0, hud-resources:2.3.0); auto-detects Vuzix device; graceful fallback on non-Vuzix devices
+74. **Audit Log Viewer Dashboard** - Web UI for viewing HIPAA audit logs; stats cards (PHI Access, Note Operations, Safety Alerts, Unique Patients); filterable log table with search by patient ID, event type, and action filters; date range selection; pagination (25/50/100 per page); real-time refresh; 4 API endpoints (/api/v1/audit/logs, /api/v1/audit/stats, /api/v1/audit/actions, /api/v1/audit/patient/{id}); accessible at /dashboard/audit
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 73 features implemented |
+| All medium effort items completed! | 74 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

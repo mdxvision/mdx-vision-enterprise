@@ -11,6 +11,10 @@ import {
   Settings,
   Stethoscope,
   Activity,
+  Glasses,
+  DollarSign,
+  Receipt,
+  Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -20,6 +24,10 @@ const navigation = [
   { name: 'Patients', href: '/dashboard/patients', icon: Users },
   { name: 'Encounters', href: '/dashboard/encounters', icon: Stethoscope },
   { name: 'Clinical Notes', href: '/dashboard/notes', icon: FileText },
+  { name: 'Billing', href: '/dashboard/billing', icon: Receipt },
+  { name: 'DNFB', href: '/dashboard/dnfb', icon: DollarSign },
+  { name: 'Audit Log', href: '/dashboard/audit', icon: Shield },
+  { name: 'Devices', href: '/dashboard/devices', icon: Glasses },
   { name: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];

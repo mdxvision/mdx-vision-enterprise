@@ -6005,6 +6005,266 @@ async def websocket_transcribe_with_provider(websocket: WebSocket, provider: str
             pass
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# AUDIT LOG API - Web Dashboard Viewer
+# ════════════════════════════════════════════════════════════════════════════════
+
+class AuditLogEntry(BaseModel):
+    """Model for audit log entries"""
+    timestamp: str
+    event_type: str
+    action: str
+    patient_id: Optional[str] = None
+    patient_name: Optional[str] = None
+    status: Optional[str] = None
+    details: Optional[str] = None
+    user_id: Optional[str] = None
+    user_name: Optional[str] = None
+    ip_address: Optional[str] = None
+    device_type: Optional[str] = None
+    note_id: Optional[str] = None
+    note_type: Optional[str] = None
+    severity: Optional[str] = None
+    session_id: Optional[str] = None
+
+class AuditLogResponse(BaseModel):
+    """Response model for audit log queries"""
+    total: int
+    page: int
+    page_size: int
+    entries: List[AuditLogEntry]
+
+class AuditLogStats(BaseModel):
+    """Statistics for audit logs"""
+    total_entries: int
+    phi_access_count: int
+    note_operations_count: int
+    safety_alerts_count: int
+    session_count: int
+    unique_patients: int
+    unique_users: int
+    entries_by_action: dict
+    entries_by_hour: List[dict]
+
+
+def read_audit_logs(
+    limit: int = 100,
+    offset: int = 0,
+    event_type: Optional[str] = None,
+    action: Optional[str] = None,
+    patient_id: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+) -> tuple[List[dict], int]:
+    """
+    Read audit logs from file with filtering and pagination.
+    Returns (entries, total_count)
+    """
+    log_path = "logs/audit.log"
+    if not os.path.exists(log_path):
+        return [], 0
+
+    entries = []
+    with open(log_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+
+                # Apply filters
+                if event_type and entry.get("event_type") != event_type:
+                    continue
+                if action and entry.get("action") != action:
+                    continue
+                if patient_id and entry.get("patient_id") != patient_id:
+                    continue
+                if start_date:
+                    if entry.get("timestamp", "") < start_date:
+                        continue
+                if end_date:
+                    if entry.get("timestamp", "") > end_date:
+                        continue
+
+                entries.append(entry)
+            except json.JSONDecodeError:
+                continue
+
+    # Sort by timestamp descending (newest first)
+    entries.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+
+    total = len(entries)
+    paginated = entries[offset:offset + limit]
+
+    return paginated, total
+
+
+@app.get("/api/v1/audit/logs", response_model=AuditLogResponse)
+async def get_audit_logs(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=500, description="Items per page"),
+    event_type: Optional[str] = Query(None, description="Filter by event type"),
+    action: Optional[str] = Query(None, description="Filter by action"),
+    patient_id: Optional[str] = Query(None, description="Filter by patient ID"),
+    start_date: Optional[str] = Query(None, description="Start date (ISO format)"),
+    end_date: Optional[str] = Query(None, description="End date (ISO format)")
+):
+    """
+    Get audit log entries with filtering and pagination.
+
+    - **page**: Page number (1-indexed)
+    - **page_size**: Number of entries per page (max 500)
+    - **event_type**: Filter by PHI_ACCESS, NOTE_OPERATION, SAFETY_ALERT, SESSION
+    - **action**: Filter by specific action (VIEW_PATIENT, SAVE_NOTE, etc.)
+    - **patient_id**: Filter by patient ID
+    - **start_date**: Filter entries after this date
+    - **end_date**: Filter entries before this date
+    """
+    offset = (page - 1) * page_size
+    entries, total = read_audit_logs(
+        limit=page_size,
+        offset=offset,
+        event_type=event_type,
+        action=action,
+        patient_id=patient_id,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+    return AuditLogResponse(
+        total=total,
+        page=page,
+        page_size=page_size,
+        entries=[AuditLogEntry(**e) for e in entries]
+    )
+
+
+@app.get("/api/v1/audit/stats", response_model=AuditLogStats)
+async def get_audit_stats():
+    """
+    Get audit log statistics for the dashboard.
+
+    Returns counts by event type, action breakdown, and hourly distribution.
+    """
+    log_path = "logs/audit.log"
+    if not os.path.exists(log_path):
+        return AuditLogStats(
+            total_entries=0,
+            phi_access_count=0,
+            note_operations_count=0,
+            safety_alerts_count=0,
+            session_count=0,
+            unique_patients=0,
+            unique_users=0,
+            entries_by_action={},
+            entries_by_hour=[]
+        )
+
+    entries = []
+    with open(log_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+    # Calculate stats
+    phi_count = sum(1 for e in entries if e.get("event_type") == "PHI_ACCESS")
+    note_count = sum(1 for e in entries if e.get("event_type") == "NOTE_OPERATION")
+    safety_count = sum(1 for e in entries if e.get("event_type") == "SAFETY_ALERT")
+    session_count = sum(1 for e in entries if e.get("event_type") == "SESSION")
+
+    # Unique patients and users
+    patients = set(e.get("patient_id") for e in entries if e.get("patient_id"))
+    users = set(e.get("user_id") for e in entries if e.get("user_id"))
+
+    # Action breakdown
+    action_counts = {}
+    for e in entries:
+        action = e.get("action", "UNKNOWN")
+        action_counts[action] = action_counts.get(action, 0) + 1
+
+    # Hourly distribution (last 24 hours)
+    from collections import defaultdict
+    hourly = defaultdict(int)
+    now = datetime.now(timezone.utc)
+    for e in entries:
+        try:
+            ts = datetime.fromisoformat(e.get("timestamp", "").replace("Z", "+00:00"))
+            if (now - ts).total_seconds() < 86400:  # Last 24 hours
+                hour = ts.strftime("%H:00")
+                hourly[hour] += 1
+        except:
+            continue
+
+    hourly_list = [{"hour": h, "count": c} for h, c in sorted(hourly.items())]
+
+    return AuditLogStats(
+        total_entries=len(entries),
+        phi_access_count=phi_count,
+        note_operations_count=note_count,
+        safety_alerts_count=safety_count,
+        session_count=session_count,
+        unique_patients=len(patients),
+        unique_users=len(users),
+        entries_by_action=action_counts,
+        entries_by_hour=hourly_list
+    )
+
+
+@app.get("/api/v1/audit/actions")
+async def get_audit_actions():
+    """Get list of all audit action types for filtering."""
+    return {
+        "event_types": ["PHI_ACCESS", "NOTE_OPERATION", "SAFETY_ALERT", "SESSION"],
+        "actions": [
+            # PHI Access
+            "VIEW_PATIENT", "SEARCH_PATIENT", "LOOKUP_MRN", "VIEW_NOTES",
+            # Note Operations
+            "GENERATE_NOTE", "GENERATE_DDX", "ANALYZE_IMAGE", "SAVE_NOTE", "PUSH_NOTE",
+            # CRUD Write-Back
+            "PUSH_VITAL", "PUSH_ORDER", "PUSH_ALLERGY", "UPDATE_MEDICATION", "DISCONTINUE_MEDICATION",
+            # Billing
+            "CREATE_CLAIM", "UPDATE_CLAIM", "SUBMIT_CLAIM", "VIEW_CLAIM",
+            # Worklist
+            "VIEW_WORKLIST", "CHECK_IN_PATIENT", "UPDATE_WORKLIST_STATUS", "ADD_TO_WORKLIST",
+            # Transcription
+            "START_TRANSCRIPTION", "END_TRANSCRIPTION",
+            # Safety
+            "CRITICAL_ALERT", "DRUG_INTERACTION", "SAFETY_CHECK_BLOCKED"
+        ]
+    }
+
+
+@app.get("/api/v1/audit/patient/{patient_id}")
+async def get_patient_audit_trail(
+    patient_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200)
+):
+    """
+    Get complete audit trail for a specific patient.
+    Useful for compliance reviews and patient data access requests.
+    """
+    offset = (page - 1) * page_size
+    entries, total = read_audit_logs(
+        limit=page_size,
+        offset=offset,
+        patient_id=patient_id
+    )
+
+    return {
+        "patient_id": patient_id,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "entries": entries
+    }
+
+
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
     print("📡 Connected to: Cerner Open Sandbox")
