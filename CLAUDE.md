@@ -396,13 +396,14 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 74. **Audit Log Viewer Dashboard** - Web UI for viewing HIPAA audit logs; stats cards (PHI Access, Note Operations, Safety Alerts, Unique Patients); filterable log table with search by patient ID, event type, and action filters; date range selection; pagination (25/50/100 per page); real-time refresh; 4 API endpoints (/api/v1/audit/logs, /api/v1/audit/stats, /api/v1/audit/actions, /api/v1/audit/patient/{id}); accessible at /dashboard/audit
 75. **Gesture Control** - Head gesture recognition for Vuzix Blade 2 AR glasses; gyroscope-based state machine detection; nod (yes) for confirm/approve actions, shake (no) for cancel/dismiss, double nod for HUD toggle; touchpad DPAD navigation (left/right for worklist, up/down for HUD expand/minimize, center for select); integrates with order confirmations, billing submissions, worklist navigation; voice commands ("enable gestures", "disable gestures", "gesture status"); cooldown timers prevent false positives; TTS feedback for all gesture actions
 76. **Wink Gesture (Micro-Tilt)** - Quick head dip gesture for rapid selection on Vuzix Blade 2; alternative to full nod for faster interaction; lower threshold (0.8-1.5 rad/s vs 1.8+ for nod); faster duration requirement (<200ms); 300ms cooldown for rapid selection; dismisses overlays, selects worklist patients, acknowledges alerts; voice commands ("enable wink", "disable wink", "wink status"); distinct from full nod to prevent gesture confusion; 14 unit tests for wink detection
+77. **Voice Biometric Continuous Auth** - Extends Feature #66 with periodic re-verification during active sessions; VoiceprintSession model with confidence decay (1% per minute); configurable re-verify interval (default 5 minutes); server-side session storage with timestamps; background monitoring during transcription/ambient modes; auto-prompt when verification expires; sensitive operations require fresh voiceprint (push notes, vitals, orders, allergies, medication updates); X-Device-ID header enables enforcement; voice commands ("verify me", "verify my voice", "verification status", "set verify interval [N] minutes"); API endpoints (/api/v1/auth/voiceprint/{device_id}/check, /api/v1/auth/voiceprint/{device_id}/re-verify, /api/v1/auth/voiceprint/{device_id}/interval)
 
 ## Next Up (Recommended)
 
 ### Quick Wins
 | Feature | Notes |
 |---------|-------|
-| All medium effort items completed! | 76 features implemented |
+| All medium effort items completed! | 77 features implemented |
 
 ### Larger Features
 1. Epic/Veradigm live integration (needs credentials)

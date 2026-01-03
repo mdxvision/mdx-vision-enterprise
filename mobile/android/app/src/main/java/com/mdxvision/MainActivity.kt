@@ -94,6 +94,9 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_CLINICIAN_ID = "clinician_id"
         private const val PREF_DEVICE_PAIRED = "device_paired"
         private const val PREF_VOICEPRINT_ENROLLED = "voiceprint_enrolled"
+        private const val PREF_LAST_VOICEPRINT_VERIFY = "last_voiceprint_verification"
+        private const val PREF_VOICEPRINT_CONFIDENCE = "voiceprint_confidence"
+        private const val PREF_REVERIFY_INTERVAL = "reverify_interval_seconds"
         private const val QR_SCAN_REQUEST_CODE = 1003
     }
 
@@ -188,6 +191,14 @@ class MainActivity : AppCompatActivity() {
     private var voiceprintEnrollmentOverlay: android.widget.FrameLayout? = null
     private var isAwaitingVoiceprintVerify: Boolean = false
     private var voiceprintVerifyCallback: ((Boolean) -> Unit)? = null
+
+    // Feature #77: Continuous voiceprint authentication
+    private var lastVoiceprintVerification: Long = 0L
+    private var voiceprintConfidence: Float = 0f
+    private var reVerifyIntervalMs: Long = 5 * 60 * 1000L  // 5 minutes default
+    private val CONTINUOUS_AUTH_CHECK_INTERVAL_MS = 30 * 1000L  // Check every 30 seconds
+    private var continuousAuthHandler: android.os.Handler? = null
+    private var continuousAuthRunnable: Runnable? = null
 
     // Proximity sensor for auto-lock when glasses removed
     private var proximitySensor: android.hardware.Sensor? = null
@@ -14808,6 +14819,11 @@ SOFA Score: [X]
         isDevicePaired = cachePrefs.getBoolean(PREF_DEVICE_PAIRED, false)
         isVoiceprintEnrolled = cachePrefs.getBoolean(PREF_VOICEPRINT_ENROLLED, false)
 
+        // Feature #77: Start continuous auth monitoring if voiceprint enrolled
+        if (isVoiceprintEnrolled) {
+            startContinuousAuthMonitor()
+        }
+
         Log.d(TAG, "Device auth initialized - paired: $isDevicePaired, hasSession: ${sessionToken != null}")
 
         // Initialize proximity sensor for auto-lock
@@ -15835,6 +15851,296 @@ SOFA Score: [X]
         isAwaitingVoiceprintVerify = false
         voiceprintVerifyCallback = null
         dismissVoiceprintEnrollmentUI()
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // FEATURE #77: CONTINUOUS VOICEPRINT AUTHENTICATION
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Check if voiceprint re-verification is needed for continuous auth.
+     * Returns true if verification is current, false if re-verification required.
+     */
+    private fun isVoiceprintVerificationCurrent(): Boolean {
+        if (!isVoiceprintEnrolled) return true  // No voiceprint = skip check
+
+        val elapsed = System.currentTimeMillis() - lastVoiceprintVerification
+        return elapsed < reVerifyIntervalMs
+    }
+
+    /**
+     * Get confidence decay based on time since last verification.
+     * Confidence decays at 1% per minute.
+     */
+    private fun getDecayedConfidence(): Float {
+        if (lastVoiceprintVerification == 0L) return 0f
+
+        val elapsedMinutes = (System.currentTimeMillis() - lastVoiceprintVerification) / 60000f
+        val decayRate = 0.01f  // 1% per minute
+        val decayed = voiceprintConfidence - (elapsedMinutes * decayRate)
+        return decayed.coerceIn(0f, 1f)
+    }
+
+    /**
+     * Check voiceprint verification status from server.
+     * Updates local state with server response.
+     */
+    private fun checkVoiceprintStatusFromServer(callback: ((Boolean) -> Unit)? = null) {
+        if (deviceId.isEmpty() || !isDevicePaired) {
+            callback?.invoke(true)  // No device = skip check
+            return
+        }
+
+        Thread {
+            try {
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/auth/voiceprint/$deviceId/check")
+                    .get()
+                    .build()
+
+                val response = httpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val json = JSONObject(responseBody)
+
+                runOnUiThread {
+                    if (json.optBoolean("has_session")) {
+                        val needsVerification = json.optBoolean("needs_verification", true)
+                        val confidence = json.optDouble("confidence", 0.0).toFloat()
+                        val secondsUntil = json.optInt("seconds_until_verification", 0)
+
+                        // Update local state
+                        voiceprintConfidence = confidence
+                        if (secondsUntil > 0) {
+                            lastVoiceprintVerification = System.currentTimeMillis() -
+                                (reVerifyIntervalMs - (secondsUntil * 1000L))
+                        }
+
+                        callback?.invoke(!needsVerification)
+                    } else {
+                        // No session on server - need verification
+                        callback?.invoke(false)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking voiceprint status: ${e.message}")
+                runOnUiThread {
+                    callback?.invoke(true)  // On error, don't block operations
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Perform re-verification and update session.
+     * Called when continuous auth check indicates verification needed.
+     */
+    private fun performVoiceprintReVerification(onResult: (Boolean, Float) -> Unit) {
+        speakFeedback("Please verify your voice to continue.")
+
+        // Use existing verify UI
+        verifyVoiceprintForOperation("Re-verification") { verified ->
+            if (verified) {
+                // Session was updated by the verify endpoint
+                lastVoiceprintVerification = System.currentTimeMillis()
+                voiceprintConfidence = 0.85f  // Default confidence on success
+
+                // Save to prefs
+                cachePrefs.edit()
+                    .putLong(PREF_LAST_VOICEPRINT_VERIFY, lastVoiceprintVerification)
+                    .putFloat(PREF_VOICEPRINT_CONFIDENCE, voiceprintConfidence)
+                    .apply()
+
+                onResult(true, voiceprintConfidence)
+            } else {
+                onResult(false, 0f)
+            }
+        }
+    }
+
+    /**
+     * Require fresh voiceprint verification before sensitive operation.
+     * Checks continuous auth state and prompts for re-verification if needed.
+     */
+    private fun requireFreshVoiceprintVerification(onVerified: () -> Unit) {
+        // Skip if no voiceprint enrolled
+        if (!isVoiceprintEnrolled) {
+            onVerified()
+            return
+        }
+
+        // Check if current verification is still valid
+        if (isVoiceprintVerificationCurrent() && getDecayedConfidence() >= 0.60f) {
+            onVerified()
+            return
+        }
+
+        // Need re-verification
+        performVoiceprintReVerification { verified, confidence ->
+            if (verified) {
+                onVerified()
+            } else {
+                speakFeedback("Voice verification failed. Operation cancelled.")
+            }
+        }
+    }
+
+    /**
+     * Start background continuous auth monitoring.
+     * Checks verification status periodically during active sessions.
+     */
+    private fun startContinuousAuthMonitor() {
+        if (!isVoiceprintEnrolled) return
+
+        // Load saved state
+        lastVoiceprintVerification = cachePrefs.getLong(PREF_LAST_VOICEPRINT_VERIFY, 0L)
+        voiceprintConfidence = cachePrefs.getFloat(PREF_VOICEPRINT_CONFIDENCE, 0f)
+        reVerifyIntervalMs = cachePrefs.getLong(PREF_REVERIFY_INTERVAL, 5 * 60 * 1000L)
+
+        continuousAuthHandler = android.os.Handler(mainLooper)
+        continuousAuthRunnable = object : Runnable {
+            override fun run() {
+                checkContinuousAuth()
+                continuousAuthHandler?.postDelayed(this, CONTINUOUS_AUTH_CHECK_INTERVAL_MS)
+            }
+        }
+        continuousAuthHandler?.postDelayed(continuousAuthRunnable!!, CONTINUOUS_AUTH_CHECK_INTERVAL_MS)
+
+        Log.d(TAG, "Continuous auth monitoring started")
+    }
+
+    /**
+     * Stop continuous auth monitoring.
+     */
+    private fun stopContinuousAuthMonitor() {
+        continuousAuthRunnable?.let { continuousAuthHandler?.removeCallbacks(it) }
+        continuousAuthHandler = null
+        continuousAuthRunnable = null
+    }
+
+    /**
+     * Periodic check for continuous auth during active sessions.
+     * Prompts for re-verification when interval expires during transcription.
+     */
+    private fun checkContinuousAuth() {
+        if (!isLiveTranscribing && !isAmbientMode) return
+        if (!isVoiceprintEnrolled) return
+
+        val elapsed = System.currentTimeMillis() - lastVoiceprintVerification
+
+        if (elapsed > reVerifyIntervalMs) {
+            // Verification expired during active session
+            Log.d(TAG, "Continuous auth: verification expired, prompting re-verify")
+
+            // For now, just prompt - could implement passive verification later
+            if (elapsed > reVerifyIntervalMs * 2) {
+                // Way overdue - interrupt session
+                speakFeedback("Please say 'verify me' to continue using MDx Vision.")
+            }
+        } else {
+            // Log confidence decay
+            val decayed = getDecayedConfidence()
+            Log.d(TAG, "Continuous auth: confidence=$decayed, time until re-verify=${(reVerifyIntervalMs - elapsed) / 1000}s")
+        }
+    }
+
+    /**
+     * Set custom re-verification interval.
+     * Voice command: "set verify interval [N] minutes"
+     */
+    private fun setReVerifyInterval(minutes: Int) {
+        if (minutes < 1 || minutes > 60) {
+            speakFeedback("Interval must be between 1 and 60 minutes.")
+            return
+        }
+
+        reVerifyIntervalMs = minutes * 60 * 1000L
+
+        // Save to prefs
+        cachePrefs.edit()
+            .putLong(PREF_REVERIFY_INTERVAL, reVerifyIntervalMs)
+            .apply()
+
+        // Update server
+        if (deviceId.isNotEmpty()) {
+            Thread {
+                try {
+                    val request = Request.Builder()
+                        .url("$EHR_PROXY_URL/api/v1/auth/voiceprint/$deviceId/interval?interval_seconds=${minutes * 60}")
+                        .put(okhttp3.RequestBody.create(null, ""))
+                        .build()
+
+                    httpClient.newCall(request).execute()
+                    Log.d(TAG, "Re-verify interval updated on server: $minutes minutes")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating re-verify interval: ${e.message}")
+                }
+            }.start()
+        }
+
+        speakFeedback("Verification interval set to $minutes minutes.")
+    }
+
+    /**
+     * Show continuous auth verification status.
+     * Voice command: "verification status"
+     */
+    private fun showVerificationStatus() {
+        if (!isVoiceprintEnrolled) {
+            speakFeedback("Voiceprint not enrolled. No verification required.")
+            return
+        }
+
+        val elapsed = (System.currentTimeMillis() - lastVoiceprintVerification) / 1000
+        val decayed = getDecayedConfidence()
+        val timeUntil = maxOf(0L, (reVerifyIntervalMs / 1000) - elapsed)
+
+        val status = buildString {
+            append("Verification status. ")
+            if (lastVoiceprintVerification > 0L) {
+                append("Last verified ${elapsed / 60} minutes ago. ")
+                append("Confidence ${(decayed * 100).toInt()} percent. ")
+                if (timeUntil > 0) {
+                    append("Next verification in ${timeUntil / 60} minutes.")
+                } else {
+                    append("Re-verification required.")
+                }
+            } else {
+                append("No verification on record. Please say 'verify me' to authenticate.")
+            }
+        }
+
+        speakFeedback(status)
+    }
+
+    /**
+     * Handle manual re-verification request.
+     * Voice commands: "verify me", "verify my voice"
+     */
+    private fun handleVerifyMeCommand() {
+        if (!isVoiceprintEnrolled) {
+            speakFeedback("Voiceprint not enrolled. Say 'enroll my voice' to set up voiceprint authentication.")
+            return
+        }
+
+        speakFeedback("Starting voice verification.")
+
+        verifyVoiceprintForOperation("Manual verification") { verified ->
+            if (verified) {
+                lastVoiceprintVerification = System.currentTimeMillis()
+                voiceprintConfidence = 0.85f
+
+                // Save to prefs
+                cachePrefs.edit()
+                    .putLong(PREF_LAST_VOICEPRINT_VERIFY, lastVoiceprintVerification)
+                    .putFloat(PREF_VOICEPRINT_CONFIDENCE, voiceprintConfidence)
+                    .apply()
+
+                val confidencePercent = (voiceprintConfidence * 100).toInt()
+                speakFeedback("Voice verified. Confidence $confidencePercent percent.")
+            } else {
+                speakFeedback("Voice verification failed.")
+            }
+        }
     }
 
     // ============ Patient History Methods ============
@@ -19033,6 +19339,19 @@ SOFA Score: [X]
             lower.contains("delete voiceprint") || lower.contains("remove voiceprint") -> {
                 deleteVoiceprintEnrollment()
             }
+            // Feature #77: Continuous auth voice commands
+            lower.contains("verify me") || lower.contains("verify my voice") || lower.contains("verify identity") -> {
+                handleVerifyMeCommand()
+            }
+            lower.contains("verification status") || lower.contains("verify status") || lower.contains("auth status") -> {
+                showVerificationStatus()
+            }
+            lower.contains("set verify interval") || lower.contains("set verification interval") -> {
+                // Parse "set verify interval [N] minutes"
+                val match = Regex("(\\d+)\\s*(?:minute|min)").find(lower)
+                val minutes = match?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 5
+                setReVerifyInterval(minutes)
+            }
             lower.contains("load ") && Regex("load\\s+(\\d+)").containsMatchIn(lower) -> {
                 // Load patient from history by number (e.g., "load 1", "load 2")
                 val match = Regex("load\\s+(\\d+)").find(lower)
@@ -19859,6 +20178,8 @@ SOFA Score: [X]
         unregisterNetworkCallback()
         // Clean up session timeout checker
         stopSessionTimeoutChecker()
+        // Feature #77: Clean up continuous auth monitor
+        stopContinuousAuthMonitor()
     }
 
     // ============ Touchpad Navigation (Feature #75) ============

@@ -7,7 +7,7 @@ Run: python main.py
 Test: curl http://localhost:8002/api/v1/patient/12724066
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
@@ -47,7 +47,11 @@ from auth import (
     remote_wipe_device, get_clinician_devices, enroll_voiceprint,
     verify_voiceprint, create_test_clinician, get_enrollment_phrases,
     DeviceRegistration, TOTPVerifyRequest, SessionUnlockRequest,
-    RemoteWipeRequest, VoiceprintEnrollRequest, VoiceprintVerifyRequest
+    RemoteWipeRequest, VoiceprintEnrollRequest, VoiceprintVerifyRequest,
+    # Feature #77: Continuous auth session management
+    VoiceprintSession, get_voiceprint_session, create_voiceprint_session,
+    update_voiceprint_verification, delete_voiceprint_session,
+    set_re_verify_interval
 )
 
 # Load code databases
@@ -538,6 +542,190 @@ async def delete_device_voiceprint(device_id: str):
     )
 
     return result
+
+
+# ==================== Feature #77: Continuous Auth Endpoints ====================
+
+@app.get("/api/v1/auth/voiceprint/{device_id}/check")
+async def check_voiceprint_verification_status(device_id: str):
+    """
+    Check if voiceprint re-verification is needed (Feature #77)
+    Returns verification status, confidence decay, and time until next verification
+    """
+    clinician = get_clinician_by_device(device_id)
+    if not clinician:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    session = get_voiceprint_session(device_id)
+
+    if not session:
+        # No session exists - check if enrolled
+        from voiceprint import is_enrolled
+        enrolled = is_enrolled(clinician.clinician_id)
+        return {
+            "has_session": False,
+            "enrolled": enrolled,
+            "needs_verification": True,
+            "message": "No active voiceprint session" if enrolled else "Voiceprint not enrolled"
+        }
+
+    return {
+        "has_session": True,
+        "enrolled": True,
+        "needs_verification": session.needs_re_verification(),
+        "last_verified_at": session.last_verified_at.isoformat() if session.last_verified_at else None,
+        "confidence": session.confidence_decay(),
+        "original_confidence": session.confidence_score,
+        "seconds_until_verification": session.seconds_until_re_verification(),
+        "verification_count": session.verification_count,
+        "re_verify_interval_seconds": session.re_verify_interval_seconds
+    }
+
+
+@app.post("/api/v1/auth/voiceprint/{device_id}/re-verify")
+async def re_verify_voiceprint(device_id: str, request: VoiceprintVerifyRequest):
+    """
+    Perform voiceprint re-verification (Feature #77)
+    Updates session with new verification timestamp and confidence
+    """
+    clinician = get_clinician_by_device(device_id)
+    if not clinician:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    # Use existing verification logic
+    result = verify_voiceprint(clinician, request.audio_sample)
+
+    if result.get("verified"):
+        # Update session with new verification
+        session = update_voiceprint_verification(device_id, result.get("confidence", 0.0))
+
+        if not session:
+            # Create new session if none exists
+            session = create_voiceprint_session(
+                device_id=device_id,
+                clinician_id=clinician.clinician_id,
+                confidence=result.get("confidence", 0.0)
+            )
+
+        audit_logger._log_event(
+            event_type="AUTH",
+            action="VOICEPRINT_REVERIFY",
+            clinician_id=clinician.clinician_id,
+            device_id=device_id,
+            status="success",
+            details={"confidence": result.get("confidence"), "verification_count": session.verification_count}
+        )
+
+        return {
+            "verified": True,
+            "confidence": result.get("confidence"),
+            "session_updated": True,
+            "next_verification_in": session.seconds_until_re_verification(),
+            "verification_count": session.verification_count
+        }
+    else:
+        audit_logger._log_event(
+            event_type="AUTH",
+            action="VOICEPRINT_REVERIFY",
+            clinician_id=clinician.clinician_id,
+            device_id=device_id,
+            status="failed",
+            details={"confidence": result.get("confidence"), "reason": result.get("error")}
+        )
+
+        return {
+            "verified": False,
+            "confidence": result.get("confidence"),
+            "error": result.get("error", "Verification failed")
+        }
+
+
+@app.put("/api/v1/auth/voiceprint/{device_id}/interval")
+async def set_voiceprint_re_verify_interval(device_id: str, interval_seconds: int):
+    """
+    Set custom re-verification interval for a device (Feature #77)
+    Default is 300 seconds (5 minutes)
+    """
+    clinician = get_clinician_by_device(device_id)
+    if not clinician:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    if interval_seconds < 60:
+        raise HTTPException(status_code=400, detail="Interval must be at least 60 seconds")
+
+    if interval_seconds > 3600:
+        raise HTTPException(status_code=400, detail="Interval cannot exceed 3600 seconds (1 hour)")
+
+    session = set_re_verify_interval(device_id, interval_seconds)
+
+    if not session:
+        raise HTTPException(status_code=404, detail="No active voiceprint session")
+
+    audit_logger._log_event(
+        event_type="AUTH",
+        action="VOICEPRINT_INTERVAL_SET",
+        clinician_id=clinician.clinician_id,
+        device_id=device_id,
+        status="success",
+        details={"interval_seconds": interval_seconds}
+    )
+
+    return {
+        "success": True,
+        "re_verify_interval_seconds": session.re_verify_interval_seconds,
+        "message": f"Re-verification interval set to {interval_seconds // 60} minutes"
+    }
+
+
+async def require_fresh_voiceprint(device_id: str, min_confidence: float = 0.60):
+    """
+    Middleware helper to enforce fresh voiceprint verification (Feature #77)
+    Call this before sensitive operations (push notes, push vitals, etc.)
+
+    Raises:
+        HTTPException 401 if voiceprint not enrolled
+        HTTPException 403 if re-verification required (with X-Require-Voiceprint header)
+
+    Returns:
+        VoiceprintSession if verification is fresh and confidence is sufficient
+    """
+    clinician = get_clinician_by_device(device_id)
+    if not clinician:
+        raise HTTPException(status_code=404, detail="Device not registered")
+
+    session = get_voiceprint_session(device_id)
+
+    if not session:
+        # Check if enrolled at all
+        from voiceprint import is_enrolled
+        if not is_enrolled(clinician.clinician_id):
+            raise HTTPException(
+                status_code=401,
+                detail="Voiceprint not enrolled",
+                headers={"X-Require-Voiceprint": "enroll"}
+            )
+        raise HTTPException(
+            status_code=403,
+            detail="Voiceprint verification required",
+            headers={"X-Require-Voiceprint": "verify"}
+        )
+
+    if session.needs_re_verification():
+        raise HTTPException(
+            status_code=403,
+            detail="Voiceprint re-verification required",
+            headers={"X-Require-Voiceprint": "re-verify"}
+        )
+
+    current_confidence = session.confidence_decay()
+    if current_confidence < min_confidence:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Voiceprint confidence too low ({current_confidence:.2f} < {min_confidence})",
+            headers={"X-Require-Voiceprint": "re-verify"}
+        )
+
+    return session
 
 
 @app.get("/api/v1/auth/device/{device_id}/status")
@@ -5505,14 +5693,20 @@ async def get_patient_notes(patient_id: str, request: Request):
 
 
 @app.post("/api/v1/notes/{note_id}/push")
-async def push_note_endpoint(note_id: str, request: Request):
+async def push_note_endpoint(note_id: str, request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a saved note to the EHR as a FHIR DocumentReference.
 
     This creates a DocumentReference in the EHR containing the note content.
     Note: Cerner sandbox is read-only, so this will return 403 until
     production credentials are configured.
+
+    Feature #77: Requires fresh voiceprint verification if X-Device-ID header is present.
     """
+    # Feature #77: Check continuous auth if device_id provided
+    if x_device_id:
+        await require_fresh_voiceprint(x_device_id)
+
     result = await push_note_to_ehr(note_id)
 
     if not result.get("success") and result.get("error") == "Note not found":
@@ -5540,13 +5734,19 @@ async def push_note_endpoint(note_id: str, request: Request):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/v1/vitals/push")
-async def push_vital(request: VitalWriteRequest, http_request: Request):
+async def push_vital(request: VitalWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a captured vital sign to the EHR as a FHIR Observation.
 
     Supports: blood_pressure, heart_rate, temperature, respiratory_rate,
     oxygen_saturation, weight, height, pain_level
+
+    Feature #77: Requires fresh voiceprint verification if X-Device-ID header is present.
     """
+    # Feature #77: Check continuous auth if device_id provided
+    if x_device_id:
+        await require_fresh_voiceprint(x_device_id)
+
     # Build FHIR Observation
     observation = build_observation(request.model_dump(), request.patient_id)
 
@@ -5568,10 +5768,16 @@ async def push_vital(request: VitalWriteRequest, http_request: Request):
 
 
 @app.post("/api/v1/orders/push")
-async def push_order(request: OrderWriteRequest, http_request: Request):
+async def push_order(request: OrderWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push an order to the EHR as a FHIR ServiceRequest (lab/imaging) or MedicationRequest (meds).
+
+    Feature #77: Requires fresh voiceprint verification if X-Device-ID header is present.
     """
+    # Feature #77: Check continuous auth if device_id provided
+    if x_device_id:
+        await require_fresh_voiceprint(x_device_id)
+
     # Determine resource type and build appropriate FHIR resource
     if request.order_type.upper() == "MEDICATION":
         resource = build_medication_request(request.model_dump(), request.patient_id)
@@ -5598,10 +5804,16 @@ async def push_order(request: OrderWriteRequest, http_request: Request):
 
 
 @app.post("/api/v1/allergies/push")
-async def push_allergy(request: AllergyWriteRequest, http_request: Request):
+async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a new allergy to the EHR as a FHIR AllergyIntolerance.
+
+    Feature #77: Requires fresh voiceprint verification if X-Device-ID header is present.
     """
+    # Feature #77: Check continuous auth if device_id provided
+    if x_device_id:
+        await require_fresh_voiceprint(x_device_id)
+
     # Build FHIR AllergyIntolerance
     allergy_resource = build_allergy_intolerance(request.model_dump(), request.patient_id)
 
@@ -5623,13 +5835,19 @@ async def push_allergy(request: AllergyWriteRequest, http_request: Request):
 
 
 @app.put("/api/v1/medications/{med_id}/status")
-async def update_medication_status(med_id: str, request: MedicationUpdateRequest, http_request: Request):
+async def update_medication_status(med_id: str, request: MedicationUpdateRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Update medication status (HIPAA-compliant soft delete).
 
     Valid status values: active, on-hold, cancelled, stopped, completed, entered-in-error
     Use 'stopped' for discontinued medications, 'on-hold' for temporarily paused.
+
+    Feature #77: Requires fresh voiceprint verification if X-Device-ID header is present.
     """
+    # Feature #77: Check continuous auth if device_id provided
+    if x_device_id:
+        await require_fresh_voiceprint(x_device_id)
+
     # Build update payload
     update_resource = {
         "resourceType": "MedicationRequest",

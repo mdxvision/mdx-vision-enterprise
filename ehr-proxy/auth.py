@@ -66,6 +66,60 @@ class RemoteWipeRequest(BaseModel):
     admin_token: str  # Admin authentication
 
 
+class VoiceprintSession(BaseModel):
+    """
+    Voiceprint verification session state for continuous authentication (Feature #77).
+    Tracks when voiceprint was last verified and calculates confidence decay.
+    """
+    device_id: str
+    clinician_id: str
+    last_verified_at: Optional[datetime] = None
+    confidence_score: float = 0.0
+    verification_count: int = 0
+    session_start: Optional[datetime] = None
+    re_verify_interval_seconds: int = 300  # 5 minutes default
+
+    def needs_re_verification(self) -> bool:
+        """Check if re-verification is required based on elapsed time"""
+        if not self.last_verified_at:
+            return True
+        now = datetime.now(timezone.utc)
+        # Handle naive datetime
+        last_verified = self.last_verified_at
+        if last_verified.tzinfo is None:
+            last_verified = last_verified.replace(tzinfo=timezone.utc)
+        elapsed = (now - last_verified).total_seconds()
+        return elapsed > self.re_verify_interval_seconds
+
+    def confidence_decay(self) -> float:
+        """
+        Calculate decayed confidence based on time since last verification.
+        Confidence decreases by 1% per minute since last verification.
+        """
+        if not self.last_verified_at:
+            return 0.0
+        now = datetime.now(timezone.utc)
+        last_verified = self.last_verified_at
+        if last_verified.tzinfo is None:
+            last_verified = last_verified.replace(tzinfo=timezone.utc)
+        elapsed_seconds = (now - last_verified).total_seconds()
+        decay_rate = 0.01  # Lose 1% per minute
+        decayed = self.confidence_score - (elapsed_seconds / 60 * decay_rate)
+        return max(0.0, min(1.0, decayed))
+
+    def seconds_until_re_verification(self) -> int:
+        """Get seconds remaining until re-verification is required"""
+        if not self.last_verified_at:
+            return 0
+        now = datetime.now(timezone.utc)
+        last_verified = self.last_verified_at
+        if last_verified.tzinfo is None:
+            last_verified = last_verified.replace(tzinfo=timezone.utc)
+        elapsed = (now - last_verified).total_seconds()
+        remaining = self.re_verify_interval_seconds - elapsed
+        return max(0, int(remaining))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # DEVICE & USER STORAGE
 # Simple file-based storage - replace with database in production
@@ -225,6 +279,103 @@ def delete_device(device_id: str):
     if device_id in devices.get("devices", {}):
         del devices["devices"][device_id]
         _save_json("devices.json", devices)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# VOICEPRINT SESSION MANAGEMENT (Feature #77 - Continuous Auth)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# In-memory cache for active sessions (for performance)
+_voiceprint_sessions: Dict[str, VoiceprintSession] = {}
+
+
+def get_voiceprint_session(device_id: str) -> Optional[VoiceprintSession]:
+    """Get voiceprint session for a device"""
+    # Check in-memory cache first
+    if device_id in _voiceprint_sessions:
+        return _voiceprint_sessions[device_id]
+
+    # Load from file storage
+    sessions = _load_json("voiceprint_sessions.json", {"sessions": {}})
+    if device_id in sessions.get("sessions", {}):
+        data = sessions["sessions"][device_id]
+        # Parse datetime fields
+        if data.get("last_verified_at"):
+            data["last_verified_at"] = datetime.fromisoformat(data["last_verified_at"])
+        if data.get("session_start"):
+            data["session_start"] = datetime.fromisoformat(data["session_start"])
+        session = VoiceprintSession(**data)
+        _voiceprint_sessions[device_id] = session
+        return session
+
+    return None
+
+
+def save_voiceprint_session(session: VoiceprintSession):
+    """Save voiceprint session state"""
+    # Update in-memory cache
+    _voiceprint_sessions[session.device_id] = session
+
+    # Persist to file
+    sessions = _load_json("voiceprint_sessions.json", {"sessions": {}})
+    session_data = session.model_dump()
+    # Convert datetime to ISO format for JSON
+    if session_data.get("last_verified_at"):
+        session_data["last_verified_at"] = session_data["last_verified_at"].isoformat()
+    if session_data.get("session_start"):
+        session_data["session_start"] = session_data["session_start"].isoformat()
+    sessions["sessions"][session.device_id] = session_data
+    _save_json("voiceprint_sessions.json", sessions)
+
+
+def create_voiceprint_session(device_id: str, clinician_id: str, confidence: float = 0.0) -> VoiceprintSession:
+    """Create a new voiceprint session after successful verification"""
+    now = datetime.now(timezone.utc)
+    session = VoiceprintSession(
+        device_id=device_id,
+        clinician_id=clinician_id,
+        last_verified_at=now if confidence > 0 else None,
+        confidence_score=confidence,
+        verification_count=1 if confidence > 0 else 0,
+        session_start=now
+    )
+    save_voiceprint_session(session)
+    return session
+
+
+def update_voiceprint_verification(device_id: str, confidence: float) -> Optional[VoiceprintSession]:
+    """Update session after successful re-verification"""
+    session = get_voiceprint_session(device_id)
+    if not session:
+        return None
+
+    session.last_verified_at = datetime.now(timezone.utc)
+    session.confidence_score = confidence
+    session.verification_count += 1
+    save_voiceprint_session(session)
+    return session
+
+
+def delete_voiceprint_session(device_id: str):
+    """Delete voiceprint session (logout/wipe)"""
+    if device_id in _voiceprint_sessions:
+        del _voiceprint_sessions[device_id]
+
+    sessions = _load_json("voiceprint_sessions.json", {"sessions": {}})
+    if device_id in sessions.get("sessions", {}):
+        del sessions["sessions"][device_id]
+        _save_json("voiceprint_sessions.json", sessions)
+
+
+def set_re_verify_interval(device_id: str, interval_seconds: int) -> Optional[VoiceprintSession]:
+    """Configure re-verification interval for a device"""
+    session = get_voiceprint_session(device_id)
+    if not session:
+        return None
+
+    session.re_verify_interval_seconds = max(60, min(3600, interval_seconds))  # 1-60 minutes
+    save_voiceprint_session(session)
+    return session
 
 
 # ═══════════════════════════════════════════════════════════════════════════
