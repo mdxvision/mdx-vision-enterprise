@@ -38,6 +38,17 @@ from medical_vocabulary import (
 # Import HIPAA audit logging
 from audit import audit_logger, AuditAction
 
+# Import RAG system (Feature #88)
+try:
+    from rag import (
+        initialize_rag, retrieve_context, get_augmented_prompt,
+        add_custom_document, rag_engine, RetrievedContext, MedicalDocument
+    )
+    RAG_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: RAG module not available: {e}")
+    RAG_AVAILABLE = False
+
 # Import device authentication
 from auth import (
     Clinician, Device, get_clinician, save_clinician, get_device,
@@ -3140,9 +3151,66 @@ async def add_to_worklist(patient: WorklistPatient, request: Request):
 
 # ============ Clinical Notes API ============
 
-async def generate_soap_with_claude(transcript: str, chief_complaint: str = None) -> dict:
-    """Generate SOAP note using Claude API"""
+async def generate_soap_with_claude(transcript: str, chief_complaint: str = None, use_rag: bool = True) -> dict:
+    """
+    Generate SOAP note using Claude API.
+
+    Args:
+        transcript: Clinical encounter transcript
+        chief_complaint: Primary complaint
+        use_rag: Whether to use RAG for citation-backed responses (Feature #88)
+
+    Returns:
+        SOAP note with ICD-10/CPT codes and optional citations
+    """
+    # Build RAG context if available and enabled
+    rag_context = ""
+    citations = []
+
+    if use_rag and RAG_AVAILABLE and rag_engine.initialized:
+        # Create search query from chief complaint and transcript
+        search_query = f"{chief_complaint or ''} {transcript[:500]}"
+
+        # Retrieve relevant guidelines
+        augmented_prompt, sources = get_augmented_prompt(search_query, n_results=3)
+
+        if sources:
+            rag_context = """
+CLINICAL REFERENCE GUIDELINES:
+Use these evidence-based guidelines to inform your assessment and plan.
+Cite sources using [1], [2], [3] format in the assessment and plan sections.
+
+"""
+            for source in sources:
+                rag_context += f"[{source['index']}] {source['source_name']} ({source['publication_date']}): {source['title']}\n"
+            rag_context += "\n"
+            citations = sources
+
     async with httpx.AsyncClient(timeout=60.0) as client:
+        prompt = f"""Generate a SOAP note with ICD-10 and CPT codes from this clinical encounter transcript.
+{rag_context}
+Chief Complaint: {chief_complaint or 'See transcript'}
+
+Transcript:
+{transcript}
+
+Return a JSON object with these exact fields:
+- subjective: Patient's reported symptoms and history
+- objective: Observable findings, vitals, exam results
+- assessment: Clinical assessment and diagnosis{' (cite guidelines using [1], [2], etc. if relevant)' if rag_context else ''}
+- plan: Treatment plan and follow-up{' (cite guidelines using [1], [2], etc. for evidence-based recommendations)' if rag_context else ''}
+- summary: 1-2 sentence summary
+- icd10_codes: Array of objects with "code" and "description" for each suggested ICD-10 diagnosis code (max 5)
+- cpt_codes: Array of objects with "code" and "description" for each suggested CPT procedure/service code (max 5)
+- citations: Array of source references used (if any)
+
+Example formats:
+icd10_codes: [{{"code": "J06.9", "description": "Acute upper respiratory infection"}}]
+cpt_codes: [{{"code": "99213", "description": "Office visit, established patient, low complexity"}}]
+citations: [{{"index": 1, "source": "AHA/ACC", "title": "Chest Pain Guidelines", "relevance": "Informed workup recommendations"}}]
+
+Return ONLY valid JSON, no markdown or explanation."""
+
         response = await client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -3152,30 +3220,10 @@ async def generate_soap_with_claude(transcript: str, chief_complaint: str = None
             },
             json={
                 "model": "claude-3-haiku-20240307",
-                "max_tokens": 1024,
+                "max_tokens": 1500,
                 "messages": [{
                     "role": "user",
-                    "content": f"""Generate a SOAP note with ICD-10 and CPT codes from this clinical encounter transcript.
-
-Chief Complaint: {chief_complaint or 'See transcript'}
-
-Transcript:
-{transcript}
-
-Return a JSON object with these exact fields:
-- subjective: Patient's reported symptoms and history
-- objective: Observable findings, vitals, exam results
-- assessment: Clinical assessment and diagnosis
-- plan: Treatment plan and follow-up
-- summary: 1-2 sentence summary
-- icd10_codes: Array of objects with "code" and "description" for each suggested ICD-10 diagnosis code (max 5)
-- cpt_codes: Array of objects with "code" and "description" for each suggested CPT procedure/service code (max 5)
-
-Example formats:
-icd10_codes: [{{"code": "J06.9", "description": "Acute upper respiratory infection"}}]
-cpt_codes: [{{"code": "99213", "description": "Office visit, established patient, low complexity"}}]
-
-Return ONLY valid JSON, no markdown or explanation."""
+                    "content": prompt
                 }]
             }
         )
@@ -3190,7 +3238,35 @@ Return ONLY valid JSON, no markdown or explanation."""
             if content.startswith("```"):
                 content = re.sub(r'^```json?\n?', '', content)
                 content = re.sub(r'\n?```$', '', content)
-            return json.loads(content)
+            soap_note = json.loads(content)
+
+            # Add RAG citations to the response (Feature #88)
+            if citations:
+                # Merge RAG citations with any Claude-generated citations
+                rag_citations = [
+                    {
+                        "index": c["index"],
+                        "source": c["source_name"],
+                        "title": c["title"],
+                        "publication_date": c["publication_date"],
+                        "relevance_score": round(c["relevance_score"], 3)
+                    }
+                    for c in citations
+                ]
+                # Append to existing citations or set new
+                if "citations" not in soap_note or not soap_note["citations"]:
+                    soap_note["citations"] = rag_citations
+                else:
+                    # Merge without duplicates
+                    existing_sources = {c.get("source", "") for c in soap_note["citations"]}
+                    for rag_cit in rag_citations:
+                        if rag_cit["source"] not in existing_sources:
+                            soap_note["citations"].append(rag_cit)
+                soap_note["rag_enhanced"] = True
+            else:
+                soap_note["rag_enhanced"] = False
+
+            return soap_note
         else:
             raise Exception(f"Claude API error: {response.status_code}")
 
@@ -4685,6 +4761,273 @@ async def copilot_chat(request: CopilotRequest, req: Request):
             details={"error": str(e)[:100]}
         )
         raise HTTPException(status_code=500, detail=f"Co-pilot error: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RAG (RETRIEVAL-AUGMENTED GENERATION) ENDPOINTS (Feature #88)
+# Reduces hallucination by grounding responses in medical sources
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class RAGQueryRequest(BaseModel):
+    """Request for RAG query"""
+    query: str
+    n_results: int = 5
+    specialty: Optional[str] = None
+    include_sources: bool = True
+
+
+class RAGQueryResponse(BaseModel):
+    """Response from RAG query"""
+    query: str
+    augmented_prompt: str
+    sources: List[Dict]
+    retrieval_count: int
+
+
+class RAGAddDocumentRequest(BaseModel):
+    """Request to add a document to the knowledge base"""
+    title: str
+    content: str
+    source_type: str = "custom"
+    source_name: Optional[str] = None
+    source_url: Optional[str] = None
+    specialty: Optional[str] = None
+    keywords: Optional[List[str]] = None
+
+
+class RAGStatsResponse(BaseModel):
+    """RAG system statistics"""
+    available: bool
+    initialized: bool
+    document_count: int
+    embedding_model: str
+    built_in_guidelines: int
+
+
+@app.get("/api/v1/rag/status")
+async def rag_status():
+    """
+    Get RAG system status and statistics.
+
+    Returns:
+        RAG system availability and document count
+    """
+    if not RAG_AVAILABLE:
+        return RAGStatsResponse(
+            available=False,
+            initialized=False,
+            document_count=0,
+            embedding_model="none",
+            built_in_guidelines=0
+        )
+
+    stats = rag_engine.get_statistics()
+    return RAGStatsResponse(
+        available=True,
+        initialized=stats.get("initialized", False),
+        document_count=stats.get("document_count", 0),
+        embedding_model=stats.get("embedding_model", "none"),
+        built_in_guidelines=12  # Number of built-in guidelines
+    )
+
+
+@app.post("/api/v1/rag/initialize")
+async def initialize_rag_endpoint():
+    """
+    Initialize the RAG system.
+
+    This creates the vector database and ingests built-in clinical guidelines.
+    Should be called once on startup or when needed.
+
+    Returns:
+        Initialization status
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG dependencies not installed. Run: pip install chromadb sentence-transformers")
+
+    success = initialize_rag()
+
+    audit_logger._log_event(
+        event_type="RAG",
+        action="INITIALIZE",
+        status="success" if success else "failure"
+    )
+
+    if success:
+        stats = rag_engine.get_statistics()
+        return {
+            "status": "initialized",
+            "document_count": stats.get("document_count", 0),
+            "message": "RAG system initialized with clinical guidelines"
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to initialize RAG system")
+
+
+@app.post("/api/v1/rag/query")
+async def rag_query(request: RAGQueryRequest):
+    """
+    Query the medical knowledge base and get augmented context.
+
+    This retrieves relevant documents and generates an augmented prompt
+    that can be used with Claude for grounded, cited responses.
+
+    Example:
+        POST /api/v1/rag/query
+        {
+            "query": "Management of atrial fibrillation",
+            "n_results": 3,
+            "specialty": "cardiology"
+        }
+
+    Returns:
+        Augmented prompt with retrieved sources
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    if not rag_engine.initialized:
+        # Try to initialize
+        if not initialize_rag():
+            raise HTTPException(status_code=503, detail="RAG system not initialized. Call /api/v1/rag/initialize first")
+
+    # Get augmented prompt with sources
+    augmented_prompt, sources = get_augmented_prompt(request.query, request.n_results)
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="RAG",
+        action="QUERY",
+        status="success",
+        details={"query_length": len(request.query), "results_returned": len(sources)}
+    )
+
+    return RAGQueryResponse(
+        query=request.query,
+        augmented_prompt=augmented_prompt,
+        sources=sources,
+        retrieval_count=len(sources)
+    )
+
+
+@app.post("/api/v1/rag/retrieve")
+async def rag_retrieve(request: RAGQueryRequest):
+    """
+    Retrieve relevant documents without generating augmented prompt.
+
+    Useful for exploring what sources would be used for a query.
+
+    Returns:
+        List of relevant documents with scores
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    if not rag_engine.initialized:
+        if not initialize_rag():
+            raise HTTPException(status_code=503, detail="RAG system not initialized")
+
+    contexts = retrieve_context(request.query, request.n_results, request.specialty)
+
+    results = []
+    for ctx in contexts:
+        results.append({
+            "title": ctx.document.title,
+            "source_type": ctx.document.source_type.value,
+            "source_name": ctx.document.source_name,
+            "source_url": ctx.document.source_url,
+            "publication_date": ctx.document.publication_date,
+            "specialty": ctx.document.specialty,
+            "relevance_score": round(ctx.relevance_score, 3),
+            "content_preview": ctx.matched_chunk[:300] + "..." if len(ctx.matched_chunk) > 300 else ctx.matched_chunk
+        })
+
+    return {
+        "query": request.query,
+        "results": results,
+        "total_retrieved": len(results)
+    }
+
+
+@app.post("/api/v1/rag/add-document")
+async def rag_add_document(request: RAGAddDocumentRequest):
+    """
+    Add a custom document to the medical knowledge base.
+
+    Example:
+        POST /api/v1/rag/add-document
+        {
+            "title": "Hospital Antibiotic Stewardship Protocol",
+            "content": "Our hospital guidelines for antibiotic use...",
+            "source_type": "custom",
+            "source_name": "MGH Internal Guidelines",
+            "specialty": "infectious_disease"
+        }
+
+    Returns:
+        Success status
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    if not rag_engine.initialized:
+        if not initialize_rag():
+            raise HTTPException(status_code=503, detail="RAG system not initialized")
+
+    success = add_custom_document(
+        title=request.title,
+        content=request.content,
+        source_type=request.source_type,
+        source_name=request.source_name,
+        source_url=request.source_url,
+        specialty=request.specialty,
+        keywords=request.keywords
+    )
+
+    audit_logger._log_event(
+        event_type="RAG",
+        action="ADD_DOCUMENT",
+        status="success" if success else "failure",
+        details={"title": request.title[:50]}
+    )
+
+    if success:
+        return {
+            "status": "added",
+            "title": request.title,
+            "message": "Document added to knowledge base"
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add document")
+
+
+@app.get("/api/v1/rag/guidelines")
+async def rag_list_guidelines():
+    """
+    List built-in clinical guidelines in the knowledge base.
+
+    Returns:
+        List of guideline titles and sources
+    """
+    # Import the built-in guidelines list
+    from rag import BUILT_IN_GUIDELINES
+
+    guidelines = []
+    for g in BUILT_IN_GUIDELINES:
+        guidelines.append({
+            "id": g["id"],
+            "title": g["title"],
+            "source_name": g.get("source_name", ""),
+            "source_type": g["source_type"],
+            "publication_date": g.get("publication_date", ""),
+            "specialty": g.get("specialty", ""),
+            "keywords": g.get("keywords", [])
+        })
+
+    return {
+        "total": len(guidelines),
+        "guidelines": guidelines
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

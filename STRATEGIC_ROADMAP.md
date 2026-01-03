@@ -577,12 +577,12 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 | Priority | Task | Owner | Status |
 |----------|------|-------|--------|
 | P0 | Integrate Google Cloud Speech (100+ languages) | Engineering | TODO |
-| P0 | Set up vector database for RAG | Engineering | TODO |
-| P0 | Ingest PubMed/guidelines | Engineering | TODO |
-| P0 | Build RAG proof of concept | AI Team | TODO |
+| P0 | Set up vector database for RAG | Engineering | DONE (Feature #88) |
+| P0 | Ingest PubMed/guidelines | Engineering | DONE (Feature #88) |
+| P0 | Build RAG proof of concept | AI Team | DONE (Feature #88) |
 | P1 | Medical vocabulary for top 25 languages | Clinical | TODO |
 | P1 | Negotiate UpToDate API | Business Dev | TODO |
-| P1 | Add citations to note generation | Engineering | TODO |
+| P1 | Add citations to note generation | Engineering | DONE (Feature #88) |
 
 ### Phase 3: Clinical Validation & Equity (Q2-Q3 2026)
 
@@ -612,7 +612,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 
 ## Summary
 
-MDx Vision has a strong technical foundation (66 features). The next phase is about:
+MDx Vision has a strong technical foundation (88 features). The next phase is about:
 
 1. **Compliance**: Get the paperwork and audits in place for enterprise sales
 2. **Differentiation**: Build RAG-based AI that doesn't hallucinate
