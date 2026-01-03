@@ -467,4 +467,55 @@ Complete list of voice commands for MDx Vision AR glasses. Updated regularly as 
 
 ---
 
-*Last updated: Feature #80 (Cultural Care Preferences)*
+## Implicit Bias Alerts (Feature #81)
+
+Gentle, evidence-based reminders during clinical documentation. Non-accusatory, educational framing.
+
+| Command | What it Does | How to Use |
+|---------|--------------|------------|
+| "bias check" | Manually trigger bias awareness check | During documentation |
+| "bias alert" | Same as "bias check" | Alternative phrasing |
+| "equity check" | Same as "bias check" | Alternative phrasing |
+| "enable bias" | Turn on bias awareness reminders | Enable alerts |
+| "bias alerts on" | Same as "enable bias" | Alternative phrasing |
+| "disable bias" | Turn off bias awareness reminders | Disable alerts |
+| "bias alerts off" | Same as "disable bias" | Alternative phrasing |
+| "bias status" | Check if alerts are enabled/disabled | Current status |
+| "bias resources" | Show educational resources & training | Harvard, AAMC, NIH links |
+| "bias training" | Same as "bias resources" | Alternative phrasing |
+| "acknowledge bias" | Dismiss the current bias alert | After reviewing alert |
+| "noted" | Same as "acknowledge bias" (if alert showing) | Quick acknowledgment |
+
+### Automatic Triggers
+
+Bias alerts are automatically triggered (once per session) when:
+- Patient ancestry indicates disparity risk (African, Hispanic, Native American)
+- Clinical context matches known disparity areas:
+  - Pain assessment/documentation
+  - Pain medication prescribing
+  - Triage decisions
+  - Cardiac symptom evaluation
+  - Psychiatric evaluation
+
+### Example Alert Display
+
+```
+💭 Pain Assessment Awareness
+
+Research shows pain may be systematically
+undertreated in some patient populations.
+Taking a moment to ensure the pain score
+reflects the patient's experience helps
+provide equitable care.
+
+━━━ REFLECTION ━━━
+Does the documented pain level match the
+patient's verbal and non-verbal cues?
+
+Say "acknowledge bias" when ready to continue.
+Say "bias resources" for training materials.
+```
+
+---
+
+*Last updated: Feature #81 (Implicit Bias Alerts)*

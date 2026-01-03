@@ -474,8 +474,8 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| **Android Voice Commands (#79-80)** | Wire up "skin type", "pulse ox warning", "cultural preferences" | TODO |
-| **Implicit Bias Alerts** | Prompt for bias check during pain assessment documentation | TODO |
+| **Android Voice Commands (#79-80)** | Wire up "skin type", "pulse ox warning", "cultural preferences" | DONE |
+| **Implicit Bias Alerts** | Prompt for bias check during pain assessment documentation | DONE |
 | **Maternal Health Monitoring** | High-risk OB alerts, postpartum warning signs for Black mothers | TODO |
 | **Web Dashboard Equity UI** | Configure skin type, ancestry, cultural preferences | TODO |
 | **SDOH Integration** | Housing, food security, transportation - affects adherence | TODO |
@@ -512,7 +512,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 
 ## 6. Current Technical Foundation
 
-### What We've Built (80 Features)
+### What We've Built (81 Features)
 
 #### Voice & Documentation
 - Real-time transcription (AssemblyAI/Deepgram)

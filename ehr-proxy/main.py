@@ -1177,6 +1177,54 @@ class CulturalCareResponse(BaseModel):
     timestamp: str
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMPLICIT BIAS ALERTS (Feature #81) - Gentle reminders during clinical documentation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ImplicitBiasContext(str, Enum):
+    """Clinical contexts where implicit bias may affect care"""
+    PAIN_ASSESSMENT = "pain_assessment"
+    PAIN_MEDICATION = "pain_medication"
+    TRIAGE = "triage"
+    CARDIAC_SYMPTOMS = "cardiac_symptoms"
+    PSYCHIATRIC = "psychiatric"
+    SUBSTANCE_USE = "substance_use"
+    GENERAL = "general"
+
+
+class ImplicitBiasAlert(BaseModel):
+    """
+    Gentle, evidence-based reminder about potential implicit bias.
+    Framed as educational, not accusatory.
+    """
+    context: ImplicitBiasContext
+    title: str
+    reminder: str  # The gentle prompt
+    evidence: str  # Research citation supporting the reminder
+    reflection_prompt: str  # Question to encourage self-reflection
+    resources: List[str] = []  # Optional links to training/resources
+
+
+class ImplicitBiasRequest(BaseModel):
+    """Request bias check during documentation"""
+    patient_id: str
+    patient_ancestry: Optional[str] = None  # From Feature #79
+    patient_gender: Optional[str] = None
+    clinical_context: ImplicitBiasContext
+    transcript_keywords: List[str] = []  # Keywords detected in documentation
+    chief_complaint: Optional[str] = None
+    documented_pain_score: Optional[int] = None
+    medications_ordered: List[str] = []
+
+
+class ImplicitBiasResponse(BaseModel):
+    """Response with applicable bias reminders"""
+    should_show_reminder: bool = False
+    alerts: List[ImplicitBiasAlert] = []
+    context_detected: Optional[ImplicitBiasContext] = None
+    timestamp: str
+
+
 # Billing/Claim Models (Feature #71)
 class ClaimStatus(str, Enum):
     """Claim lifecycle status"""
@@ -4881,6 +4929,225 @@ async def get_religious_guidance(religion: str):
             "considerations": RELIGIOUS_CARE_CONSIDERATIONS[religion_key]
         }
     return {"religion": religion, "message": "No specific guidance on file. Ask patient about their preferences."}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMPLICIT BIAS ALERTS (Feature #81) - Gentle, evidence-based reminders
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Evidence-based bias awareness database
+# Each entry is framed as educational, supportive, and non-accusatory
+IMPLICIT_BIAS_EVIDENCE = {
+    "pain_assessment": {
+        "title": "Pain Assessment Awareness",
+        "reminder": "Research shows pain may be systematically undertreated in some patient populations. Taking a moment to ensure the pain score reflects the patient's experience helps provide equitable care.",
+        "evidence": "Hoffman et al. (2016) PNAS: Found false beliefs about biological differences correlated with lower pain ratings for Black patients. Meghani et al. (2012): Meta-analysis showed Black patients 22% less likely to receive pain medication.",
+        "reflection_prompt": "Does the documented pain level match the patient's verbal and non-verbal cues?",
+        "resources": ["NIH Pain Consortium Resources", "AAPM Equitable Pain Care Guidelines"]
+    },
+    "pain_medication": {
+        "title": "Pain Medication Prescribing",
+        "reminder": "Studies show disparities in analgesic prescribing across patient populations. Ensuring pain medication aligns with documented pain severity supports equitable treatment.",
+        "evidence": "Pletcher et al. (2008) JAMA: Found Black and Hispanic patients less likely to receive opioids for pain in ED. Singhal et al. (2016): Racial bias in pain treatment persists across settings.",
+        "reflection_prompt": "Is the prescribed analgesia appropriate for the documented pain level, regardless of patient demographics?",
+        "resources": ["CDC Opioid Prescribing Guidelines", "SAMHSA Equity Resources"]
+    },
+    "triage": {
+        "title": "Triage Assessment",
+        "reminder": "Triage decisions can be influenced by unconscious factors. Focusing on objective clinical criteria helps ensure all patients receive appropriate urgency levels.",
+        "evidence": "Schrader & Lewis (2013): Found racial disparities in ED triage acuity assignments. Johnson et al. (2013): Implicit bias correlated with treatment recommendations.",
+        "reflection_prompt": "Is this triage level based on objective clinical findings and vital signs?",
+        "resources": ["ESI Triage Handbook", "ACEP Equity in Emergency Care"]
+    },
+    "cardiac_symptoms": {
+        "title": "Cardiac Symptom Evaluation",
+        "reminder": "Cardiac presentations may differ across patient groups. Women and some ethnic groups may present with atypical symptoms. A thorough evaluation prevents missed diagnoses.",
+        "evidence": "Schulman et al. (1999) NEJM: Found race and sex affected cardiac catheterization recommendations. McSweeney et al. (2003): Women's MI symptoms often differ from 'classic' presentation.",
+        "reflection_prompt": "Have atypical presentations been considered, and is the workup appropriately thorough?",
+        "resources": ["AHA Go Red for Women", "ACC Chest Pain Guidelines"]
+    },
+    "psychiatric": {
+        "title": "Psychiatric Evaluation",
+        "reminder": "Research shows diagnostic patterns vary across demographic groups. Focusing on specific symptoms and functional impact supports accurate diagnosis.",
+        "evidence": "Neighbors et al. (2003): Black patients more likely to be diagnosed with schizophrenia vs mood disorders. Strakowski et al. (1995): Racial differences in psychiatric diagnosis persist.",
+        "reflection_prompt": "Is the diagnosis based on specific DSM criteria rather than general impressions?",
+        "resources": ["APA Cultural Formulation Interview", "NIMH Resources"]
+    },
+    "substance_use": {
+        "title": "Substance Use Assessment",
+        "reminder": "Patients with substance use disorders may face stigma that affects care. Treating substance use as a medical condition supports therapeutic relationships.",
+        "evidence": "van Boekel et al. (2013): Healthcare workers' negative attitudes affect care quality. SAMHSA: Stigma is a major barrier to treatment seeking.",
+        "reflection_prompt": "Am I approaching this patient's substance use with the same clinical objectivity as other medical conditions?",
+        "resources": ["SAMHSA TIP Series", "ASAM Guidelines"]
+    },
+    "general": {
+        "title": "Clinical Decision-Making",
+        "reminder": "We all have unconscious associations that can influence decisions. Taking a brief pause to reflect supports more objective clinical reasoning.",
+        "evidence": "Project Implicit (Harvard): Implicit associations are universal and measurable. FitzGerald & Hurst (2017): Implicit bias affects clinical decisions across specialties.",
+        "reflection_prompt": "Would my clinical approach be the same if this patient had different demographics?",
+        "resources": ["Project Implicit Health Tests", "AAMC Unconscious Bias Training"]
+    }
+}
+
+# Keywords that trigger specific bias context detection
+BIAS_TRIGGER_KEYWORDS = {
+    "pain_assessment": ["pain", "hurts", "aching", "discomfort", "sore", "tender", "painful", "agony", "suffering", "pain score", "pain level", "10 out of 10", "severe pain"],
+    "pain_medication": ["morphine", "hydromorphone", "oxycodone", "fentanyl", "dilaudid", "percocet", "vicodin", "norco", "tramadol", "opioid", "narcotic", "pain med", "analgesia"],
+    "triage": ["triage", "acuity", "esi level", "priority", "urgent", "emergent", "wait time"],
+    "cardiac_symptoms": ["chest pain", "chest tightness", "shortness of breath", "dyspnea", "palpitations", "cardiac", "heart", "mi", "acs", "stemi", "nstemi", "angina"],
+    "psychiatric": ["psych", "mental health", "depression", "anxiety", "schizophrenia", "bipolar", "psychosis", "suicidal", "si", "psychiatric", "behavioral"],
+    "substance_use": ["drug use", "alcohol", "intoxicated", "overdose", "withdrawal", "addiction", "substance", "opioid use", "drug seeking", "narcan"]
+}
+
+
+def detect_bias_context(keywords: List[str], chief_complaint: Optional[str] = None) -> Optional[ImplicitBiasContext]:
+    """Detect which bias context applies based on documentation keywords."""
+    text_to_check = " ".join(keywords).lower()
+    if chief_complaint:
+        text_to_check += " " + chief_complaint.lower()
+
+    # Check each context in priority order
+    for context, triggers in BIAS_TRIGGER_KEYWORDS.items():
+        for trigger in triggers:
+            if trigger in text_to_check:
+                return ImplicitBiasContext(context)
+
+    return None
+
+
+def generate_bias_alert(context: ImplicitBiasContext, patient_ancestry: Optional[str] = None) -> ImplicitBiasAlert:
+    """Generate a gentle, evidence-based bias awareness alert."""
+    evidence_data = IMPLICIT_BIAS_EVIDENCE.get(context.value, IMPLICIT_BIAS_EVIDENCE["general"])
+
+    return ImplicitBiasAlert(
+        context=context,
+        title=evidence_data["title"],
+        reminder=evidence_data["reminder"],
+        evidence=evidence_data["evidence"],
+        reflection_prompt=evidence_data["reflection_prompt"],
+        resources=evidence_data.get("resources", [])
+    )
+
+
+@app.post("/api/v1/implicit-bias/check")
+async def check_implicit_bias(request: ImplicitBiasRequest, req: Request):
+    """
+    Check if implicit bias awareness reminder should be shown.
+
+    Triggers gentle, evidence-based reminders during clinical documentation
+    to support equitable care. Reminders are educational, not accusatory.
+
+    Returns reminder only when:
+    1. Patient ancestry indicates potential disparity context AND
+    2. Clinical context matches known disparity areas (pain, cardiac, etc.)
+    """
+    # HIPAA audit logging
+    log_audit_event(
+        event_type="implicit_bias_check",
+        patient_id=request.patient_id,
+        action="bias_awareness_check",
+        details={
+            "context": request.clinical_context.value,
+            "ancestry_provided": request.patient_ancestry is not None
+        },
+        request=req
+    )
+
+    # Detect context if not provided
+    detected_context = request.clinical_context
+    if detected_context == ImplicitBiasContext.GENERAL:
+        detected = detect_bias_context(request.transcript_keywords, request.chief_complaint)
+        if detected:
+            detected_context = detected
+
+    # Determine if reminder should be shown
+    # We show reminders in high-disparity contexts for patients with ancestry data
+    # that indicates potential for disparate treatment based on research
+    high_disparity_ancestries = ["african", "black", "hispanic", "latino", "native_american", "indigenous"]
+
+    should_show = False
+    alerts = []
+
+    if request.patient_ancestry:
+        ancestry_lower = request.patient_ancestry.lower()
+        if any(hda in ancestry_lower for hda in high_disparity_ancestries):
+            # Show reminder for high-disparity contexts
+            if detected_context in [
+                ImplicitBiasContext.PAIN_ASSESSMENT,
+                ImplicitBiasContext.PAIN_MEDICATION,
+                ImplicitBiasContext.CARDIAC_SYMPTOMS,
+                ImplicitBiasContext.PSYCHIATRIC,
+                ImplicitBiasContext.TRIAGE
+            ]:
+                should_show = True
+                alerts.append(generate_bias_alert(detected_context, request.patient_ancestry))
+
+    # Also check for specific medication prescribing disparities
+    if request.medications_ordered:
+        pain_meds = ["morphine", "hydromorphone", "oxycodone", "fentanyl", "dilaudid", "hydrocodone"]
+        if any(med.lower() in " ".join(request.medications_ordered).lower() for med in pain_meds):
+            if request.patient_ancestry and any(hda in request.patient_ancestry.lower() for hda in high_disparity_ancestries):
+                if not any(a.context == ImplicitBiasContext.PAIN_MEDICATION for a in alerts):
+                    should_show = True
+                    alerts.append(generate_bias_alert(ImplicitBiasContext.PAIN_MEDICATION, request.patient_ancestry))
+
+    return ImplicitBiasResponse(
+        should_show_reminder=should_show,
+        alerts=alerts,
+        context_detected=detected_context,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.get("/api/v1/implicit-bias/contexts")
+async def get_bias_contexts():
+    """Get all available implicit bias contexts with their evidence."""
+    return {
+        "contexts": [
+            {
+                "context": context,
+                "title": IMPLICIT_BIAS_EVIDENCE[context]["title"],
+                "reminder": IMPLICIT_BIAS_EVIDENCE[context]["reminder"],
+                "evidence_summary": IMPLICIT_BIAS_EVIDENCE[context]["evidence"][:100] + "..."
+            }
+            for context in IMPLICIT_BIAS_EVIDENCE.keys()
+        ]
+    }
+
+
+@app.get("/api/v1/implicit-bias/resources")
+async def get_bias_resources():
+    """Get educational resources for implicit bias training."""
+    return {
+        "training_resources": [
+            {
+                "name": "Project Implicit",
+                "url": "https://implicit.harvard.edu/implicit/",
+                "description": "Free Implicit Association Tests to understand unconscious biases"
+            },
+            {
+                "name": "AAMC Unconscious Bias Resources",
+                "url": "https://www.aamc.org/what-we-do/equity-diversity-inclusion/unconscious-bias-training",
+                "description": "Medical education resources on unconscious bias"
+            },
+            {
+                "name": "NIH Bias in Health Care",
+                "url": "https://www.nih.gov/ending-structural-racism/bias-health-care",
+                "description": "NIH resources on addressing bias in healthcare"
+            },
+            {
+                "name": "CDC Health Equity Resources",
+                "url": "https://www.cdc.gov/healthequity/",
+                "description": "CDC materials on health disparities and equity"
+            }
+        ],
+        "key_publications": [
+            "Hoffman KM et al. (2016). Racial bias in pain assessment and treatment recommendations. PNAS.",
+            "FitzGerald C & Hurst S (2017). Implicit bias in healthcare professionals. BMC Medical Ethics.",
+            "Pletcher MJ et al. (2008). Trends in opioid prescribing by race/ethnicity. JAMA.",
+            "Chapman EN et al. (2013). Physicians and implicit bias: How doctors may unwittingly perpetuate health care disparities. JGIM."
+        ]
+    }
 
 
 # ============ Medical Image Analysis (Feature #70) ============

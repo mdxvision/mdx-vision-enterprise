@@ -236,6 +236,14 @@ class MainActivity : AppCompatActivity() {
     private var religiousGuidance: JSONObject? = null
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // IMPLICIT BIAS ALERTS (Feature #81) - Gentle reminders during documentation
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var biasAlertsEnabled: Boolean = true  // Can be toggled off
+    private var lastBiasAlert: JSONObject? = null
+    private var biasAlertShownThisSession: Boolean = false  // Don't spam alerts
+    private var currentBiasContext: String? = null  // "pain_assessment", "cardiac_symptoms", etc.
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
     // ═══════════════════════════════════════════════════════════════════════════
     private var isAmbientMode: Boolean = false  // Continuous background listening
@@ -17490,6 +17498,279 @@ SOFA Score: [X]
         showDataOverlay("Cultural Alerts", sb.toString())
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // IMPLICIT BIAS ALERTS (Feature #81) - Gentle, evidence-based reminders
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Check for implicit bias alerts during documentation.
+     * Triggered automatically during pain documentation or manually via voice command.
+     */
+    private fun checkImplicitBias(keywords: List<String> = emptyList()) {
+        if (!biasAlertsEnabled) {
+            speakFeedback("Bias alerts are disabled. Say enable bias alerts to turn them on.")
+            return
+        }
+
+        val patientId = currentPatientData?.optString("patient_id")
+        if (patientId == null) {
+            speakFeedback("No patient loaded. Load a patient first.")
+            return
+        }
+
+        // Get keywords from current transcript or extracted entities
+        val checkKeywords = if (keywords.isNotEmpty()) {
+            keywords
+        } else {
+            val combined = mutableListOf<String>()
+            combined.addAll(extractedEntities.symptoms)
+            combined.addAll(extractedEntities.chiefComplaints)
+            combined
+        }
+
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/implicit-bias/check")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+
+                val requestBody = JSONObject().apply {
+                    put("patient_id", patientId)
+                    currentPatientAncestry?.let { put("patient_ancestry", it) }
+                    put("clinical_context", currentBiasContext ?: "general")
+                    put("transcript_keywords", org.json.JSONArray(checkKeywords))
+                    extractedEntities.chiefComplaints.firstOrNull()?.let { put("chief_complaint", it) }
+                }
+
+                connection.outputStream.bufferedWriter().use { it.write(requestBody.toString()) }
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+
+                    if (json.optBoolean("should_show_reminder", false)) {
+                        val alerts = json.optJSONArray("alerts")
+                        if (alerts != null && alerts.length() > 0) {
+                            lastBiasAlert = alerts.getJSONObject(0)
+                            runOnUiThread {
+                                showBiasAlert(lastBiasAlert!!)
+                            }
+                        }
+                    } else {
+                        runOnUiThread {
+                            showDataOverlay("Bias Check", "✓ No bias alerts for current context.\n\nContinue with documentation.")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to check implicit bias: ${e.message}")
+                runOnUiThread {
+                    // Show generic reminder on error
+                    showGenericBiasReminder()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Display a bias awareness alert in a gentle, non-accusatory manner.
+     */
+    private fun showBiasAlert(alert: JSONObject) {
+        if (biasAlertShownThisSession) {
+            // Don't spam alerts - show once per session per context
+            return
+        }
+
+        val title = alert.optString("title", "Bias Awareness")
+        val reminder = alert.optString("reminder", "")
+        val reflectionPrompt = alert.optString("reflection_prompt", "")
+        val evidence = alert.optString("evidence", "")
+
+        val display = """
+            |💭 $title
+            |
+            |$reminder
+            |
+            |━━━ REFLECTION ━━━
+            |$reflectionPrompt
+            |
+            |━━━ EVIDENCE ━━━
+            |${evidence.take(200)}...
+            |
+            |Say "acknowledge bias" when ready to continue.
+            |Say "bias resources" for training materials.
+            """.trimMargin()
+
+        showDataOverlay("Equity Reminder", display)
+
+        // Speak the gentle reminder (not the full evidence)
+        speakFeedback("Equity reminder: $reminder")
+
+        biasAlertShownThisSession = true
+        Log.d(TAG, "Showed bias alert: $title")
+    }
+
+    /**
+     * Show generic bias reminder when backend unavailable.
+     */
+    private fun showGenericBiasReminder() {
+        val display = """
+            |💭 Clinical Decision Check
+            |
+            |Research shows unconscious associations can
+            |influence clinical decisions across all providers.
+            |
+            |Taking a brief pause to reflect supports
+            |more objective clinical reasoning.
+            |
+            |━━━ REFLECTION ━━━
+            |Would my approach be the same if this patient
+            |had different demographics?
+            |
+            |This reminder is educational, not accusatory.
+            |We all have unconscious biases - awareness helps.
+            """.trimMargin()
+
+        showDataOverlay("Equity Reminder", display)
+        speakFeedback("Equity reminder: Taking a moment to reflect supports objective clinical reasoning.")
+    }
+
+    /**
+     * Acknowledge and dismiss a bias alert.
+     */
+    private fun acknowledgeBiasAlert() {
+        lastBiasAlert = null
+        hideDataOverlay()
+        speakFeedback("Thank you. Continuing with documentation.")
+        Log.d(TAG, "Bias alert acknowledged")
+    }
+
+    /**
+     * Show educational resources for implicit bias training.
+     */
+    private fun showBiasResources() {
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/implicit-bias/resources")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+
+                    runOnUiThread {
+                        displayBiasResources(json)
+                    }
+                } else {
+                    runOnUiThread {
+                        showDefaultBiasResources()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch bias resources: ${e.message}")
+                runOnUiThread {
+                    showDefaultBiasResources()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Display bias training resources from backend.
+     */
+    private fun displayBiasResources(json: JSONObject) {
+        val sb = StringBuilder()
+        sb.appendLine("📚 IMPLICIT BIAS RESOURCES")
+        sb.appendLine()
+        sb.appendLine("TRAINING:")
+
+        json.optJSONArray("training_resources")?.let { resources ->
+            for (i in 0 until resources.length()) {
+                val resource = resources.getJSONObject(i)
+                sb.appendLine("• ${resource.optString("name")}")
+                sb.appendLine("  ${resource.optString("description")}")
+                sb.appendLine()
+            }
+        }
+
+        sb.appendLine("KEY PUBLICATIONS:")
+        json.optJSONArray("key_publications")?.let { pubs ->
+            for (i in 0 until pubs.length()) {
+                sb.appendLine("• ${pubs.getString(i)}")
+            }
+        }
+
+        showDataOverlay("Bias Resources", sb.toString())
+        speakFeedback("Implicit bias resources displayed. These include training materials and key research publications.")
+    }
+
+    /**
+     * Default bias resources when backend unavailable.
+     */
+    private fun showDefaultBiasResources() {
+        val resources = """
+            |📚 IMPLICIT BIAS RESOURCES
+            |
+            |TRAINING:
+            |• Project Implicit (Harvard)
+            |  Free Implicit Association Tests
+            |  implicit.harvard.edu
+            |
+            |• AAMC Unconscious Bias Training
+            |  Medical education resources
+            |  aamc.org
+            |
+            |• NIH Bias in Health Care
+            |  nih.gov/ending-structural-racism
+            |
+            |KEY PUBLICATIONS:
+            |• Hoffman et al. (2016) PNAS
+            |  Racial bias in pain assessment
+            |
+            |• FitzGerald & Hurst (2017) BMC
+            |  Implicit bias in healthcare
+            |
+            |• Pletcher et al. (2008) JAMA
+            |  Opioid prescribing by race
+            |
+            |These resources help build awareness.
+            |Implicit bias is universal - awareness
+            |is the first step to mitigation.
+            """.trimMargin()
+
+        showDataOverlay("Bias Resources", resources)
+        speakFeedback("Implicit bias resources displayed.")
+    }
+
+    /**
+     * Automatically check for bias during pain documentation.
+     * Called when pain-related keywords detected in transcript.
+     */
+    fun checkBiasForPainDocumentation() {
+        if (!biasAlertsEnabled || biasAlertShownThisSession) return
+
+        // Only trigger for patients with ancestry indicating disparity risk
+        val ancestry = currentPatientAncestry ?: return
+        val highDisparityAncestries = listOf("african", "black", "hispanic", "latino", "native_american")
+
+        if (highDisparityAncestries.any { it in ancestry.lowercase() }) {
+            currentBiasContext = "pain_assessment"
+            checkImplicitBias(listOf("pain", "pain assessment"))
+        }
+    }
+
+    /**
+     * Reset bias alert state for new patient.
+     */
+    private fun resetBiasAlertState() {
+        biasAlertShownThisSession = false
+        lastBiasAlert = null
+        currentBiasContext = null
+    }
+
     // ============ Patient History Methods ============
 
     /**
@@ -20384,6 +20665,38 @@ SOFA Score: [X]
             lower.contains("cultural alerts") || lower.contains("care alerts") -> {
                 // Show all cultural care alerts
                 showCulturalCareAlerts()
+            }
+            // ═══ IMPLICIT BIAS ALERTS COMMANDS (Feature #81) ═══
+            lower.contains("bias check") || lower.contains("bias alert") ||
+            lower.contains("equity check") || lower.contains("bias reminder") -> {
+                // Manually trigger bias awareness check
+                checkImplicitBias()
+            }
+            lower.contains("enable bias") || lower.contains("bias alerts on") ||
+            lower.contains("enable equity") -> {
+                biasAlertsEnabled = true
+                speakFeedback("Bias awareness reminders enabled.")
+                Toast.makeText(this, "Bias alerts ON", Toast.LENGTH_SHORT).show()
+            }
+            lower.contains("disable bias") || lower.contains("bias alerts off") ||
+            lower.contains("disable equity") -> {
+                biasAlertsEnabled = false
+                speakFeedback("Bias awareness reminders disabled.")
+                Toast.makeText(this, "Bias alerts OFF", Toast.LENGTH_SHORT).show()
+            }
+            lower.contains("bias status") || lower.contains("equity status") -> {
+                val status = if (biasAlertsEnabled) "enabled" else "disabled"
+                speakFeedback("Bias awareness reminders are $status.")
+            }
+            lower.contains("bias resources") || lower.contains("bias training") ||
+            lower.contains("equity resources") || lower.contains("implicit bias help") -> {
+                // Show educational resources
+                showBiasResources()
+            }
+            lower.contains("acknowledge bias") || lower.contains("dismiss bias") ||
+            lower.contains("noted") && lastBiasAlert != null -> {
+                // Acknowledge and dismiss the bias alert
+                acknowledgeBiasAlert()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
