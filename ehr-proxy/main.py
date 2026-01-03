@@ -2408,7 +2408,7 @@ async def add_to_worklist(patient: WorklistPatient, request: Request):
             raise HTTPException(status_code=400, detail="Patient already in worklist")
 
     # Add to worklist
-    patient_dict = patient.dict()
+    patient_dict = patient.model_dump()
     patient_dict["appointment_time"] = datetime.now().strftime("%H:%M")
     patients.append(patient_dict)
 
@@ -4167,11 +4167,11 @@ async def update_billing_claim(claim_id: str, request: ClaimUpdateRequest, req: 
 
     # Update diagnoses if provided
     if request.diagnoses is not None:
-        claim["diagnoses"] = [d.dict() for d in request.diagnoses]
+        claim["diagnoses"] = [d.model_dump() for d in request.diagnoses]
 
     # Update service lines if provided
     if request.service_lines is not None:
-        claim["service_lines"] = [s.dict() for s in request.service_lines]
+        claim["service_lines"] = [s.model_dump() for s in request.service_lines]
 
     billing_claims[claim_id] = claim
 
@@ -5548,7 +5548,7 @@ async def push_vital(request: VitalWriteRequest, http_request: Request):
     oxygen_saturation, weight, height, pain_level
     """
     # Build FHIR Observation
-    observation = build_observation(request.dict(), request.patient_id)
+    observation = build_observation(request.model_dump(), request.patient_id)
 
     # Push to EHR
     result = await push_resource_to_ehr("Observation", observation)
@@ -5574,10 +5574,10 @@ async def push_order(request: OrderWriteRequest, http_request: Request):
     """
     # Determine resource type and build appropriate FHIR resource
     if request.order_type.upper() == "MEDICATION":
-        resource = build_medication_request(request.dict(), request.patient_id)
+        resource = build_medication_request(request.model_dump(), request.patient_id)
         resource_type = "MedicationRequest"
     else:
-        resource = build_service_request(request.dict(), request.patient_id)
+        resource = build_service_request(request.model_dump(), request.patient_id)
         resource_type = "ServiceRequest"
 
     # Push to EHR
@@ -5603,7 +5603,7 @@ async def push_allergy(request: AllergyWriteRequest, http_request: Request):
     Push a new allergy to the EHR as a FHIR AllergyIntolerance.
     """
     # Build FHIR AllergyIntolerance
-    allergy_resource = build_allergy_intolerance(request.dict(), request.patient_id)
+    allergy_resource = build_allergy_intolerance(request.model_dump(), request.patient_id)
 
     # Push to EHR
     result = await push_resource_to_ehr("AllergyIntolerance", allergy_resource)
