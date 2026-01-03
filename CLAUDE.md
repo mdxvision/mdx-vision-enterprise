@@ -144,6 +144,38 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 - `backend/src/main/java/com/mdxvision/fhir/CernerFhirService.java` - Cerner client
 - `backend/src/main/java/com/mdxvision/fhir/EpicFhirService.java` - Epic client
 
+### Web Dashboard (Next.js 14)
+```
+web/src/app/
+├── dashboard/
+│   ├── page.tsx           # Main dashboard with stats, charts, quick actions
+│   ├── analytics/         # Usage analytics and metrics
+│   ├── billing/           # Billing claims management (Feature #71)
+│   ├── devices/           # AR glasses device management (Feature #65)
+│   ├── dnfb/              # DNFB revenue cycle (Feature #72)
+│   ├── encounters/        # Patient encounters list
+│   ├── notes/             # Clinical notes management
+│   ├── patients/          # Patient list and search
+│   ├── sessions/          # Transcription sessions
+│   └── settings/          # App configuration
+├── login/                 # Authentication
+└── layout.tsx             # Root layout with dark mode support
+```
+
+**Dashboard URLs:**
+| Page | URL | Description |
+|------|-----|-------------|
+| Dashboard | `/dashboard` | Overview, stats, quick actions |
+| Sessions | `/dashboard/sessions` | Transcription session history |
+| Patients | `/dashboard/patients` | Patient list and search |
+| Encounters | `/dashboard/encounters` | Today's patient encounters |
+| Notes | `/dashboard/notes` | Clinical documentation |
+| Billing | `/dashboard/billing` | Claims creation and submission |
+| DNFB | `/dashboard/dnfb` | Discharged Not Final Billed |
+| Devices | `/dashboard/devices` | AR glasses pairing and management |
+| Analytics | `/dashboard/analytics` | Usage metrics and trends |
+| Settings | `/dashboard/settings` | Configuration options |
+
 ## API Endpoints
 
 ### EHR Proxy (port 8002)
