@@ -5475,6 +5475,392 @@ async def deprecate_guideline(document_id: str, reason: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SCHEDULED UPDATES & CHECKLISTS (Feature #90)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ScheduleRequest(BaseModel):
+    name: str
+    source_type: str  # "pubmed", "rss", "check_updates"
+    query_or_feed: str
+    frequency_hours: int
+    specialty: Optional[str] = None
+    enabled: bool = True
+
+
+class ChecklistCompleteRequest(BaseModel):
+    completed_by: str
+    notes: Optional[str] = None
+
+
+class ApproveUpdateRequest(BaseModel):
+    reviewed_by: str
+    review_notes: Optional[str] = None
+
+
+class RejectUpdateRequest(BaseModel):
+    reviewed_by: str
+    review_notes: str
+
+
+@app.get("/api/v1/updates/dashboard")
+async def get_updates_dashboard():
+    """
+    Get the scheduled updates dashboard with stats and upcoming runs.
+    Feature #90 - Scheduled RAG Updates.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import get_update_dashboard
+    return get_update_dashboard()
+
+
+@app.get("/api/v1/updates/pending")
+async def get_pending_updates(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    specialty: Optional[str] = None
+):
+    """
+    Get pending updates with optional filters.
+    Feature #90 - Update queue with checklists.
+
+    Filters:
+    - status: pending, approved, ingested, rejected, failed
+    - priority: critical, high, medium, low
+    - specialty: cardiology, endocrinology, etc.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import get_pending_updates_list
+    return {"updates": get_pending_updates_list(status, priority, specialty)}
+
+
+@app.get("/api/v1/updates/pending/{update_id}")
+async def get_update_details(update_id: str):
+    """
+    Get full details of a pending update including checklist.
+    Feature #90 - Update review workflow.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+    details = update_manager.get_update_details(update_id)
+    if not details:
+        raise HTTPException(status_code=404, detail="Update not found")
+    return details
+
+
+@app.get("/api/v1/updates/schedules")
+async def list_update_schedules():
+    """
+    List all update schedules.
+    Feature #90 - Scheduled updates.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+    return {"schedules": update_manager.get_schedules()}
+
+
+@app.post("/api/v1/updates/schedules")
+async def create_update_schedule(request: ScheduleRequest):
+    """
+    Create a new update schedule.
+    Feature #90 - Scheduled updates.
+
+    Source types:
+    - pubmed: PubMed search query
+    - rss: RSS feed name (cdc_mmwr, aha_guidelines, etc.)
+    - check_updates: Comprehensive guideline check
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    schedule_id = update_manager.create_schedule(
+        name=request.name,
+        source_type=request.source_type,
+        query_or_feed=request.query_or_feed,
+        frequency_hours=request.frequency_hours,
+        specialty=request.specialty,
+        enabled=request.enabled
+    )
+
+    log_phi_access(
+        action="SCHEDULE_CREATED",
+        patient_id="N/A",
+        details=f"Created schedule: {request.name} ({schedule_id})"
+    )
+
+    return {"schedule_id": schedule_id, "status": "created"}
+
+
+@app.post("/api/v1/updates/schedules/{schedule_id}/toggle")
+async def toggle_schedule(schedule_id: str, enabled: bool):
+    """
+    Enable or disable an update schedule.
+    Feature #90 - Schedule management.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    success = update_manager.toggle_schedule(schedule_id, enabled)
+    if success:
+        return {"schedule_id": schedule_id, "enabled": enabled}
+    else:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+
+@app.delete("/api/v1/updates/schedules/{schedule_id}")
+async def delete_schedule(schedule_id: str):
+    """
+    Delete an update schedule.
+    Feature #90 - Schedule management.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    success = update_manager.delete_schedule(schedule_id)
+    if success:
+        return {"status": "deleted", "schedule_id": schedule_id}
+    else:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+
+@app.post("/api/v1/updates/schedules/{schedule_id}/run")
+async def run_schedule_now(schedule_id: str):
+    """
+    Run a specific schedule immediately.
+    Feature #90 - Manual schedule trigger.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    result = await update_manager.run_schedule(schedule_id)
+
+    log_phi_access(
+        action="SCHEDULE_RUN",
+        patient_id="N/A",
+        details=f"Manual run: {schedule_id}, found {result.get('updates_found', 0)} updates"
+    )
+
+    return result
+
+
+@app.post("/api/v1/updates/run-due")
+async def run_all_due_schedules():
+    """
+    Run all schedules that are due.
+    Feature #90 - Automated updates.
+
+    Call this from a cron job (e.g., every hour) to process due schedules.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import run_due_schedules
+
+    result = await run_due_schedules()
+
+    log_phi_access(
+        action="SCHEDULES_RUN_DUE",
+        patient_id="N/A",
+        details=f"Ran {result['schedules_run']} due schedules"
+    )
+
+    return result
+
+
+@app.get("/api/v1/updates/checklist/{update_id}")
+async def get_update_checklist(update_id: str):
+    """
+    Get the review checklist for an update.
+    Feature #90 - Update checklists.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    checklist = update_manager.get_checklist(update_id)
+    if not checklist:
+        raise HTTPException(status_code=404, detail="Update or checklist not found")
+
+    return {
+        "update_id": update_id,
+        "checklist": checklist,
+        "all_required_complete": update_manager.is_checklist_complete(update_id)
+    }
+
+
+@app.post("/api/v1/updates/checklist/{update_id}/{item_id}/complete")
+async def complete_checklist_item(
+    update_id: str,
+    item_id: str,
+    request: ChecklistCompleteRequest
+):
+    """
+    Mark a checklist item as completed.
+    Feature #90 - Update review workflow.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    success = update_manager.complete_checklist_item(
+        update_id=update_id,
+        item_id=item_id,
+        completed_by=request.completed_by,
+        notes=request.notes
+    )
+
+    if success:
+        return {
+            "status": "completed",
+            "item_id": item_id,
+            "all_required_complete": update_manager.is_checklist_complete(update_id)
+        }
+    else:
+        raise HTTPException(status_code=404, detail="Update or item not found")
+
+
+@app.post("/api/v1/updates/checklist/{update_id}/{item_id}/uncomplete")
+async def uncomplete_checklist_item(update_id: str, item_id: str):
+    """
+    Unmark a checklist item.
+    Feature #90 - Update review workflow.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    success = update_manager.uncomplete_checklist_item(update_id, item_id)
+    if success:
+        return {"status": "uncompleted", "item_id": item_id}
+    else:
+        raise HTTPException(status_code=404, detail="Update or item not found")
+
+
+@app.post("/api/v1/updates/{update_id}/approve")
+async def approve_update(update_id: str, request: ApproveUpdateRequest):
+    """
+    Approve an update for ingestion.
+    Requires all required checklist items to be complete.
+    Feature #90 - Update approval workflow.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    result = update_manager.approve_update(
+        update_id=update_id,
+        reviewed_by=request.reviewed_by,
+        review_notes=request.review_notes
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    log_phi_access(
+        action="UPDATE_APPROVED",
+        patient_id="N/A",
+        details=f"Approved: {update_id} by {request.reviewed_by}"
+    )
+
+    return result
+
+
+@app.post("/api/v1/updates/{update_id}/reject")
+async def reject_update(update_id: str, request: RejectUpdateRequest):
+    """
+    Reject an update.
+    Feature #90 - Update rejection.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    result = update_manager.reject_update(
+        update_id=update_id,
+        reviewed_by=request.reviewed_by,
+        review_notes=request.review_notes
+    )
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    log_phi_access(
+        action="UPDATE_REJECTED",
+        patient_id="N/A",
+        details=f"Rejected: {update_id} by {request.reviewed_by}"
+    )
+
+    return result
+
+
+@app.post("/api/v1/updates/{update_id}/ingest")
+async def ingest_approved_update(update_id: str):
+    """
+    Ingest an approved update into the knowledge base.
+    Feature #90 - Update ingestion.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    result = await update_manager.ingest_approved_update(update_id)
+
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+    log_phi_access(
+        action="UPDATE_INGESTED",
+        patient_id="N/A",
+        details=f"Ingested: {update_id}"
+    )
+
+    return result
+
+
+@app.post("/api/v1/updates/ingest-all-approved")
+async def ingest_all_approved_updates():
+    """
+    Ingest all approved updates into the knowledge base.
+    Feature #90 - Bulk ingestion.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import update_manager
+
+    result = await update_manager.ingest_all_approved()
+
+    log_phi_access(
+        action="UPDATES_BULK_INGEST",
+        patient_id="N/A",
+        details=f"Ingested {result['processed']} approved updates"
+    )
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # RACIAL MEDICINE AWARENESS ENDPOINTS (Feature #79)
 # ═══════════════════════════════════════════════════════════════════════════════
 

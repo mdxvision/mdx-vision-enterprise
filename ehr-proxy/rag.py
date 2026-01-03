@@ -1732,3 +1732,810 @@ def get_knowledge_analytics() -> Dict:
 def get_unresolved_conflicts() -> List[Dict]:
     """Get unresolved conflict alerts."""
     return [asdict(c) for c in knowledge_manager.get_unresolved_conflicts()]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SCHEDULED UPDATES & CHECKLISTS (Feature #90)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class UpdateStatus(str, Enum):
+    """Status of a pending update"""
+    PENDING = "pending"           # Discovered, awaiting review
+    APPROVED = "approved"         # Approved for ingestion
+    INGESTED = "ingested"         # Successfully ingested
+    REJECTED = "rejected"         # Rejected by reviewer
+    FAILED = "failed"             # Ingestion failed
+    SUPERSEDED = "superseded"     # Newer version found
+
+
+class UpdatePriority(str, Enum):
+    """Priority level for updates"""
+    CRITICAL = "critical"         # Safety-related, immediate action
+    HIGH = "high"                 # Major guideline change
+    MEDIUM = "medium"             # Standard update
+    LOW = "low"                   # Minor revision
+
+
+class UpdateSource(str, Enum):
+    """Source of the update"""
+    PUBMED = "pubmed"
+    RSS_AHA = "rss_aha"
+    RSS_CDC = "rss_cdc"
+    RSS_NEJM = "rss_nejm"
+    RSS_JAMA = "rss_jama"
+    MANUAL = "manual"
+    SCHEDULED_CHECK = "scheduled_check"
+
+
+@dataclass
+class PendingUpdate:
+    """A pending knowledge base update (Feature #90)"""
+    update_id: str
+    title: str
+    source: UpdateSource
+    source_url: Optional[str]
+    pmid: Optional[str]
+    abstract_preview: str
+    specialty: Optional[str]
+    status: UpdateStatus
+    priority: UpdatePriority
+    discovered_at: str
+    reviewed_at: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    review_notes: Optional[str] = None
+    ingested_at: Optional[str] = None
+    supersedes_guideline: Optional[str] = None  # ID of guideline this might replace
+    tags: List[str] = field(default_factory=list)
+
+
+@dataclass
+class UpdateSchedule:
+    """Schedule configuration for automatic updates (Feature #90)"""
+    schedule_id: str
+    name: str
+    source_type: str              # "pubmed", "rss", "check_updates"
+    query_or_feed: str            # PubMed query or RSS feed name
+    specialty: Optional[str]
+    enabled: bool
+    frequency_hours: int          # How often to check
+    last_run: Optional[str]
+    next_run: Optional[str]
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class UpdateChecklistItem:
+    """Checklist item for reviewing an update (Feature #90)"""
+    item_id: str
+    update_id: str
+    description: str
+    category: str                 # "clinical_review", "safety", "conflicts", "quality"
+    required: bool
+    completed: bool = False
+    completed_by: Optional[str] = None
+    completed_at: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ScheduledUpdateManager:
+    """
+    Manages scheduled knowledge base updates (Feature #90).
+
+    Features:
+    - Scheduled PubMed queries
+    - RSS feed monitoring
+    - Pending update queue with review checklists
+    - Auto-ingest for approved updates
+    - Priority-based ordering
+    """
+
+    def __init__(self, knowledge_manager: KnowledgeManager, data_dir: str = "./data/updates"):
+        self.knowledge_manager = knowledge_manager
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Storage files
+        self.pending_file = self.data_dir / "pending_updates.json"
+        self.schedules_file = self.data_dir / "schedules.json"
+        self.checklists_file = self.data_dir / "checklists.json"
+        self.history_file = self.data_dir / "update_history.json"
+
+        # Load data
+        self.pending_updates: Dict[str, PendingUpdate] = self._load_pending()
+        self.schedules: Dict[str, UpdateSchedule] = self._load_schedules()
+        self.checklists: Dict[str, List[UpdateChecklistItem]] = self._load_checklists()
+        self.history: List[Dict] = self._load_history()
+
+        # Default review checklist template
+        self.default_checklist_template = [
+            {"description": "Content is from a reputable medical source", "category": "quality", "required": True},
+            {"description": "Publication date is recent (within guideline validity period)", "category": "quality", "required": True},
+            {"description": "No conflicts with existing guidelines detected", "category": "conflicts", "required": True},
+            {"description": "Clinical accuracy verified by qualified reviewer", "category": "clinical_review", "required": True},
+            {"description": "No patient safety concerns identified", "category": "safety", "required": True},
+            {"description": "Appropriate specialty/category assigned", "category": "quality", "required": False},
+            {"description": "Keywords and metadata complete", "category": "quality", "required": False},
+        ]
+
+        # Initialize default schedules if none exist
+        if not self.schedules:
+            self._create_default_schedules()
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # PERSISTENCE
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def _load_pending(self) -> Dict[str, PendingUpdate]:
+        if self.pending_file.exists():
+            with open(self.pending_file) as f:
+                data = json.load(f)
+                return {k: PendingUpdate(**v) for k, v in data.items()}
+        return {}
+
+    def _save_pending(self):
+        with open(self.pending_file, 'w') as f:
+            json.dump({k: asdict(v) for k, v in self.pending_updates.items()}, f, indent=2)
+
+    def _load_schedules(self) -> Dict[str, UpdateSchedule]:
+        if self.schedules_file.exists():
+            with open(self.schedules_file) as f:
+                data = json.load(f)
+                return {k: UpdateSchedule(**v) for k, v in data.items()}
+        return {}
+
+    def _save_schedules(self):
+        with open(self.schedules_file, 'w') as f:
+            json.dump({k: asdict(v) for k, v in self.schedules.items()}, f, indent=2)
+
+    def _load_checklists(self) -> Dict[str, List[UpdateChecklistItem]]:
+        if self.checklists_file.exists():
+            with open(self.checklists_file) as f:
+                data = json.load(f)
+                return {k: [UpdateChecklistItem(**item) for item in v] for k, v in data.items()}
+        return {}
+
+    def _save_checklists(self):
+        with open(self.checklists_file, 'w') as f:
+            json.dump({k: [asdict(item) for item in v] for k, v in self.checklists.items()}, f, indent=2)
+
+    def _load_history(self) -> List[Dict]:
+        if self.history_file.exists():
+            with open(self.history_file) as f:
+                return json.load(f)
+        return []
+
+    def _save_history(self):
+        with open(self.history_file, 'w') as f:
+            json.dump(self.history[-1000:], f, indent=2)  # Keep last 1000 entries
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # DEFAULT SCHEDULES
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def _create_default_schedules(self):
+        """Create default update schedules."""
+        default_schedules = [
+            {
+                "schedule_id": "pubmed-cardiology-daily",
+                "name": "Cardiology Guidelines (Daily)",
+                "source_type": "pubmed",
+                "query_or_feed": "cardiology guidelines 2024 2025 AHA ACC",
+                "specialty": "cardiology",
+                "enabled": True,
+                "frequency_hours": 24
+            },
+            {
+                "schedule_id": "pubmed-diabetes-daily",
+                "name": "Diabetes Guidelines (Daily)",
+                "source_type": "pubmed",
+                "query_or_feed": "diabetes guidelines 2024 2025 ADA",
+                "specialty": "endocrinology",
+                "enabled": True,
+                "frequency_hours": 24
+            },
+            {
+                "schedule_id": "pubmed-infectious-daily",
+                "name": "Infectious Disease (Daily)",
+                "source_type": "pubmed",
+                "query_or_feed": "IDSA guidelines 2024 2025 infectious disease",
+                "specialty": "infectious_disease",
+                "enabled": True,
+                "frequency_hours": 24
+            },
+            {
+                "schedule_id": "rss-cdc-hourly",
+                "name": "CDC MMWR (Hourly)",
+                "source_type": "rss",
+                "query_or_feed": "cdc_mmwr",
+                "specialty": "public_health",
+                "enabled": True,
+                "frequency_hours": 1
+            },
+            {
+                "schedule_id": "check-updates-weekly",
+                "name": "Major Sources Check (Weekly)",
+                "source_type": "check_updates",
+                "query_or_feed": "all",
+                "specialty": None,
+                "enabled": True,
+                "frequency_hours": 168  # 7 days
+            }
+        ]
+
+        for sched in default_schedules:
+            schedule = UpdateSchedule(
+                schedule_id=sched["schedule_id"],
+                name=sched["name"],
+                source_type=sched["source_type"],
+                query_or_feed=sched["query_or_feed"],
+                specialty=sched["specialty"],
+                enabled=sched["enabled"],
+                frequency_hours=sched["frequency_hours"],
+                last_run=None,
+                next_run=datetime.now().isoformat()
+            )
+            self.schedules[schedule.schedule_id] = schedule
+
+        self._save_schedules()
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # SCHEDULE MANAGEMENT
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def create_schedule(
+        self,
+        name: str,
+        source_type: str,
+        query_or_feed: str,
+        frequency_hours: int,
+        specialty: Optional[str] = None,
+        enabled: bool = True
+    ) -> str:
+        """Create a new update schedule."""
+        schedule_id = hashlib.md5(f"{name}{source_type}{datetime.now().isoformat()}".encode()).hexdigest()[:12]
+
+        schedule = UpdateSchedule(
+            schedule_id=schedule_id,
+            name=name,
+            source_type=source_type,
+            query_or_feed=query_or_feed,
+            specialty=specialty,
+            enabled=enabled,
+            frequency_hours=frequency_hours,
+            last_run=None,
+            next_run=datetime.now().isoformat()
+        )
+
+        self.schedules[schedule_id] = schedule
+        self._save_schedules()
+        return schedule_id
+
+    def toggle_schedule(self, schedule_id: str, enabled: bool) -> bool:
+        """Enable or disable a schedule."""
+        if schedule_id in self.schedules:
+            self.schedules[schedule_id].enabled = enabled
+            self._save_schedules()
+            return True
+        return False
+
+    def delete_schedule(self, schedule_id: str) -> bool:
+        """Delete a schedule."""
+        if schedule_id in self.schedules:
+            del self.schedules[schedule_id]
+            self._save_schedules()
+            return True
+        return False
+
+    def get_due_schedules(self) -> List[UpdateSchedule]:
+        """Get schedules that are due to run."""
+        now = datetime.now()
+        due = []
+
+        for schedule in self.schedules.values():
+            if not schedule.enabled:
+                continue
+
+            if schedule.next_run is None:
+                due.append(schedule)
+            else:
+                next_run = datetime.fromisoformat(schedule.next_run)
+                if now >= next_run:
+                    due.append(schedule)
+
+        return due
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # RUN SCHEDULED UPDATES
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    async def run_schedule(self, schedule_id: str) -> Dict:
+        """Run a specific schedule and queue discovered updates."""
+        if schedule_id not in self.schedules:
+            return {"error": f"Schedule {schedule_id} not found"}
+
+        schedule = self.schedules[schedule_id]
+        updates_found = []
+
+        try:
+            if schedule.source_type == "pubmed":
+                updates_found = await self._run_pubmed_schedule(schedule)
+            elif schedule.source_type == "rss":
+                updates_found = await self._run_rss_schedule(schedule)
+            elif schedule.source_type == "check_updates":
+                updates_found = await self._run_check_updates_schedule(schedule)
+
+            # Update schedule timing
+            schedule.last_run = datetime.now().isoformat()
+            schedule.next_run = (datetime.now() + timedelta(hours=schedule.frequency_hours)).isoformat()
+            self._save_schedules()
+
+            # Log to history
+            self.history.append({
+                "timestamp": datetime.now().isoformat(),
+                "schedule_id": schedule_id,
+                "schedule_name": schedule.name,
+                "updates_found": len(updates_found),
+                "status": "success"
+            })
+            self._save_history()
+
+            return {
+                "schedule_id": schedule_id,
+                "updates_found": len(updates_found),
+                "update_ids": [u.update_id for u in updates_found]
+            }
+
+        except Exception as e:
+            self.history.append({
+                "timestamp": datetime.now().isoformat(),
+                "schedule_id": schedule_id,
+                "schedule_name": schedule.name,
+                "status": "error",
+                "error": str(e)
+            })
+            self._save_history()
+            return {"error": str(e)}
+
+    async def _run_pubmed_schedule(self, schedule: UpdateSchedule) -> List[PendingUpdate]:
+        """Run a PubMed-based schedule."""
+        articles = await self.knowledge_manager.search_pubmed(
+            schedule.query_or_feed,
+            max_results=10
+        )
+
+        updates = []
+        for article in articles:
+            if not article.abstract:
+                continue
+
+            # Check if already in pending or ingested
+            existing_id = f"pubmed-{article.pmid}"
+            if existing_id in self.pending_updates:
+                continue
+
+            # Check if already in knowledge base
+            existing = self.knowledge_manager.rag_engine.retrieve(article.title, n_results=1)
+            if existing and existing[0].relevance_score > 0.9:
+                continue
+
+            update = self._create_pending_update(
+                title=article.title,
+                source=UpdateSource.PUBMED,
+                source_url=f"https://pubmed.ncbi.nlm.nih.gov/{article.pmid}/",
+                pmid=article.pmid,
+                abstract_preview=article.abstract[:500],
+                specialty=schedule.specialty,
+                priority=UpdatePriority.MEDIUM
+            )
+            updates.append(update)
+
+        return updates
+
+    async def _run_rss_schedule(self, schedule: UpdateSchedule) -> List[PendingUpdate]:
+        """Run an RSS feed-based schedule."""
+        # Map feed names to sources
+        feed_source_map = {
+            "cdc_mmwr": UpdateSource.RSS_CDC,
+            "aha_guidelines": UpdateSource.RSS_AHA,
+            "nejm_current": UpdateSource.RSS_NEJM,
+            "jama_latest": UpdateSource.RSS_JAMA
+        }
+
+        source = feed_source_map.get(schedule.query_or_feed, UpdateSource.MANUAL)
+
+        # This would integrate with the RSS checking from main.py
+        # For now, create placeholder that can be expanded
+        return []
+
+    async def _run_check_updates_schedule(self, schedule: UpdateSchedule) -> List[PendingUpdate]:
+        """Run a comprehensive check for guideline updates."""
+        all_updates = await self.knowledge_manager.check_for_updates()
+
+        updates = []
+        for update_info in all_updates:
+            update = self._create_pending_update(
+                title=update_info["title"],
+                source=UpdateSource.SCHEDULED_CHECK,
+                source_url=f"https://pubmed.ncbi.nlm.nih.gov/{update_info['pmid']}/",
+                pmid=update_info["pmid"],
+                abstract_preview=f"Update from {update_info['source']}",
+                specialty=None,
+                priority=UpdatePriority.HIGH
+            )
+            updates.append(update)
+
+        return updates
+
+    async def run_all_due_schedules(self) -> Dict:
+        """Run all schedules that are due."""
+        due_schedules = self.get_due_schedules()
+        results = []
+
+        for schedule in due_schedules:
+            result = await self.run_schedule(schedule.schedule_id)
+            results.append({
+                "schedule_id": schedule.schedule_id,
+                "name": schedule.name,
+                **result
+            })
+
+        return {
+            "schedules_run": len(results),
+            "results": results
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # PENDING UPDATES MANAGEMENT
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def _create_pending_update(
+        self,
+        title: str,
+        source: UpdateSource,
+        source_url: Optional[str],
+        pmid: Optional[str],
+        abstract_preview: str,
+        specialty: Optional[str],
+        priority: UpdatePriority
+    ) -> PendingUpdate:
+        """Create a new pending update with checklist."""
+        update_id = hashlib.md5(f"{title}{source}{datetime.now().isoformat()}".encode()).hexdigest()[:12]
+
+        update = PendingUpdate(
+            update_id=update_id,
+            title=title,
+            source=source,
+            source_url=source_url,
+            pmid=pmid,
+            abstract_preview=abstract_preview,
+            specialty=specialty,
+            status=UpdateStatus.PENDING,
+            priority=priority,
+            discovered_at=datetime.now().isoformat()
+        )
+
+        self.pending_updates[update_id] = update
+        self._save_pending()
+
+        # Create checklist for this update
+        self._create_checklist(update_id)
+
+        return update
+
+    def get_pending_updates(
+        self,
+        status: Optional[str] = None,
+        priority: Optional[str] = None,
+        specialty: Optional[str] = None
+    ) -> List[Dict]:
+        """Get pending updates with optional filters."""
+        updates = []
+
+        for update in self.pending_updates.values():
+            if status and update.status.value != status:
+                continue
+            if priority and update.priority.value != priority:
+                continue
+            if specialty and update.specialty != specialty:
+                continue
+
+            # Get checklist completion status
+            checklist = self.checklists.get(update.update_id, [])
+            required_items = [c for c in checklist if c.required]
+            completed_required = [c for c in required_items if c.completed]
+
+            updates.append({
+                **asdict(update),
+                "checklist_progress": {
+                    "total": len(checklist),
+                    "completed": len([c for c in checklist if c.completed]),
+                    "required_total": len(required_items),
+                    "required_completed": len(completed_required),
+                    "ready_for_approval": len(completed_required) == len(required_items)
+                }
+            })
+
+        # Sort by priority and discovered date
+        priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        updates.sort(key=lambda x: (priority_order.get(x["priority"], 4), x["discovered_at"]))
+
+        return updates
+
+    def get_update_details(self, update_id: str) -> Optional[Dict]:
+        """Get full details of an update including checklist."""
+        if update_id not in self.pending_updates:
+            return None
+
+        update = self.pending_updates[update_id]
+        checklist = self.checklists.get(update_id, [])
+
+        return {
+            **asdict(update),
+            "checklist": [asdict(item) for item in checklist]
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # CHECKLIST MANAGEMENT
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def _create_checklist(self, update_id: str):
+        """Create a review checklist for an update."""
+        checklist = []
+
+        for i, template in enumerate(self.default_checklist_template):
+            item = UpdateChecklistItem(
+                item_id=f"{update_id}-{i}",
+                update_id=update_id,
+                description=template["description"],
+                category=template["category"],
+                required=template["required"]
+            )
+            checklist.append(item)
+
+        self.checklists[update_id] = checklist
+        self._save_checklists()
+
+    def complete_checklist_item(
+        self,
+        update_id: str,
+        item_id: str,
+        completed_by: str,
+        notes: Optional[str] = None
+    ) -> bool:
+        """Mark a checklist item as completed."""
+        if update_id not in self.checklists:
+            return False
+
+        for item in self.checklists[update_id]:
+            if item.item_id == item_id:
+                item.completed = True
+                item.completed_by = completed_by
+                item.completed_at = datetime.now().isoformat()
+                item.notes = notes
+                self._save_checklists()
+                return True
+
+        return False
+
+    def uncomplete_checklist_item(self, update_id: str, item_id: str) -> bool:
+        """Unmark a checklist item."""
+        if update_id not in self.checklists:
+            return False
+
+        for item in self.checklists[update_id]:
+            if item.item_id == item_id:
+                item.completed = False
+                item.completed_by = None
+                item.completed_at = None
+                item.notes = None
+                self._save_checklists()
+                return True
+
+        return False
+
+    def get_checklist(self, update_id: str) -> List[Dict]:
+        """Get the checklist for an update."""
+        if update_id not in self.checklists:
+            return []
+        return [asdict(item) for item in self.checklists[update_id]]
+
+    def is_checklist_complete(self, update_id: str) -> bool:
+        """Check if all required checklist items are complete."""
+        if update_id not in self.checklists:
+            return False
+
+        for item in self.checklists[update_id]:
+            if item.required and not item.completed:
+                return False
+
+        return True
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # REVIEW & APPROVAL
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def approve_update(
+        self,
+        update_id: str,
+        reviewed_by: str,
+        review_notes: Optional[str] = None
+    ) -> Dict:
+        """Approve an update for ingestion."""
+        if update_id not in self.pending_updates:
+            return {"error": "Update not found"}
+
+        # Check if checklist is complete
+        if not self.is_checklist_complete(update_id):
+            return {"error": "Required checklist items not complete"}
+
+        update = self.pending_updates[update_id]
+        update.status = UpdateStatus.APPROVED
+        update.reviewed_at = datetime.now().isoformat()
+        update.reviewed_by = reviewed_by
+        update.review_notes = review_notes
+
+        self._save_pending()
+
+        return {"status": "approved", "update_id": update_id}
+
+    def reject_update(
+        self,
+        update_id: str,
+        reviewed_by: str,
+        review_notes: str
+    ) -> Dict:
+        """Reject an update."""
+        if update_id not in self.pending_updates:
+            return {"error": "Update not found"}
+
+        update = self.pending_updates[update_id]
+        update.status = UpdateStatus.REJECTED
+        update.reviewed_at = datetime.now().isoformat()
+        update.reviewed_by = reviewed_by
+        update.review_notes = review_notes
+
+        self._save_pending()
+
+        return {"status": "rejected", "update_id": update_id}
+
+    async def ingest_approved_update(self, update_id: str) -> Dict:
+        """Ingest an approved update into the knowledge base."""
+        if update_id not in self.pending_updates:
+            return {"error": "Update not found"}
+
+        update = self.pending_updates[update_id]
+
+        if update.status != UpdateStatus.APPROVED:
+            return {"error": f"Update is not approved (status: {update.status.value})"}
+
+        try:
+            # Fetch full content from PubMed if we have a PMID
+            if update.pmid:
+                articles = await self.knowledge_manager.search_pubmed(
+                    f"PMID:{update.pmid}",
+                    max_results=1
+                )
+
+                if articles:
+                    article = articles[0]
+                    doc = MedicalDocument(
+                        id=f"pubmed-{update.pmid}",
+                        title=article.title,
+                        content=f"{article.title}\n\n{article.abstract}",
+                        source_type=SourceType.PUBMED_ABSTRACT,
+                        source_name=article.journal,
+                        source_url=update.source_url,
+                        publication_date=article.publication_date,
+                        pmid=update.pmid,
+                        specialty=update.specialty
+                    )
+
+                    success = self.knowledge_manager.rag_engine.add_document(doc)
+
+                    if success:
+                        update.status = UpdateStatus.INGESTED
+                        update.ingested_at = datetime.now().isoformat()
+                        self._save_pending()
+
+                        return {
+                            "status": "ingested",
+                            "update_id": update_id,
+                            "document_id": f"pubmed-{update.pmid}"
+                        }
+
+            update.status = UpdateStatus.FAILED
+            self._save_pending()
+            return {"error": "Failed to ingest update"}
+
+        except Exception as e:
+            update.status = UpdateStatus.FAILED
+            self._save_pending()
+            return {"error": str(e)}
+
+    async def ingest_all_approved(self) -> Dict:
+        """Ingest all approved updates."""
+        approved = [u for u in self.pending_updates.values() if u.status == UpdateStatus.APPROVED]
+
+        results = []
+        for update in approved:
+            result = await self.ingest_approved_update(update.update_id)
+            results.append({
+                "update_id": update.update_id,
+                **result
+            })
+
+        return {
+            "processed": len(results),
+            "results": results
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # DASHBOARD & STATS
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def get_dashboard_stats(self) -> Dict:
+        """Get dashboard statistics."""
+        status_counts = {}
+        priority_counts = {}
+        specialty_counts = {}
+
+        for update in self.pending_updates.values():
+            status_counts[update.status.value] = status_counts.get(update.status.value, 0) + 1
+            priority_counts[update.priority.value] = priority_counts.get(update.priority.value, 0) + 1
+            if update.specialty:
+                specialty_counts[update.specialty] = specialty_counts.get(update.specialty, 0) + 1
+
+        # Get recent history
+        recent_history = self.history[-10:] if self.history else []
+
+        # Get next scheduled runs
+        next_runs = []
+        for schedule in sorted(self.schedules.values(), key=lambda s: s.next_run or ""):
+            if schedule.enabled and schedule.next_run:
+                next_runs.append({
+                    "schedule_id": schedule.schedule_id,
+                    "name": schedule.name,
+                    "next_run": schedule.next_run
+                })
+
+        return {
+            "total_pending": len(self.pending_updates),
+            "status_breakdown": status_counts,
+            "priority_breakdown": priority_counts,
+            "specialty_breakdown": specialty_counts,
+            "schedules_active": len([s for s in self.schedules.values() if s.enabled]),
+            "schedules_total": len(self.schedules),
+            "next_scheduled_runs": next_runs[:5],
+            "recent_history": recent_history
+        }
+
+    def get_schedules(self) -> List[Dict]:
+        """Get all schedules."""
+        return [asdict(s) for s in self.schedules.values()]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GLOBAL SCHEDULED UPDATE MANAGER (Feature #90)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+update_manager = ScheduledUpdateManager(knowledge_manager)
+
+
+# Helper functions for API
+def get_pending_updates_list(
+    status: Optional[str] = None,
+    priority: Optional[str] = None,
+    specialty: Optional[str] = None
+) -> List[Dict]:
+    """Get list of pending updates."""
+    return update_manager.get_pending_updates(status, priority, specialty)
+
+
+def get_update_dashboard() -> Dict:
+    """Get update dashboard stats."""
+    return update_manager.get_dashboard_stats()
+
+
+async def run_due_schedules() -> Dict:
+    """Run all due update schedules."""
+    return await update_manager.run_all_due_schedules()
