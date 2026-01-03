@@ -1286,6 +1286,82 @@ class MaternalHealthResponse(BaseModel):
     timestamp: str
 
 
+# SDOH (Social Determinants of Health) Models (Feature #84)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SDOHDomain(str, Enum):
+    """SDOH domains from Healthy People 2030"""
+    ECONOMIC_STABILITY = "economic_stability"  # Employment, income, expenses, debt
+    EDUCATION = "education"  # Literacy, language, early childhood education
+    HEALTHCARE_ACCESS = "healthcare_access"  # Coverage, provider availability
+    NEIGHBORHOOD = "neighborhood"  # Housing, transportation, safety
+    SOCIAL_COMMUNITY = "social_community"  # Support systems, discrimination
+
+
+class SDOHRiskLevel(str, Enum):
+    """Risk level for SDOH factors"""
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+    CRITICAL = "critical"  # Immediate intervention needed
+
+
+class SDOHFactor(BaseModel):
+    """Individual SDOH risk factor"""
+    domain: SDOHDomain
+    factor: str
+    description: str
+    risk_level: SDOHRiskLevel
+    clinical_impact: str  # How this affects care
+    screening_question: str  # How to ask about this
+    icd10_code: Optional[str] = None  # Z-codes for SDOH
+
+
+class SDOHIntervention(BaseModel):
+    """Recommended intervention for SDOH factor"""
+    factor: str
+    intervention_type: str  # "referral", "resource", "accommodation", "care_modification"
+    title: str
+    description: str
+    resources: List[str] = []  # Local/national resources
+    urgency: str = "routine"  # "immediate", "urgent", "routine"
+
+
+class SDOHAlert(BaseModel):
+    """Alert for SDOH-related care considerations"""
+    alert_type: str  # "adherence_risk", "access_barrier", "safety_concern", "care_gap"
+    severity: str  # "info", "warning", "critical"
+    title: str
+    message: str
+    domain: SDOHDomain
+    clinical_impact: str
+    recommendations: List[str] = []
+    interventions: List[SDOHIntervention] = []
+    z_codes: List[str] = []  # Relevant ICD-10 Z-codes
+
+
+class SDOHScreeningRequest(BaseModel):
+    """Request for SDOH screening/assessment"""
+    patient_id: str
+    responses: Dict[str, str] = {}  # Question ID -> response
+    known_factors: List[str] = []  # Previously identified SDOH factors
+    current_medications: List[str] = []  # For adherence risk assessment
+    upcoming_appointments: List[str] = []  # For transportation assessment
+
+
+class SDOHScreeningResponse(BaseModel):
+    """Response with SDOH assessment results"""
+    patient_id: str
+    overall_risk: SDOHRiskLevel
+    domain_risks: Dict[str, SDOHRiskLevel] = {}  # Domain -> risk level
+    identified_factors: List[SDOHFactor] = []
+    alerts: List[SDOHAlert] = []
+    recommended_interventions: List[SDOHIntervention] = []
+    z_codes_for_billing: List[Dict[str, str]] = []  # Code + description
+    screening_complete: bool = False
+    timestamp: str
+
+
 # Billing/Claim Models (Feature #71)
 class ClaimStatus(str, Enum):
     """Claim lifecycle status"""
@@ -5562,6 +5638,473 @@ async def get_maternal_disparity_data():
         "disparity_data": MATERNAL_DISPARITY_DATA,
         "source": "CDC Pregnancy Mortality Surveillance System, 2023",
         "key_message": "Black women are 3-4 times more likely to die from pregnancy-related causes than white women. This disparity persists across all income and education levels."
+    }
+
+
+# SDOH INTEGRATION (Feature #84) - Social Determinants of Health
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# SDOH factors database with screening questions, clinical impacts, and Z-codes
+SDOH_FACTORS_DATABASE = {
+    "economic_stability": {
+        "food_insecurity": {
+            "factor": "Food Insecurity",
+            "description": "Unable to afford or access nutritious food consistently",
+            "risk_level": "high",
+            "clinical_impact": "Affects ability to follow dietary recommendations, medication absorption, diabetes/heart disease management. Risk of hypoglycemia if skipping meals while on diabetes medications.",
+            "screening_question": "In the past 12 months, did you worry food would run out before you had money to buy more?",
+            "icd10_code": "Z59.41",  # Food insecurity
+            "interventions": [
+                {"type": "referral", "title": "SNAP Benefits", "description": "Supplemental Nutrition Assistance Program enrollment assistance"},
+                {"type": "referral", "title": "Local Food Bank", "description": "Connect with community food bank or pantry"},
+                {"type": "care_modification", "title": "Medication Timing", "description": "Adjust medication schedule around meals patient can consistently access"}
+            ]
+        },
+        "housing_instability": {
+            "factor": "Housing Instability",
+            "description": "At risk of or experiencing homelessness, frequent moves, or unsafe housing",
+            "risk_level": "critical",
+            "clinical_impact": "Cannot safely store medications (insulin refrigeration), inconsistent sleep, stress response, difficulty following up on care. Address before complex treatment plans.",
+            "screening_question": "Are you worried about losing your housing, or do you have a stable place to stay?",
+            "icd10_code": "Z59.0",  # Homelessness
+            "interventions": [
+                {"type": "referral", "title": "Housing Authority", "description": "Connect with local housing assistance programs"},
+                {"type": "accommodation", "title": "Medication Storage", "description": "Provide medication that doesn't require refrigeration when possible"},
+                {"type": "care_modification", "title": "Extended Rx Supply", "description": "90-day prescriptions to reduce pharmacy visit frequency"}
+            ]
+        },
+        "financial_strain": {
+            "factor": "Financial Strain",
+            "description": "Unable to pay for basic needs including medications and medical care",
+            "risk_level": "high",
+            "clinical_impact": "Medication non-adherence due to cost, delayed care, choosing between food and medicine. May split pills or skip doses.",
+            "screening_question": "In the past year, have you had trouble paying for medications or medical bills?",
+            "icd10_code": "Z59.86",  # Financial insecurity
+            "interventions": [
+                {"type": "resource", "title": "Patient Assistance Programs", "description": "Pharmaceutical company programs for free/reduced medications"},
+                {"type": "care_modification", "title": "Generic Alternatives", "description": "Switch to lower-cost generic medications when clinically appropriate"},
+                {"type": "referral", "title": "Financial Counselor", "description": "Hospital financial assistance and payment plans"}
+            ]
+        },
+        "unemployment": {
+            "factor": "Unemployment",
+            "description": "Currently unemployed or underemployed",
+            "risk_level": "moderate",
+            "clinical_impact": "May lose insurance coverage, increased stress and depression risk, affects overall health trajectory.",
+            "screening_question": "Do you currently have a job? If not, are you looking for work?",
+            "icd10_code": "Z56.0",  # Unemployment
+            "interventions": [
+                {"type": "referral", "title": "Workforce Development", "description": "Job training and placement services"},
+                {"type": "resource", "title": "Medicaid Enrollment", "description": "Help with health insurance coverage during unemployment"}
+            ]
+        }
+    },
+    "education": {
+        "low_health_literacy": {
+            "factor": "Low Health Literacy",
+            "description": "Difficulty understanding health information, medication instructions, or discharge paperwork",
+            "risk_level": "high",
+            "clinical_impact": "Medication errors, missed warning signs, non-adherence due to confusion. Affects ability to self-manage chronic conditions.",
+            "screening_question": "How confident are you filling out medical forms by yourself?",
+            "icd10_code": "Z55.0",  # Illiteracy and low-level literacy
+            "interventions": [
+                {"type": "accommodation", "title": "Teach-Back Method", "description": "Use teach-back to confirm understanding of instructions"},
+                {"type": "accommodation", "title": "Simplified Materials", "description": "Provide instructions at 5th grade reading level with pictures"},
+                {"type": "care_modification", "title": "Verbal Instructions", "description": "Prioritize verbal over written instructions, use diagrams"}
+            ]
+        },
+        "limited_english": {
+            "factor": "Limited English Proficiency",
+            "description": "English is not primary language, limited ability to communicate in English",
+            "risk_level": "high",
+            "clinical_impact": "Communication barriers affect diagnosis accuracy, informed consent, medication understanding. Risk of medical errors.",
+            "screening_question": "What language do you feel most comfortable speaking?",
+            "icd10_code": "Z60.3",  # Acculturation difficulty
+            "interventions": [
+                {"type": "accommodation", "title": "Professional Interpreter", "description": "Use certified medical interpreter, not family members"},
+                {"type": "resource", "title": "Translated Materials", "description": "Provide discharge instructions in patient's preferred language"},
+                {"type": "care_modification", "title": "Language Line", "description": "Document interpreter services used for continuity"}
+            ]
+        }
+    },
+    "healthcare_access": {
+        "no_insurance": {
+            "factor": "No Health Insurance",
+            "description": "Uninsured or underinsured, unable to afford coverage",
+            "risk_level": "high",
+            "clinical_impact": "Delayed preventive care, emergency-only utilization pattern, untreated chronic conditions, medication non-adherence.",
+            "screening_question": "Do you have health insurance? Are you able to afford your medical care?",
+            "icd10_code": "Z59.7",  # Insufficient social insurance and welfare support
+            "interventions": [
+                {"type": "referral", "title": "Medicaid/ACA Enrollment", "description": "Help with health insurance marketplace or Medicaid application"},
+                {"type": "resource", "title": "Community Health Center", "description": "Sliding-scale fee community health centers for ongoing care"},
+                {"type": "care_modification", "title": "Prescription Assistance", "description": "$4 generic programs and manufacturer coupons"}
+            ]
+        },
+        "no_regular_provider": {
+            "factor": "No Regular Healthcare Provider",
+            "description": "Does not have a primary care provider or medical home",
+            "risk_level": "moderate",
+            "clinical_impact": "Fragmented care, no preventive services, ED as primary access point, poor chronic disease management.",
+            "screening_question": "Do you have a regular doctor or clinic you go to when you're sick?",
+            "icd10_code": "Z75.3",  # Unavailability and inaccessibility of health-care facilities
+            "interventions": [
+                {"type": "referral", "title": "PCP Assignment", "description": "Help establish care with primary care provider"},
+                {"type": "resource", "title": "Patient Navigator", "description": "Assign patient navigator to help coordinate care"}
+            ]
+        },
+        "transportation_barrier": {
+            "factor": "Transportation Barriers",
+            "description": "Unable to get to medical appointments due to lack of transportation",
+            "risk_level": "high",
+            "clinical_impact": "Missed appointments, delayed care, unable to get to pharmacy. Major barrier to medication adherence and follow-up.",
+            "screening_question": "Do you have reliable transportation to get to your medical appointments?",
+            "icd10_code": "Z59.82",  # Transportation insecurity
+            "interventions": [
+                {"type": "resource", "title": "Medicaid Transportation", "description": "Non-emergency medical transportation benefit if Medicaid eligible"},
+                {"type": "resource", "title": "Community Transit", "description": "Local senior/disability transit services"},
+                {"type": "care_modification", "title": "Telehealth", "description": "Offer telehealth visits when clinically appropriate"},
+                {"type": "care_modification", "title": "Mail-Order Pharmacy", "description": "Set up mail-order for maintenance medications"}
+            ]
+        }
+    },
+    "neighborhood": {
+        "unsafe_neighborhood": {
+            "factor": "Unsafe Neighborhood",
+            "description": "Living in area with high crime, violence, or safety concerns",
+            "risk_level": "moderate",
+            "clinical_impact": "Unable to exercise safely outdoors, stress response, may avoid leaving home for appointments, affects mental health.",
+            "screening_question": "Do you feel safe in your neighborhood?",
+            "icd10_code": "Z59.1",  # Inadequate housing
+            "interventions": [
+                {"type": "care_modification", "title": "Indoor Exercise", "description": "Recommend indoor physical activity options"},
+                {"type": "care_modification", "title": "Appointment Timing", "description": "Schedule appointments during daylight hours"}
+            ]
+        },
+        "utility_insecurity": {
+            "factor": "Utility Insecurity",
+            "description": "Unable to pay utilities, risk of disconnection",
+            "risk_level": "high",
+            "clinical_impact": "No refrigeration for insulin/medications, extreme temperatures dangerous for elderly/chronic illness, no phone for emergencies.",
+            "screening_question": "In the past year, has your utility company threatened to shut off services?",
+            "icd10_code": "Z59.89",  # Other problems related to housing and economic circumstances
+            "interventions": [
+                {"type": "referral", "title": "LIHEAP", "description": "Low Income Home Energy Assistance Program"},
+                {"type": "accommodation", "title": "Temperature-Stable Meds", "description": "Use insulin pens or other formulations less sensitive to temperature"}
+            ]
+        }
+    },
+    "social_community": {
+        "social_isolation": {
+            "factor": "Social Isolation",
+            "description": "Limited social contact, lives alone, no support system",
+            "risk_level": "moderate",
+            "clinical_impact": "Increased depression risk, no caregiver support, may not seek help when ill, affects medication adherence and recovery.",
+            "screening_question": "How often do you see or talk to family or friends?",
+            "icd10_code": "Z60.4",  # Social exclusion and rejection
+            "interventions": [
+                {"type": "referral", "title": "Senior Center", "description": "Local senior center for social activities"},
+                {"type": "referral", "title": "Support Groups", "description": "Condition-specific support groups"},
+                {"type": "care_modification", "title": "Care Manager", "description": "Assign care manager for regular check-ins"}
+            ]
+        },
+        "caregiver_stress": {
+            "factor": "Caregiver Burden",
+            "description": "Primary caregiver for family member, experiencing caregiver stress",
+            "risk_level": "moderate",
+            "clinical_impact": "Neglects own health, high stress/depression risk, may miss own appointments to care for others.",
+            "screening_question": "Are you taking care of a family member who is sick or disabled?",
+            "icd10_code": "Z63.6",  # Dependent relative needing care at home
+            "interventions": [
+                {"type": "referral", "title": "Respite Care", "description": "Temporary relief for caregivers"},
+                {"type": "resource", "title": "Caregiver Support", "description": "Local caregiver support services and resources"}
+            ]
+        },
+        "domestic_violence": {
+            "factor": "Intimate Partner Violence",
+            "description": "Experiencing or at risk of domestic violence",
+            "risk_level": "critical",
+            "clinical_impact": "Safety is primary concern. Affects all aspects of health. Screen privately, provide resources safely.",
+            "screening_question": "Do you feel safe in your current relationship?",
+            "icd10_code": "Z63.0",  # Problems in relationship with spouse or partner
+            "interventions": [
+                {"type": "referral", "title": "Domestic Violence Hotline", "description": "National DV Hotline: 1-800-799-7233"},
+                {"type": "resource", "title": "Safety Planning", "description": "Help develop safety plan, provide resources discreetly"},
+                {"type": "accommodation", "title": "Private Conversations", "description": "Always screen alone without partner present"}
+            ]
+        },
+        "discrimination": {
+            "factor": "Experienced Discrimination",
+            "description": "Experienced discrimination in healthcare based on race, ethnicity, gender, sexuality, etc.",
+            "risk_level": "moderate",
+            "clinical_impact": "Medical mistrust, delayed care seeking, anxiety about healthcare interactions, may not disclose symptoms.",
+            "screening_question": "Have you ever felt you were treated unfairly when getting medical care?",
+            "icd10_code": "Z60.5",  # Target of perceived adverse discrimination and persecution
+            "interventions": [
+                {"type": "accommodation", "title": "Cultural Humility", "description": "Acknowledge concerns, provide culturally responsive care"},
+                {"type": "care_modification", "title": "Patient Choice", "description": "Offer choice of provider when possible"}
+            ]
+        }
+    }
+}
+
+# SDOH Z-codes for billing documentation
+SDOH_Z_CODES = {
+    "Z55.0": "Illiteracy and low-level literacy",
+    "Z55.9": "Problems related to education and literacy, unspecified",
+    "Z56.0": "Unemployment, unspecified",
+    "Z56.9": "Problem related to employment, unspecified",
+    "Z59.0": "Homelessness",
+    "Z59.1": "Inadequate housing",
+    "Z59.41": "Food insecurity",
+    "Z59.48": "Other specified lack of adequate food",
+    "Z59.7": "Insufficient social insurance and welfare support",
+    "Z59.82": "Transportation insecurity",
+    "Z59.86": "Financial insecurity",
+    "Z59.89": "Other problems related to housing and economic circumstances",
+    "Z60.2": "Problems related to living alone",
+    "Z60.3": "Acculturation difficulty",
+    "Z60.4": "Social exclusion and rejection",
+    "Z60.5": "Target of perceived adverse discrimination and persecution",
+    "Z62.819": "Personal history of neglect in childhood",
+    "Z63.0": "Problems in relationship with spouse or partner",
+    "Z63.6": "Dependent relative needing care at home",
+    "Z75.3": "Unavailability and inaccessibility of health-care facilities",
+}
+
+
+def get_sdoh_factors_for_domain(domain: str) -> List[Dict]:
+    """Get all SDOH factors for a given domain."""
+    factors = []
+    if domain in SDOH_FACTORS_DATABASE:
+        for factor_id, factor_data in SDOH_FACTORS_DATABASE[domain].items():
+            factors.append({
+                "id": factor_id,
+                **factor_data
+            })
+    return factors
+
+
+def assess_sdoh_risk(responses: Dict[str, str], known_factors: List[str]) -> SDOHScreeningResponse:
+    """
+    Assess SDOH risk based on screening responses and known factors.
+    Returns overall risk level, domain-specific risks, and interventions.
+    """
+    identified_factors = []
+    alerts = []
+    all_interventions = []
+    z_codes = []
+    domain_risks = {}
+
+    # Process known factors
+    for factor_id in known_factors:
+        for domain, factors in SDOH_FACTORS_DATABASE.items():
+            if factor_id in factors:
+                factor_data = factors[factor_id]
+                identified_factors.append(SDOHFactor(
+                    domain=SDOHDomain(domain),
+                    factor=factor_data["factor"],
+                    description=factor_data["description"],
+                    risk_level=SDOHRiskLevel(factor_data["risk_level"]),
+                    clinical_impact=factor_data["clinical_impact"],
+                    screening_question=factor_data["screening_question"],
+                    icd10_code=factor_data.get("icd10_code")
+                ))
+
+                # Add Z-code for billing
+                if factor_data.get("icd10_code"):
+                    z_codes.append({
+                        "code": factor_data["icd10_code"],
+                        "description": SDOH_Z_CODES.get(factor_data["icd10_code"], factor_data["factor"])
+                    })
+
+                # Add interventions
+                for intervention in factor_data.get("interventions", []):
+                    all_interventions.append(SDOHIntervention(
+                        factor=factor_data["factor"],
+                        intervention_type=intervention["type"],
+                        title=intervention["title"],
+                        description=intervention["description"]
+                    ))
+
+                # Track domain risk
+                risk_value = {"low": 1, "moderate": 2, "high": 3, "critical": 4}[factor_data["risk_level"]]
+                if domain not in domain_risks or risk_value > domain_risks[domain]:
+                    domain_risks[domain] = factor_data["risk_level"]
+
+    # Generate alerts based on identified factors
+    for factor in identified_factors:
+        severity = "info" if factor.risk_level == SDOHRiskLevel.LOW else \
+                   "warning" if factor.risk_level in [SDOHRiskLevel.MODERATE, SDOHRiskLevel.HIGH] else "critical"
+
+        alert_type = "safety_concern" if factor.risk_level == SDOHRiskLevel.CRITICAL else \
+                     "adherence_risk" if "medication" in factor.clinical_impact.lower() else "access_barrier"
+
+        alerts.append(SDOHAlert(
+            alert_type=alert_type,
+            severity=severity,
+            title=f"SDOH: {factor.factor}",
+            message=factor.description,
+            domain=factor.domain,
+            clinical_impact=factor.clinical_impact,
+            recommendations=[f"Screen for {factor.factor}", f"Consider {factor.clinical_impact.split('.')[0]}"],
+            z_codes=[factor.icd10_code] if factor.icd10_code else []
+        ))
+
+    # Calculate overall risk
+    if any(f.risk_level == SDOHRiskLevel.CRITICAL for f in identified_factors):
+        overall_risk = SDOHRiskLevel.CRITICAL
+    elif any(f.risk_level == SDOHRiskLevel.HIGH for f in identified_factors):
+        overall_risk = SDOHRiskLevel.HIGH
+    elif any(f.risk_level == SDOHRiskLevel.MODERATE for f in identified_factors):
+        overall_risk = SDOHRiskLevel.MODERATE
+    elif identified_factors:
+        overall_risk = SDOHRiskLevel.LOW
+    else:
+        overall_risk = SDOHRiskLevel.LOW
+
+    return SDOHScreeningResponse(
+        patient_id="",  # Will be set by caller
+        overall_risk=overall_risk,
+        domain_risks=domain_risks,
+        identified_factors=identified_factors,
+        alerts=alerts,
+        recommended_interventions=all_interventions,
+        z_codes_for_billing=z_codes,
+        screening_complete=len(known_factors) > 0,
+        timestamp=datetime.now(timezone.utc).isoformat()
+    )
+
+
+@app.post("/api/v1/sdoh/screen")
+async def sdoh_screening(request: SDOHScreeningRequest):
+    """
+    Screen patient for SDOH factors.
+    Returns identified risks, clinical impacts, and recommended interventions.
+    """
+    # Log HIPAA audit
+    audit_logger.log(
+        action=AuditAction.PHI_ACCESS,
+        patient_id=request.patient_id,
+        details={"endpoint": "/api/v1/sdoh/screen", "factors_screened": request.known_factors}
+    )
+
+    response = assess_sdoh_risk(request.responses, request.known_factors)
+    response.patient_id = request.patient_id
+
+    return response
+
+
+@app.get("/api/v1/sdoh/factors")
+async def get_sdoh_factors(domain: Optional[str] = None):
+    """
+    Get SDOH factors database.
+    Optionally filter by domain.
+    """
+    if domain:
+        if domain not in SDOH_FACTORS_DATABASE:
+            raise HTTPException(status_code=404, detail=f"Domain not found: {domain}")
+        return {
+            "domain": domain,
+            "factors": get_sdoh_factors_for_domain(domain)
+        }
+
+    # Return all domains
+    all_factors = {}
+    for domain_name in SDOH_FACTORS_DATABASE:
+        all_factors[domain_name] = get_sdoh_factors_for_domain(domain_name)
+
+    return {
+        "domains": list(SDOH_FACTORS_DATABASE.keys()),
+        "factors": all_factors
+    }
+
+
+@app.get("/api/v1/sdoh/screening-questions")
+async def get_screening_questions():
+    """
+    Get all SDOH screening questions organized by domain.
+    Use these questions for standardized SDOH screening.
+    """
+    questions = {}
+    for domain, factors in SDOH_FACTORS_DATABASE.items():
+        questions[domain] = []
+        for factor_id, factor_data in factors.items():
+            questions[domain].append({
+                "id": factor_id,
+                "factor": factor_data["factor"],
+                "question": factor_data["screening_question"],
+                "risk_level": factor_data["risk_level"]
+            })
+
+    return {
+        "questions": questions,
+        "note": "These questions are based on validated SDOH screening tools (PRAPARE, AHC-HRSN, NACHC). Screen all patients annually."
+    }
+
+
+@app.get("/api/v1/sdoh/z-codes")
+async def get_sdoh_z_codes():
+    """
+    Get ICD-10 Z-codes for SDOH documentation and billing.
+    """
+    return {
+        "z_codes": SDOH_Z_CODES,
+        "note": "Document SDOH Z-codes to capture social risk factors. Many payers now recognize these codes for care management."
+    }
+
+
+@app.post("/api/v1/sdoh/interventions")
+async def get_sdoh_interventions(factors: List[str]):
+    """
+    Get recommended interventions for identified SDOH factors.
+    """
+    interventions = []
+
+    for factor_id in factors:
+        for domain, domain_factors in SDOH_FACTORS_DATABASE.items():
+            if factor_id in domain_factors:
+                factor_data = domain_factors[factor_id]
+                for intervention in factor_data.get("interventions", []):
+                    interventions.append({
+                        "factor": factor_data["factor"],
+                        "factor_id": factor_id,
+                        "intervention_type": intervention["type"],
+                        "title": intervention["title"],
+                        "description": intervention["description"],
+                        "urgency": "immediate" if factor_data["risk_level"] == "critical" else "routine"
+                    })
+
+    return {
+        "factors_count": len(factors),
+        "interventions": interventions
+    }
+
+
+@app.get("/api/v1/sdoh/adherence-risks")
+async def get_adherence_risk_factors():
+    """
+    Get SDOH factors that specifically impact medication adherence.
+    Use to identify patients at risk for non-adherence.
+    """
+    adherence_factors = []
+
+    for domain, factors in SDOH_FACTORS_DATABASE.items():
+        for factor_id, factor_data in factors.items():
+            if any(keyword in factor_data["clinical_impact"].lower() for keyword in
+                   ["medication", "adherence", "pharmacy", "insulin", "prescription"]):
+                adherence_factors.append({
+                    "factor_id": factor_id,
+                    "factor": factor_data["factor"],
+                    "domain": domain,
+                    "clinical_impact": factor_data["clinical_impact"],
+                    "screening_question": factor_data["screening_question"],
+                    "z_code": factor_data.get("icd10_code")
+                })
+
+    return {
+        "adherence_risk_factors": adherence_factors,
+        "note": "These SDOH factors directly impact medication adherence. Address before assuming non-compliance."
     }
 
 

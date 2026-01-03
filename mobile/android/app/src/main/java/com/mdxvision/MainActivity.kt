@@ -252,6 +252,15 @@ class MainActivity : AppCompatActivity() {
     private var postpartumChecklist: List<String> = emptyList()
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // SDOH INTEGRATION (Feature #84) - Social Determinants of Health
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var patientSdohFactors: MutableList<String> = mutableListOf()  // Factor IDs
+    private var sdohRiskLevel: String = "low"  // "low", "moderate", "high", "critical"
+    private var sdohAlerts: MutableList<JSONObject> = mutableListOf()
+    private var sdohInterventions: MutableList<JSONObject> = mutableListOf()
+    private var sdohScreeningComplete: Boolean = false
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
     // ═══════════════════════════════════════════════════════════════════════════
     private var isAmbientMode: Boolean = false  // Continuous background listening
@@ -18290,6 +18299,367 @@ SOFA Score: [X]
         speakFeedback("Postpartum depression screening guidance displayed. Always ask about thoughts of self-harm.")
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SDOH INTEGRATION (Feature #84) - Social Determinants of Health
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Add an SDOH factor for the current patient.
+     */
+    private fun addSdohFactor(factorId: String) {
+        if (patientSdohFactors.contains(factorId)) {
+            speakFeedback("$factorId already noted for this patient.")
+            return
+        }
+
+        patientSdohFactors.add(factorId)
+        val displayName = factorId.replace("_", " ").replaceFirstChar { it.uppercase() }
+        speakFeedback("Added SDOH factor: $displayName. Say SDOH screen to get interventions.")
+
+        // Auto-screen after adding factor
+        if (patientSdohFactors.size >= 2) {
+            performSdohScreening()
+        }
+    }
+
+    /**
+     * Clear all SDOH factors for current patient.
+     */
+    private fun clearSdohFactors() {
+        patientSdohFactors.clear()
+        sdohAlerts.clear()
+        sdohInterventions.clear()
+        sdohRiskLevel = "low"
+        sdohScreeningComplete = false
+        speakFeedback("SDOH factors cleared.")
+    }
+
+    /**
+     * Show current SDOH status.
+     */
+    private fun showSdohStatus() {
+        val sb = StringBuilder()
+        sb.appendLine("🏠 SOCIAL DETERMINANTS OF HEALTH")
+        sb.appendLine()
+
+        if (patientSdohFactors.isEmpty()) {
+            sb.appendLine("━━━ NO FACTORS IDENTIFIED ━━━")
+            sb.appendLine()
+            sb.appendLine("Say commands like:")
+            sb.appendLine("• \"Food insecurity\" - food access issues")
+            sb.appendLine("• \"Housing unstable\" - housing problems")
+            sb.appendLine("• \"Transportation barrier\" - no ride")
+            sb.appendLine("• \"No insurance\" - uninsured")
+            sb.appendLine("• \"Financial strain\" - money problems")
+            sb.appendLine("• \"Lives alone\" - social isolation")
+            sb.appendLine("• \"SDOH screen\" - full screening")
+        } else {
+            sb.appendLine("━━━ IDENTIFIED FACTORS ━━━")
+            sb.appendLine("Risk Level: ${sdohRiskLevel.uppercase()}")
+            sb.appendLine()
+
+            patientSdohFactors.forEachIndexed { index, factor ->
+                val displayName = factor.replace("_", " ").replaceFirstChar { it.uppercase() }
+                sb.appendLine("${index + 1}. $displayName")
+            }
+
+            sb.appendLine()
+            sb.appendLine("━━━ COMMANDS ━━━")
+            sb.appendLine("• \"SDOH interventions\" - see resources")
+            sb.appendLine("• \"Z codes\" - billing codes")
+            sb.appendLine("• \"Clear SDOH\" - reset factors")
+        }
+
+        showDataOverlay("SDOH Status", sb.toString())
+        if (patientSdohFactors.isEmpty()) {
+            speakFeedback("No SDOH factors identified. Use voice commands to note social determinants.")
+        } else {
+            speakFeedback("${patientSdohFactors.size} SDOH factors identified. Risk level: $sdohRiskLevel.")
+        }
+    }
+
+    /**
+     * Perform SDOH screening via backend.
+     */
+    private fun performSdohScreening() {
+        if (patientSdohFactors.isEmpty()) {
+            speakFeedback("No SDOH factors noted. Add factors first by saying things like food insecurity or housing unstable.")
+            return
+        }
+
+        val currentPatientId = currentPatientData?.optString("id") ?: "unknown"
+        speakFeedback("Screening for ${patientSdohFactors.size} social determinants.")
+
+        lifecycleScope.launch {
+            try {
+                val requestBody = JSONObject().apply {
+                    put("patient_id", currentPatientId)
+                    put("known_factors", org.json.JSONArray(patientSdohFactors))
+                }
+
+                val request = okhttp3.Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/sdoh/screen")
+                    .post(okhttp3.RequestBody.create(
+                        okhttp3.MediaType.parse("application/json"),
+                        requestBody.toString()
+                    ))
+                    .build()
+
+                withContext(Dispatchers.IO) {
+                    httpClient.newCall(request).execute()
+                }.use { response ->
+                    if (response.isSuccessful) {
+                        val result = JSONObject(response.body()?.string() ?: "{}")
+                        sdohRiskLevel = result.optString("overall_risk", "low")
+                        sdohScreeningComplete = true
+
+                        // Parse alerts
+                        sdohAlerts.clear()
+                        val alertsArray = result.optJSONArray("alerts")
+                        if (alertsArray != null) {
+                            for (i in 0 until alertsArray.length()) {
+                                sdohAlerts.add(alertsArray.getJSONObject(i))
+                            }
+                        }
+
+                        // Parse interventions
+                        sdohInterventions.clear()
+                        val interventionsArray = result.optJSONArray("recommended_interventions")
+                        if (interventionsArray != null) {
+                            for (i in 0 until interventionsArray.length()) {
+                                sdohInterventions.add(interventionsArray.getJSONObject(i))
+                            }
+                        }
+
+                        displaySdohScreeningResults(result)
+                    } else {
+                        speakFeedback("SDOH screening failed. Check connection.")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "SDOH screening error: ${e.message}")
+                speakFeedback("SDOH screening error.")
+            }
+        }
+    }
+
+    /**
+     * Display SDOH screening results.
+     */
+    private fun displaySdohScreeningResults(result: JSONObject) {
+        val sb = StringBuilder()
+        sb.appendLine("🏠 SDOH SCREENING RESULTS")
+        sb.appendLine()
+
+        val riskLevel = result.optString("overall_risk", "low")
+        val riskIcon = when (riskLevel) {
+            "critical" -> "🔴"
+            "high" -> "🟠"
+            "moderate" -> "🟡"
+            else -> "🟢"
+        }
+        sb.appendLine("$riskIcon Overall Risk: ${riskLevel.uppercase()}")
+        sb.appendLine()
+
+        // Show domain risks
+        val domainRisks = result.optJSONObject("domain_risks")
+        if (domainRisks != null && domainRisks.length() > 0) {
+            sb.appendLine("━━━ RISK BY DOMAIN ━━━")
+            domainRisks.keys().forEach { domain ->
+                val risk = domainRisks.optString(domain)
+                val icon = when (risk) {
+                    "critical" -> "🔴"
+                    "high" -> "🟠"
+                    "moderate" -> "🟡"
+                    else -> "🟢"
+                }
+                val displayDomain = domain.replace("_", " ").replaceFirstChar { it.uppercase() }
+                sb.appendLine("$icon $displayDomain: $risk")
+            }
+            sb.appendLine()
+        }
+
+        // Show identified factors with clinical impact
+        val factors = result.optJSONArray("identified_factors")
+        if (factors != null && factors.length() > 0) {
+            sb.appendLine("━━━ CLINICAL IMPACTS ━━━")
+            for (i in 0 until minOf(factors.length(), 3)) {
+                val factor = factors.getJSONObject(i)
+                val name = factor.optString("factor")
+                val impact = factor.optString("clinical_impact").take(80)
+                sb.appendLine("• $name")
+                sb.appendLine("  $impact...")
+                sb.appendLine()
+            }
+        }
+
+        // Show intervention count
+        val interventions = result.optJSONArray("recommended_interventions")
+        if (interventions != null && interventions.length() > 0) {
+            sb.appendLine("━━━ ${interventions.length()} INTERVENTIONS AVAILABLE ━━━")
+            sb.appendLine("Say \"SDOH interventions\" to view")
+        }
+
+        // Show Z-codes for billing
+        val zCodes = result.optJSONArray("z_codes_for_billing")
+        if (zCodes != null && zCodes.length() > 0) {
+            sb.appendLine()
+            sb.appendLine("━━━ Z-CODES FOR BILLING ━━━")
+            for (i in 0 until minOf(zCodes.length(), 4)) {
+                val code = zCodes.getJSONObject(i)
+                sb.appendLine("${code.optString("code")}: ${code.optString("description").take(30)}")
+            }
+        }
+
+        showDataOverlay("SDOH Results", sb.toString())
+
+        val factorCount = patientSdohFactors.size
+        val interventionCount = interventions?.length() ?: 0
+        speakFeedback("SDOH screening complete. $factorCount factors, risk level $riskLevel. $interventionCount interventions available.")
+    }
+
+    /**
+     * Show SDOH interventions.
+     */
+    private fun showSdohInterventions() {
+        if (sdohInterventions.isEmpty()) {
+            speakFeedback("No interventions available. Run SDOH screening first.")
+            return
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("📋 SDOH INTERVENTIONS")
+        sb.appendLine()
+
+        sdohInterventions.forEachIndexed { index, intervention ->
+            val factor = intervention.optString("factor")
+            val title = intervention.optString("title")
+            val description = intervention.optString("description")
+            val type = intervention.optString("intervention_type")
+
+            val typeIcon = when (type) {
+                "referral" -> "📞"
+                "resource" -> "📦"
+                "accommodation" -> "♿"
+                "care_modification" -> "💊"
+                else -> "•"
+            }
+
+            sb.appendLine("${index + 1}. $typeIcon $title")
+            sb.appendLine("   For: $factor")
+            sb.appendLine("   $description")
+            sb.appendLine()
+        }
+
+        showDataOverlay("SDOH Interventions", sb.toString())
+        speakFeedback("${sdohInterventions.size} interventions displayed. Includes referrals, resources, and care modifications.")
+    }
+
+    /**
+     * Show SDOH Z-codes for billing.
+     */
+    private fun showSdohZCodes() {
+        val sb = StringBuilder()
+        sb.appendLine("📋 SDOH Z-CODES FOR BILLING")
+        sb.appendLine()
+        sb.appendLine("━━━ COMMON SDOH CODES ━━━")
+        sb.appendLine()
+        sb.appendLine("Z59.41 - Food insecurity")
+        sb.appendLine("Z59.0  - Homelessness")
+        sb.appendLine("Z59.1  - Inadequate housing")
+        sb.appendLine("Z59.82 - Transportation insecurity")
+        sb.appendLine("Z59.86 - Financial insecurity")
+        sb.appendLine("Z59.7  - Insufficient social support")
+        sb.appendLine("Z55.0  - Low literacy")
+        sb.appendLine("Z60.4  - Social isolation")
+        sb.appendLine("Z60.5  - Discrimination")
+        sb.appendLine("Z63.0  - Partner relationship problem")
+        sb.appendLine("Z56.0  - Unemployment")
+        sb.appendLine("Z75.3  - Healthcare unavailability")
+        sb.appendLine()
+        sb.appendLine("━━━ PATIENT'S CODES ━━━")
+
+        if (patientSdohFactors.isNotEmpty()) {
+            val codeMap = mapOf(
+                "food_insecurity" to "Z59.41",
+                "housing_instability" to "Z59.0",
+                "transportation_barrier" to "Z59.82",
+                "financial_strain" to "Z59.86",
+                "no_insurance" to "Z59.7",
+                "low_health_literacy" to "Z55.0",
+                "social_isolation" to "Z60.4",
+                "domestic_violence" to "Z63.0",
+                "unemployment" to "Z56.0"
+            )
+            patientSdohFactors.forEach { factor ->
+                val code = codeMap[factor] ?: "Z59.9"
+                val name = factor.replace("_", " ").replaceFirstChar { it.uppercase() }
+                sb.appendLine("$code - $name")
+            }
+        } else {
+            sb.appendLine("No factors identified yet.")
+        }
+
+        showDataOverlay("SDOH Z-Codes", sb.toString())
+        speakFeedback("SDOH Z-codes displayed. Document these for care management billing.")
+    }
+
+    /**
+     * Show medication adherence risk factors.
+     */
+    private fun showAdherenceRiskFactors() {
+        val sb = StringBuilder()
+        sb.appendLine("💊 MEDICATION ADHERENCE BARRIERS")
+        sb.appendLine()
+        sb.appendLine("━━━ SDOH FACTORS AFFECTING ADHERENCE ━━━")
+        sb.appendLine()
+        sb.appendLine("🏠 Housing Instability")
+        sb.appendLine("   • No refrigeration for insulin")
+        sb.appendLine("   • Inconsistent address for refills")
+        sb.appendLine()
+        sb.appendLine("🍽️ Food Insecurity")
+        sb.appendLine("   • Can't take meds with food")
+        sb.appendLine("   • Hypoglycemia risk if skipping meals")
+        sb.appendLine()
+        sb.appendLine("💰 Financial Strain")
+        sb.appendLine("   • Choosing food vs medicine")
+        sb.appendLine("   • Pill splitting, skipping doses")
+        sb.appendLine()
+        sb.appendLine("🚗 Transportation Barrier")
+        sb.appendLine("   • Can't get to pharmacy")
+        sb.appendLine("   • Missed follow-up appointments")
+        sb.appendLine()
+        sb.appendLine("📖 Low Health Literacy")
+        sb.appendLine("   • Medication errors")
+        sb.appendLine("   • Doesn't understand instructions")
+        sb.appendLine()
+        sb.appendLine("━━━ PATIENT'S BARRIERS ━━━")
+
+        val adherenceFactors = patientSdohFactors.filter {
+            it in listOf("food_insecurity", "housing_instability", "financial_strain",
+                "transportation_barrier", "low_health_literacy")
+        }
+
+        if (adherenceFactors.isNotEmpty()) {
+            adherenceFactors.forEach { factor ->
+                val name = factor.replace("_", " ").replaceFirstChar { it.uppercase() }
+                sb.appendLine("⚠️ $name")
+            }
+            sb.appendLine()
+            sb.appendLine("Consider: Extended refills, mail-order,")
+            sb.appendLine("simplified regimens, patient assistance")
+        } else {
+            sb.appendLine("No adherence barriers identified.")
+        }
+
+        showDataOverlay("Adherence Risks", sb.toString())
+        if (adherenceFactors.isNotEmpty()) {
+            speakFeedback("${adherenceFactors.size} medication adherence barriers identified. Review before assuming non-compliance.")
+        } else {
+            speakFeedback("No medication adherence barriers currently identified for this patient.")
+        }
+    }
+
     // ============ Patient History Methods ============
 
     /**
@@ -21263,6 +21633,63 @@ SOFA Score: [X]
             lower.contains("postpartum depression") || lower.contains("ppd screen") ||
             lower.contains("edinburgh") || lower.contains("emotional check") -> {
                 showPostpartumDepressionScreen()
+            }
+            // ═══ SDOH INTEGRATION COMMANDS (Feature #84) ═══
+            lower.contains("sdoh") || lower.contains("social determinants") ||
+            lower.contains("social needs") || lower.contains("social screening") -> {
+                showSdohStatus()
+            }
+            lower.contains("food insecurity") || lower.contains("food insecure") ||
+            (lower.contains("food") && lower.contains("access")) -> {
+                addSdohFactor("food_insecurity")
+            }
+            lower.contains("housing") && (lower.contains("unstable") || lower.contains("insecure") ||
+            lower.contains("homeless") || lower.contains("problem")) -> {
+                addSdohFactor("housing_instability")
+            }
+            lower.contains("transportation") && (lower.contains("barrier") || lower.contains("issue") ||
+            lower.contains("problem") || lower.contains("no")) -> {
+                addSdohFactor("transportation_barrier")
+            }
+            lower.contains("no insurance") || lower.contains("uninsured") ||
+            (lower.contains("insurance") && lower.contains("problem")) -> {
+                addSdohFactor("no_insurance")
+            }
+            lower.contains("financial") && (lower.contains("strain") || lower.contains("hardship") ||
+            lower.contains("difficulty") || lower.contains("problem")) -> {
+                addSdohFactor("financial_strain")
+            }
+            lower.contains("health literacy") || (lower.contains("literacy") && lower.contains("low")) ||
+            lower.contains("can't read") || lower.contains("difficulty reading") -> {
+                addSdohFactor("low_health_literacy")
+            }
+            lower.contains("social isolation") || lower.contains("lives alone") ||
+            lower.contains("no support") || lower.contains("isolated") -> {
+                addSdohFactor("social_isolation")
+            }
+            lower.contains("domestic violence") || lower.contains("partner violence") ||
+            lower.contains("intimate partner") || lower.contains("unsafe relationship") -> {
+                addSdohFactor("domestic_violence")
+            }
+            lower.contains("sdoh screen") || lower.contains("screen for social") ||
+            lower.contains("social assessment") -> {
+                performSdohScreening()
+            }
+            lower.contains("sdoh interventions") || lower.contains("social interventions") ||
+            lower.contains("sdoh resources") || lower.contains("social resources") -> {
+                showSdohInterventions()
+            }
+            lower.contains("adherence risk") || lower.contains("adherence barriers") ||
+            lower.contains("compliance barriers") -> {
+                showAdherenceRiskFactors()
+            }
+            lower.contains("clear sdoh") || lower.contains("clear social") ||
+            lower.contains("reset sdoh") -> {
+                clearSdohFactors()
+            }
+            lower.contains("z codes") || lower.contains("sdoh codes") ||
+            lower.contains("social codes") -> {
+                showSdohZCodes()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {

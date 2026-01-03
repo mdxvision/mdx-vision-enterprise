@@ -478,7 +478,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 | **Implicit Bias Alerts** | Prompt for bias check during pain assessment documentation | DONE |
 | **Maternal Health Monitoring** | High-risk OB alerts, postpartum warning signs for Black mothers | DONE |
 | **Web Dashboard Equity UI** | Configure skin type, ancestry, cultural preferences | DONE |
-| **SDOH Integration** | Housing, food security, transportation - affects adherence | TODO |
+| **SDOH Integration** | Housing, food security, transportation - affects adherence | DONE |
 | **Health Literacy Assessment** | Adjust discharge instruction complexity | TODO |
 | **Interpreter Integration** | Real-time translation beyond UI language | TODO |
 
