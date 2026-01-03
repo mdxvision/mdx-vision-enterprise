@@ -1,6 +1,7 @@
 """
 MDx Vision - RAG (Retrieval-Augmented Generation) System
 Feature #88 - Reduces hallucination by grounding responses in medical sources
+Feature #89 - Knowledge Management for continuous improvement
 
 Architecture:
     Query → Vector Search → Retrieve Top-K Docs → Augment Prompt → Claude → Cited Response
@@ -10,15 +11,25 @@ Components:
     2. Medical Knowledge Base - Guidelines, PubMed abstracts, drug info
     3. Retrieval Pipeline - Semantic search for relevant context
     4. Citation Generator - Adds source references to responses
+    5. Knowledge Manager - Version control, updates, feedback loops (Feature #89)
 """
 
 import os
 import json
 import hashlib
-from typing import List, Dict, Optional, Tuple
-from datetime import datetime
-from dataclasses import dataclass, asdict
+import asyncio
+from typing import List, Dict, Optional, Tuple, Any
+from datetime import datetime, timedelta
+from dataclasses import dataclass, asdict, field
 from enum import Enum
+from pathlib import Path
+
+# HTTP client for external APIs
+try:
+    import httpx
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
 
 # ChromaDB for vector storage
 try:
@@ -54,6 +65,88 @@ class SourceType(str, Enum):
     CUSTOM = "custom"
 
 
+class GuidelineStatus(str, Enum):
+    """Status of a clinical guideline (Feature #89)"""
+    CURRENT = "current"           # Active, latest version
+    SUPERSEDED = "superseded"     # Replaced by newer version
+    DEPRECATED = "deprecated"     # No longer recommended
+    DRAFT = "draft"               # Pending review
+    ARCHIVED = "archived"         # Historical reference only
+
+
+class FeedbackRating(str, Enum):
+    """Clinician feedback ratings for citations (Feature #89)"""
+    VERY_HELPFUL = "very_helpful"
+    HELPFUL = "helpful"
+    NEUTRAL = "neutral"
+    NOT_HELPFUL = "not_helpful"
+    INCORRECT = "incorrect"
+
+
+@dataclass
+class GuidelineVersion:
+    """Tracks versions of clinical guidelines (Feature #89)"""
+    version_id: str
+    guideline_id: str
+    version_number: str           # e.g., "2024.1", "2023.2"
+    publication_date: str
+    effective_date: str
+    status: GuidelineStatus
+    supersedes: Optional[str] = None     # ID of version this replaces
+    superseded_by: Optional[str] = None  # ID of version that replaced this
+    change_summary: Optional[str] = None
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class CitationFeedback:
+    """Clinician feedback on citation quality (Feature #89)"""
+    feedback_id: str
+    document_id: str
+    query: str
+    rating: FeedbackRating
+    comment: Optional[str] = None
+    clinician_specialty: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class SpecialtyCollection:
+    """Specialty-specific knowledge collections (Feature #89)"""
+    specialty: str
+    document_ids: List[str]
+    description: str
+    curator: Optional[str] = None
+    last_updated: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class ConflictAlert:
+    """Alert when guidelines conflict (Feature #89)"""
+    alert_id: str
+    document_id_1: str
+    document_id_2: str
+    conflict_type: str           # "dosing", "recommendation", "contraindication"
+    description: str
+    severity: str                # "high", "medium", "low"
+    resolved: bool = False
+    resolution_notes: Optional[str] = None
+    detected_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class PubMedArticle:
+    """PubMed article data structure (Feature #89)"""
+    pmid: str
+    title: str
+    abstract: str
+    authors: List[str]
+    journal: str
+    publication_date: str
+    mesh_terms: List[str]
+    doi: Optional[str] = None
+
+
 @dataclass
 class MedicalDocument:
     """A document in the medical knowledge base"""
@@ -68,6 +161,14 @@ class MedicalDocument:
     keywords: Optional[List[str]] = None
     specialty: Optional[str] = None
     last_updated: Optional[str] = None
+    # Feature #89 - Knowledge Management fields
+    version: Optional[str] = None                  # Version string (e.g., "2024.1")
+    status: GuidelineStatus = GuidelineStatus.CURRENT
+    supersedes_id: Optional[str] = None            # ID of document this replaces
+    pmid: Optional[str] = None                     # PubMed ID if applicable
+    usage_count: int = 0                           # Times retrieved
+    helpful_count: int = 0                         # Positive feedback count
+    not_helpful_count: int = 0                     # Negative feedback count
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -75,7 +176,17 @@ class MedicalDocument:
     @classmethod
     def from_dict(cls, data: dict) -> 'MedicalDocument':
         data['source_type'] = SourceType(data['source_type'])
+        if 'status' in data and isinstance(data['status'], str):
+            data['status'] = GuidelineStatus(data['status'])
         return cls(**data)
+
+    @property
+    def quality_score(self) -> float:
+        """Calculate quality score based on feedback (Feature #89)"""
+        total = self.helpful_count + self.not_helpful_count
+        if total == 0:
+            return 0.5  # Neutral if no feedback
+        return self.helpful_count / total
 
 
 @dataclass
@@ -984,3 +1095,640 @@ def add_custom_document(
     )
 
     return rag_engine.add_document(doc)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KNOWLEDGE MANAGER (Feature #89)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class KnowledgeManager:
+    """
+    Manages the medical knowledge base lifecycle:
+    - Version control for guidelines
+    - PubMed article ingestion
+    - Citation feedback tracking
+    - Specialty collections
+    - Conflict detection
+    """
+
+    def __init__(self, rag_engine: RAGEngine, data_dir: str = "./data/knowledge"):
+        self.rag_engine = rag_engine
+        self.data_dir = Path(data_dir)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        # Storage files
+        self.versions_file = self.data_dir / "versions.json"
+        self.feedback_file = self.data_dir / "feedback.json"
+        self.collections_file = self.data_dir / "collections.json"
+        self.conflicts_file = self.data_dir / "conflicts.json"
+        self.analytics_file = self.data_dir / "analytics.json"
+
+        # Load existing data
+        self.versions: Dict[str, GuidelineVersion] = self._load_versions()
+        self.feedback: List[CitationFeedback] = self._load_feedback()
+        self.collections: Dict[str, SpecialtyCollection] = self._load_collections()
+        self.conflicts: List[ConflictAlert] = self._load_conflicts()
+        self.analytics: Dict[str, Any] = self._load_analytics()
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # PERSISTENCE
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def _load_versions(self) -> Dict[str, GuidelineVersion]:
+        if self.versions_file.exists():
+            with open(self.versions_file) as f:
+                data = json.load(f)
+                return {k: GuidelineVersion(**v) for k, v in data.items()}
+        return {}
+
+    def _save_versions(self):
+        with open(self.versions_file, 'w') as f:
+            json.dump({k: asdict(v) for k, v in self.versions.items()}, f, indent=2)
+
+    def _load_feedback(self) -> List[CitationFeedback]:
+        if self.feedback_file.exists():
+            with open(self.feedback_file) as f:
+                return [CitationFeedback(**item) for item in json.load(f)]
+        return []
+
+    def _save_feedback(self):
+        with open(self.feedback_file, 'w') as f:
+            json.dump([asdict(fb) for fb in self.feedback], f, indent=2)
+
+    def _load_collections(self) -> Dict[str, SpecialtyCollection]:
+        if self.collections_file.exists():
+            with open(self.collections_file) as f:
+                data = json.load(f)
+                return {k: SpecialtyCollection(**v) for k, v in data.items()}
+        return {}
+
+    def _save_collections(self):
+        with open(self.collections_file, 'w') as f:
+            json.dump({k: asdict(v) for k, v in self.collections.items()}, f, indent=2)
+
+    def _load_conflicts(self) -> List[ConflictAlert]:
+        if self.conflicts_file.exists():
+            with open(self.conflicts_file) as f:
+                return [ConflictAlert(**item) for item in json.load(f)]
+        return []
+
+    def _save_conflicts(self):
+        with open(self.conflicts_file, 'w') as f:
+            json.dump([asdict(c) for c in self.conflicts], f, indent=2)
+
+    def _load_analytics(self) -> Dict[str, Any]:
+        if self.analytics_file.exists():
+            with open(self.analytics_file) as f:
+                return json.load(f)
+        return {
+            "total_queries": 0,
+            "total_retrievals": 0,
+            "feedback_count": 0,
+            "top_documents": {},
+            "specialty_usage": {},
+            "last_updated": datetime.now().isoformat()
+        }
+
+    def _save_analytics(self):
+        self.analytics["last_updated"] = datetime.now().isoformat()
+        with open(self.analytics_file, 'w') as f:
+            json.dump(self.analytics, f, indent=2)
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # GUIDELINE VERSIONING
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def add_guideline_version(
+        self,
+        guideline_id: str,
+        version_number: str,
+        publication_date: str,
+        content: str,
+        title: str,
+        source_name: str,
+        supersedes_id: Optional[str] = None,
+        change_summary: Optional[str] = None,
+        **kwargs
+    ) -> Tuple[bool, str]:
+        """
+        Add a new version of a clinical guideline.
+        Automatically deprecates the previous version.
+        """
+        version_id = f"{guideline_id}-v{version_number}"
+
+        # Mark previous version as superseded
+        if supersedes_id and supersedes_id in self.versions:
+            old_version = self.versions[supersedes_id]
+            old_version.status = GuidelineStatus.SUPERSEDED
+            old_version.superseded_by = version_id
+
+        # Create new version
+        new_version = GuidelineVersion(
+            version_id=version_id,
+            guideline_id=guideline_id,
+            version_number=version_number,
+            publication_date=publication_date,
+            effective_date=datetime.now().strftime("%Y-%m-%d"),
+            status=GuidelineStatus.CURRENT,
+            supersedes=supersedes_id,
+            change_summary=change_summary
+        )
+
+        self.versions[version_id] = new_version
+        self._save_versions()
+
+        # Add document to RAG with version info
+        doc = MedicalDocument(
+            id=version_id,
+            title=f"{title} (v{version_number})",
+            content=content,
+            source_type=SourceType.CLINICAL_GUIDELINE,
+            source_name=source_name,
+            publication_date=publication_date,
+            version=version_number,
+            status=GuidelineStatus.CURRENT,
+            supersedes_id=supersedes_id,
+            **kwargs
+        )
+
+        success = self.rag_engine.add_document(doc)
+        return success, version_id
+
+    def deprecate_guideline(self, document_id: str, reason: str) -> bool:
+        """Mark a guideline as deprecated (no longer recommended)."""
+        if document_id in self.versions:
+            self.versions[document_id].status = GuidelineStatus.DEPRECATED
+            self._save_versions()
+            return True
+        return False
+
+    def get_current_version(self, guideline_id: str) -> Optional[str]:
+        """Get the current version ID for a guideline."""
+        for version_id, version in self.versions.items():
+            if version.guideline_id == guideline_id and version.status == GuidelineStatus.CURRENT:
+                return version_id
+        return None
+
+    def get_version_history(self, guideline_id: str) -> List[GuidelineVersion]:
+        """Get version history for a guideline."""
+        return [
+            v for v in self.versions.values()
+            if v.guideline_id == guideline_id
+        ]
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # PUBMED INGESTION
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    async def search_pubmed(
+        self,
+        query: str,
+        max_results: int = 10,
+        min_date: Optional[str] = None
+    ) -> List[PubMedArticle]:
+        """
+        Search PubMed for relevant articles.
+        Uses NCBI E-utilities API (free, no API key required for <3 requests/sec).
+        """
+        if not HTTPX_AVAILABLE:
+            print("httpx not available for PubMed API calls")
+            return []
+
+        base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+
+        # Build date filter
+        date_filter = ""
+        if min_date:
+            date_filter = f"&mindate={min_date}&datetype=pdat"
+
+        # Search for PMIDs
+        search_url = f"{base_url}/esearch.fcgi?db=pubmed&term={query}&retmax={max_results}&retmode=json{date_filter}"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                search_response = await client.get(search_url)
+                search_data = search_response.json()
+                pmids = search_data.get("esearchresult", {}).get("idlist", [])
+
+                if not pmids:
+                    return []
+
+                # Fetch article details
+                fetch_url = f"{base_url}/efetch.fcgi?db=pubmed&id={','.join(pmids)}&retmode=xml"
+                fetch_response = await client.get(fetch_url)
+
+                # Parse XML (simplified - in production use proper XML parser)
+                articles = self._parse_pubmed_xml(fetch_response.text, pmids)
+                return articles
+
+            except Exception as e:
+                print(f"PubMed search error: {e}")
+                return []
+
+    def _parse_pubmed_xml(self, xml_text: str, pmids: List[str]) -> List[PubMedArticle]:
+        """Parse PubMed XML response (simplified version)."""
+        # For production, use xml.etree.ElementTree or lxml
+        # This is a simplified regex-based parser for demo
+        import re
+        articles = []
+
+        for pmid in pmids:
+            try:
+                # Extract title
+                title_match = re.search(r'<ArticleTitle>([^<]+)</ArticleTitle>', xml_text)
+                title = title_match.group(1) if title_match else "Unknown Title"
+
+                # Extract abstract
+                abstract_match = re.search(r'<AbstractText[^>]*>([^<]+)</AbstractText>', xml_text)
+                abstract = abstract_match.group(1) if abstract_match else ""
+
+                # Extract journal
+                journal_match = re.search(r'<Title>([^<]+)</Title>', xml_text)
+                journal = journal_match.group(1) if journal_match else "Unknown Journal"
+
+                articles.append(PubMedArticle(
+                    pmid=pmid,
+                    title=title,
+                    abstract=abstract,
+                    authors=[],
+                    journal=journal,
+                    publication_date=datetime.now().strftime("%Y"),
+                    mesh_terms=[]
+                ))
+            except Exception:
+                continue
+
+        return articles
+
+    async def ingest_pubmed_articles(
+        self,
+        query: str,
+        max_articles: int = 10,
+        specialty: Optional[str] = None
+    ) -> Tuple[int, List[str]]:
+        """
+        Search PubMed and ingest relevant articles into the knowledge base.
+
+        Returns:
+            Tuple of (count of articles ingested, list of PMIDs)
+        """
+        articles = await self.search_pubmed(query, max_articles)
+
+        ingested_pmids = []
+        for article in articles:
+            if not article.abstract:
+                continue
+
+            doc = MedicalDocument(
+                id=f"pubmed-{article.pmid}",
+                title=article.title,
+                content=f"{article.title}\n\n{article.abstract}",
+                source_type=SourceType.PUBMED_ABSTRACT,
+                source_name=article.journal,
+                source_url=f"https://pubmed.ncbi.nlm.nih.gov/{article.pmid}/",
+                publication_date=article.publication_date,
+                pmid=article.pmid,
+                specialty=specialty,
+                keywords=article.mesh_terms
+            )
+
+            if self.rag_engine.add_document(doc):
+                ingested_pmids.append(article.pmid)
+
+        return len(ingested_pmids), ingested_pmids
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # CITATION FEEDBACK
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def record_feedback(
+        self,
+        document_id: str,
+        query: str,
+        rating: str,
+        comment: Optional[str] = None,
+        clinician_specialty: Optional[str] = None
+    ) -> str:
+        """Record clinician feedback on a citation's helpfulness."""
+        feedback_id = hashlib.md5(
+            f"{document_id}{query}{datetime.now().isoformat()}".encode()
+        ).hexdigest()[:12]
+
+        feedback = CitationFeedback(
+            feedback_id=feedback_id,
+            document_id=document_id,
+            query=query,
+            rating=FeedbackRating(rating),
+            comment=comment,
+            clinician_specialty=clinician_specialty
+        )
+
+        self.feedback.append(feedback)
+        self._save_feedback()
+
+        # Update analytics
+        self.analytics["feedback_count"] = len(self.feedback)
+        self._save_analytics()
+
+        return feedback_id
+
+    def get_document_feedback_summary(self, document_id: str) -> Dict:
+        """Get feedback summary for a document."""
+        doc_feedback = [f for f in self.feedback if f.document_id == document_id]
+
+        ratings_count = {}
+        for fb in doc_feedback:
+            rating = fb.rating.value
+            ratings_count[rating] = ratings_count.get(rating, 0) + 1
+
+        helpful = ratings_count.get("very_helpful", 0) + ratings_count.get("helpful", 0)
+        not_helpful = ratings_count.get("not_helpful", 0) + ratings_count.get("incorrect", 0)
+        total = len(doc_feedback)
+
+        return {
+            "document_id": document_id,
+            "total_feedback": total,
+            "ratings_breakdown": ratings_count,
+            "helpful_percentage": (helpful / total * 100) if total > 0 else 0,
+            "quality_score": helpful / (helpful + not_helpful) if (helpful + not_helpful) > 0 else 0.5
+        }
+
+    def get_low_quality_documents(self, threshold: float = 0.4) -> List[Dict]:
+        """Find documents with low quality scores that may need review."""
+        # Group feedback by document
+        doc_feedback = {}
+        for fb in self.feedback:
+            if fb.document_id not in doc_feedback:
+                doc_feedback[fb.document_id] = []
+            doc_feedback[fb.document_id].append(fb)
+
+        low_quality = []
+        for doc_id, feedbacks in doc_feedback.items():
+            summary = self.get_document_feedback_summary(doc_id)
+            if summary["quality_score"] < threshold and summary["total_feedback"] >= 3:
+                low_quality.append(summary)
+
+        return sorted(low_quality, key=lambda x: x["quality_score"])
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # SPECIALTY COLLECTIONS
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def create_specialty_collection(
+        self,
+        specialty: str,
+        description: str,
+        document_ids: Optional[List[str]] = None,
+        curator: Optional[str] = None
+    ) -> bool:
+        """Create a specialty-specific knowledge collection."""
+        collection = SpecialtyCollection(
+            specialty=specialty,
+            document_ids=document_ids or [],
+            description=description,
+            curator=curator
+        )
+
+        self.collections[specialty] = collection
+        self._save_collections()
+        return True
+
+    def add_to_collection(self, specialty: str, document_id: str) -> bool:
+        """Add a document to a specialty collection."""
+        if specialty not in self.collections:
+            return False
+
+        if document_id not in self.collections[specialty].document_ids:
+            self.collections[specialty].document_ids.append(document_id)
+            self.collections[specialty].last_updated = datetime.now().isoformat()
+            self._save_collections()
+
+        return True
+
+    def get_collection_documents(self, specialty: str) -> List[str]:
+        """Get all document IDs in a specialty collection."""
+        if specialty not in self.collections:
+            return []
+        return self.collections[specialty].document_ids
+
+    def list_collections(self) -> List[Dict]:
+        """List all specialty collections."""
+        return [
+            {
+                "specialty": c.specialty,
+                "document_count": len(c.document_ids),
+                "description": c.description,
+                "curator": c.curator,
+                "last_updated": c.last_updated
+            }
+            for c in self.collections.values()
+        ]
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # CONFLICT DETECTION
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def detect_conflicts(self, document_id: str) -> List[ConflictAlert]:
+        """
+        Detect potential conflicts between a document and existing guidelines.
+        Uses keyword matching for common conflict patterns.
+        """
+        if not self.rag_engine.initialized:
+            return []
+
+        # Get the new document
+        contexts = self.rag_engine.retrieve(document_id, n_results=1)
+        if not contexts:
+            return []
+
+        new_doc = contexts[0].document
+
+        # Conflict detection patterns (simplified)
+        conflict_keywords = {
+            "dosing": ["mg", "dose", "daily", "twice", "times a day", "loading dose"],
+            "contraindication": ["contraindicated", "avoid", "do not use", "not recommended"],
+            "recommendation": ["first-line", "preferred", "recommended", "should not", "should"]
+        }
+
+        new_conflicts = []
+
+        # Get similar documents
+        similar_docs = self.rag_engine.retrieve(new_doc.content[:500], n_results=5)
+
+        for ctx in similar_docs:
+            if ctx.document.id == document_id:
+                continue
+
+            # Check for potential conflicts
+            for conflict_type, keywords in conflict_keywords.items():
+                new_has_keyword = any(kw in new_doc.content.lower() for kw in keywords)
+                old_has_keyword = any(kw in ctx.document.content.lower() for kw in keywords)
+
+                if new_has_keyword and old_has_keyword:
+                    # Potential conflict detected
+                    alert = ConflictAlert(
+                        alert_id=hashlib.md5(
+                            f"{document_id}{ctx.document.id}{conflict_type}".encode()
+                        ).hexdigest()[:12],
+                        document_id_1=document_id,
+                        document_id_2=ctx.document.id,
+                        conflict_type=conflict_type,
+                        description=f"Potential {conflict_type} conflict between {new_doc.title} and {ctx.document.title}",
+                        severity="medium"
+                    )
+                    new_conflicts.append(alert)
+
+        # Save detected conflicts
+        self.conflicts.extend(new_conflicts)
+        self._save_conflicts()
+
+        return new_conflicts
+
+    def get_unresolved_conflicts(self) -> List[ConflictAlert]:
+        """Get all unresolved conflict alerts."""
+        return [c for c in self.conflicts if not c.resolved]
+
+    def resolve_conflict(self, alert_id: str, resolution_notes: str) -> bool:
+        """Mark a conflict as resolved."""
+        for conflict in self.conflicts:
+            if conflict.alert_id == alert_id:
+                conflict.resolved = True
+                conflict.resolution_notes = resolution_notes
+                self._save_conflicts()
+                return True
+        return False
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # ANALYTICS
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    def record_retrieval(self, document_ids: List[str], specialty: Optional[str] = None):
+        """Record document retrievals for analytics."""
+        self.analytics["total_retrievals"] += 1
+
+        for doc_id in document_ids:
+            if doc_id not in self.analytics["top_documents"]:
+                self.analytics["top_documents"][doc_id] = 0
+            self.analytics["top_documents"][doc_id] += 1
+
+        if specialty:
+            if specialty not in self.analytics["specialty_usage"]:
+                self.analytics["specialty_usage"][specialty] = 0
+            self.analytics["specialty_usage"][specialty] += 1
+
+        self._save_analytics()
+
+    def get_analytics_summary(self) -> Dict:
+        """Get analytics summary."""
+        # Sort top documents by usage
+        sorted_docs = sorted(
+            self.analytics["top_documents"].items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:10]
+
+        return {
+            "total_queries": self.analytics.get("total_queries", 0),
+            "total_retrievals": self.analytics.get("total_retrievals", 0),
+            "feedback_count": len(self.feedback),
+            "top_10_documents": sorted_docs,
+            "specialty_usage": self.analytics.get("specialty_usage", {}),
+            "version_count": len(self.versions),
+            "collection_count": len(self.collections),
+            "unresolved_conflicts": len(self.get_unresolved_conflicts()),
+            "last_updated": self.analytics.get("last_updated")
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # SCHEDULED UPDATES
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    async def check_for_updates(self) -> List[Dict]:
+        """
+        Check for guideline updates from known sources.
+        Returns list of potential updates found.
+        """
+        updates_found = []
+
+        # Define update check queries for each major source
+        update_queries = {
+            "AHA": "AHA guidelines 2024 2025 cardiology",
+            "ADA": "ADA diabetes standards of care 2024 2025",
+            "GOLD": "GOLD COPD guidelines 2024 2025",
+            "IDSA": "IDSA infectious disease guidelines 2024 2025",
+            "USPSTF": "USPSTF recommendations 2024 2025"
+        }
+
+        for source, query in update_queries.items():
+            articles = await self.search_pubmed(query, max_results=5)
+            for article in articles:
+                # Check if we already have this article
+                existing = self.rag_engine.retrieve(article.title, n_results=1)
+                if not existing or existing[0].relevance_score < 0.9:
+                    updates_found.append({
+                        "source": source,
+                        "title": article.title,
+                        "pmid": article.pmid,
+                        "publication_date": article.publication_date,
+                        "action_needed": "review_and_ingest"
+                    })
+
+        return updates_found
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GLOBAL KNOWLEDGE MANAGER INSTANCE (Feature #89)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+knowledge_manager = KnowledgeManager(rag_engine)
+
+
+# Helper functions for API
+def record_citation_feedback(
+    document_id: str,
+    query: str,
+    rating: str,
+    comment: Optional[str] = None,
+    clinician_specialty: Optional[str] = None
+) -> str:
+    """Record feedback on a citation."""
+    return knowledge_manager.record_feedback(
+        document_id, query, rating, comment, clinician_specialty
+    )
+
+
+def add_guideline_version(
+    guideline_id: str,
+    version_number: str,
+    publication_date: str,
+    content: str,
+    title: str,
+    source_name: str,
+    supersedes_id: Optional[str] = None,
+    change_summary: Optional[str] = None,
+    **kwargs
+) -> Tuple[bool, str]:
+    """Add a new guideline version."""
+    return knowledge_manager.add_guideline_version(
+        guideline_id, version_number, publication_date, content,
+        title, source_name, supersedes_id, change_summary, **kwargs
+    )
+
+
+async def ingest_from_pubmed(
+    query: str,
+    max_articles: int = 10,
+    specialty: Optional[str] = None
+) -> Tuple[int, List[str]]:
+    """Ingest articles from PubMed."""
+    return await knowledge_manager.ingest_pubmed_articles(query, max_articles, specialty)
+
+
+def get_knowledge_analytics() -> Dict:
+    """Get knowledge base analytics."""
+    return knowledge_manager.get_analytics_summary()
+
+
+def get_unresolved_conflicts() -> List[Dict]:
+    """Get unresolved conflict alerts."""
+    return [asdict(c) for c in knowledge_manager.get_unresolved_conflicts()]

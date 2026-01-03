@@ -5031,6 +5031,450 @@ async def rag_list_guidelines():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# RAG KNOWLEDGE MANAGEMENT ENDPOINTS (Feature #89)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# RSS feed URLs for medical guideline updates
+MEDICAL_RSS_FEEDS = {
+    "pubmed_cardiology": "https://pubmed.ncbi.nlm.nih.gov/rss/search/1234567890/?limit=10&utm_campaign=pubmed-2&fc=20231201000000",
+    "aha_guidelines": "https://www.ahajournals.org/action/showFeed?type=etoc&feed=rss&jc=circ",
+    "cdc_mmwr": "https://www.cdc.gov/mmwr/rss/mmwr_all.xml",
+    "nejm_current": "https://www.nejm.org/action/showFeed?jc=nejm&type=etoc&feed=rss",
+    "jama_latest": "https://jamanetwork.com/rss/site_3/67.xml"
+}
+
+
+class FeedbackRequest(BaseModel):
+    document_id: str
+    query: str
+    rating: str  # very_helpful, helpful, neutral, not_helpful, incorrect
+    comment: Optional[str] = None
+    clinician_specialty: Optional[str] = None
+
+
+class GuidelineVersionRequest(BaseModel):
+    guideline_id: str
+    version_number: str
+    publication_date: str
+    content: str
+    title: str
+    source_name: str
+    supersedes_id: Optional[str] = None
+    change_summary: Optional[str] = None
+    specialty: Optional[str] = None
+    keywords: Optional[List[str]] = None
+
+
+class PubMedIngestRequest(BaseModel):
+    query: str
+    max_articles: int = 10
+    specialty: Optional[str] = None
+
+
+class CollectionRequest(BaseModel):
+    specialty: str
+    description: str
+    document_ids: Optional[List[str]] = None
+    curator: Optional[str] = None
+
+
+class ConflictResolutionRequest(BaseModel):
+    resolution_notes: str
+
+
+@app.get("/api/v1/knowledge/analytics")
+async def knowledge_analytics():
+    """
+    Get analytics about knowledge base usage.
+    Feature #89 - RAG Knowledge Management.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import get_knowledge_analytics
+    return get_knowledge_analytics()
+
+
+@app.post("/api/v1/knowledge/feedback")
+async def submit_citation_feedback(request: FeedbackRequest):
+    """
+    Submit clinician feedback on a citation's helpfulness.
+    Feature #89 - Improves retrieval quality over time.
+
+    Ratings: very_helpful, helpful, neutral, not_helpful, incorrect
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import record_citation_feedback
+
+    valid_ratings = ["very_helpful", "helpful", "neutral", "not_helpful", "incorrect"]
+    if request.rating not in valid_ratings:
+        raise HTTPException(status_code=400, detail=f"Invalid rating. Must be one of: {valid_ratings}")
+
+    feedback_id = record_citation_feedback(
+        document_id=request.document_id,
+        query=request.query,
+        rating=request.rating,
+        comment=request.comment,
+        clinician_specialty=request.clinician_specialty
+    )
+
+    # HIPAA audit log
+    log_phi_access(
+        action="CITATION_FEEDBACK",
+        patient_id="N/A",
+        details=f"Feedback submitted for document {request.document_id}: {request.rating}"
+    )
+
+    return {"feedback_id": feedback_id, "status": "recorded"}
+
+
+@app.get("/api/v1/knowledge/feedback/{document_id}")
+async def get_document_feedback(document_id: str):
+    """
+    Get feedback summary for a specific document.
+    Feature #89 - Quality scoring for guidelines.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+    return knowledge_manager.get_document_feedback_summary(document_id)
+
+
+@app.get("/api/v1/knowledge/low-quality")
+async def get_low_quality_documents(threshold: float = 0.4):
+    """
+    Get documents with low quality scores that may need review.
+    Feature #89 - Continuous improvement.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+    return {"documents": knowledge_manager.get_low_quality_documents(threshold)}
+
+
+@app.post("/api/v1/knowledge/version")
+async def add_new_guideline_version(request: GuidelineVersionRequest):
+    """
+    Add a new version of a clinical guideline.
+    Automatically supersedes the previous version.
+    Feature #89 - Guideline versioning.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import add_guideline_version
+
+    success, version_id = add_guideline_version(
+        guideline_id=request.guideline_id,
+        version_number=request.version_number,
+        publication_date=request.publication_date,
+        content=request.content,
+        title=request.title,
+        source_name=request.source_name,
+        supersedes_id=request.supersedes_id,
+        change_summary=request.change_summary,
+        specialty=request.specialty,
+        keywords=request.keywords
+    )
+
+    if success:
+        log_phi_access(
+            action="GUIDELINE_VERSION_ADDED",
+            patient_id="N/A",
+            details=f"New guideline version: {version_id}"
+        )
+        return {"version_id": version_id, "status": "added"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to add guideline version")
+
+
+@app.get("/api/v1/knowledge/versions/{guideline_id}")
+async def get_guideline_versions(guideline_id: str):
+    """
+    Get version history for a guideline.
+    Feature #89 - Guideline versioning.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+    from dataclasses import asdict
+
+    versions = knowledge_manager.get_version_history(guideline_id)
+    return {
+        "guideline_id": guideline_id,
+        "versions": [asdict(v) for v in versions]
+    }
+
+
+@app.post("/api/v1/knowledge/pubmed/ingest")
+async def ingest_from_pubmed(request: PubMedIngestRequest):
+    """
+    Search PubMed and ingest relevant articles.
+    Feature #89 - Automated knowledge ingestion.
+
+    Uses NCBI E-utilities API (free, no API key for <3 req/sec).
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import ingest_from_pubmed as do_ingest
+
+    count, pmids = await do_ingest(
+        query=request.query,
+        max_articles=request.max_articles,
+        specialty=request.specialty
+    )
+
+    log_phi_access(
+        action="PUBMED_INGEST",
+        patient_id="N/A",
+        details=f"Ingested {count} articles for query: {request.query}"
+    )
+
+    return {
+        "articles_ingested": count,
+        "pmids": pmids,
+        "query": request.query
+    }
+
+
+@app.post("/api/v1/knowledge/pubmed/search")
+async def search_pubmed(query: str, max_results: int = 10):
+    """
+    Search PubMed without ingesting (preview mode).
+    Feature #89 - PubMed integration.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+
+    articles = await knowledge_manager.search_pubmed(query, max_results)
+    return {
+        "query": query,
+        "results": [
+            {
+                "pmid": a.pmid,
+                "title": a.title,
+                "journal": a.journal,
+                "abstract_preview": a.abstract[:200] + "..." if len(a.abstract) > 200 else a.abstract
+            }
+            for a in articles
+        ]
+    }
+
+
+@app.post("/api/v1/knowledge/collections")
+async def create_specialty_collection(request: CollectionRequest):
+    """
+    Create a specialty-specific knowledge collection.
+    Feature #89 - Specialty collections.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+
+    success = knowledge_manager.create_specialty_collection(
+        specialty=request.specialty,
+        description=request.description,
+        document_ids=request.document_ids,
+        curator=request.curator
+    )
+
+    if success:
+        return {"specialty": request.specialty, "status": "created"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create collection")
+
+
+@app.get("/api/v1/knowledge/collections")
+async def list_specialty_collections():
+    """
+    List all specialty collections.
+    Feature #89 - Specialty collections.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+    return {"collections": knowledge_manager.list_collections()}
+
+
+@app.post("/api/v1/knowledge/collections/{specialty}/add/{document_id}")
+async def add_to_collection(specialty: str, document_id: str):
+    """
+    Add a document to a specialty collection.
+    Feature #89 - Specialty collections.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+
+    success = knowledge_manager.add_to_collection(specialty, document_id)
+    if success:
+        return {"status": "added", "specialty": specialty, "document_id": document_id}
+    else:
+        raise HTTPException(status_code=404, detail=f"Collection '{specialty}' not found")
+
+
+@app.get("/api/v1/knowledge/conflicts")
+async def get_conflicts(resolved: bool = False):
+    """
+    Get guideline conflict alerts.
+    Feature #89 - Conflict detection.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager, get_unresolved_conflicts
+
+    if resolved:
+        from dataclasses import asdict
+        all_conflicts = [asdict(c) for c in knowledge_manager.conflicts]
+        return {"conflicts": all_conflicts}
+    else:
+        return {"conflicts": get_unresolved_conflicts()}
+
+
+@app.post("/api/v1/knowledge/conflicts/{alert_id}/resolve")
+async def resolve_conflict(alert_id: str, request: ConflictResolutionRequest):
+    """
+    Mark a conflict as resolved.
+    Feature #89 - Conflict management.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+
+    success = knowledge_manager.resolve_conflict(alert_id, request.resolution_notes)
+    if success:
+        return {"status": "resolved", "alert_id": alert_id}
+    else:
+        raise HTTPException(status_code=404, detail=f"Conflict '{alert_id}' not found")
+
+
+@app.post("/api/v1/knowledge/conflicts/detect/{document_id}")
+async def detect_document_conflicts(document_id: str):
+    """
+    Detect potential conflicts for a specific document.
+    Feature #89 - Conflict detection.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+    from dataclasses import asdict
+
+    conflicts = knowledge_manager.detect_conflicts(document_id)
+    return {
+        "document_id": document_id,
+        "conflicts_detected": len(conflicts),
+        "conflicts": [asdict(c) for c in conflicts]
+    }
+
+
+@app.get("/api/v1/knowledge/check-updates")
+async def check_for_guideline_updates():
+    """
+    Check for updates to clinical guidelines from PubMed.
+    Feature #89 - Automated updates.
+
+    Queries major guideline sources (AHA, ADA, GOLD, etc.) for new publications.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+
+    updates = await knowledge_manager.check_for_updates()
+    return {
+        "updates_found": len(updates),
+        "updates": updates
+    }
+
+
+@app.get("/api/v1/knowledge/rss-feeds")
+async def list_rss_feeds():
+    """
+    List available RSS feeds for medical updates.
+    Feature #89 - RSS feed monitoring.
+    """
+    return {
+        "feeds": [
+            {"name": name, "url": url, "status": "active"}
+            for name, url in MEDICAL_RSS_FEEDS.items()
+        ],
+        "note": "RSS feeds are checked periodically for new guidelines. Use /api/v1/knowledge/rss-feeds/{feed_name}/check to manually check a feed."
+    }
+
+
+@app.get("/api/v1/knowledge/rss-feeds/{feed_name}/check")
+async def check_rss_feed(feed_name: str):
+    """
+    Check an RSS feed for new articles.
+    Feature #89 - RSS feed monitoring.
+    """
+    if feed_name not in MEDICAL_RSS_FEEDS:
+        raise HTTPException(status_code=404, detail=f"Feed '{feed_name}' not found")
+
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(MEDICAL_RSS_FEEDS[feed_name])
+            # Parse RSS (simplified - in production use feedparser)
+            content = response.text
+
+            # Count items (simplified)
+            import re
+            items = re.findall(r'<item>.*?</item>', content, re.DOTALL)
+
+            return {
+                "feed": feed_name,
+                "url": MEDICAL_RSS_FEEDS[feed_name],
+                "items_found": len(items),
+                "status": "success",
+                "note": "Use /api/v1/knowledge/pubmed/ingest to add relevant articles"
+            }
+    except Exception as e:
+        return {
+            "feed": feed_name,
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@app.post("/api/v1/knowledge/deprecate/{document_id}")
+async def deprecate_guideline(document_id: str, reason: str):
+    """
+    Mark a guideline as deprecated (no longer recommended).
+    Feature #89 - Guideline lifecycle management.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager
+
+    success = knowledge_manager.deprecate_guideline(document_id, reason)
+    if success:
+        log_phi_access(
+            action="GUIDELINE_DEPRECATED",
+            patient_id="N/A",
+            details=f"Deprecated: {document_id}, Reason: {reason}"
+        )
+        return {"status": "deprecated", "document_id": document_id, "reason": reason}
+    else:
+        raise HTTPException(status_code=404, detail=f"Guideline '{document_id}' not found")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # RACIAL MEDICINE AWARENESS ENDPOINTS (Feature #79)
 # ═══════════════════════════════════════════════════════════════════════════════
 

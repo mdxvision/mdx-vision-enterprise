@@ -612,7 +612,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 
 ## Summary
 
-MDx Vision has a strong technical foundation (88 features). The next phase is about:
+MDx Vision has a strong technical foundation (89 features). The next phase is about:
 
 1. **Compliance**: Get the paperwork and audits in place for enterprise sales
 2. **Differentiation**: Build RAG-based AI that doesn't hallucinate
