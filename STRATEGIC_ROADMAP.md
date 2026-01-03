@@ -479,7 +479,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 | **Maternal Health Monitoring** | High-risk OB alerts, postpartum warning signs for Black mothers | DONE |
 | **Web Dashboard Equity UI** | Configure skin type, ancestry, cultural preferences | DONE |
 | **SDOH Integration** | Housing, food security, transportation - affects adherence | DONE |
-| **Health Literacy Assessment** | Adjust discharge instruction complexity | TODO |
+| **Health Literacy Assessment** | Adjust discharge instruction complexity | DONE |
 | **Interpreter Integration** | Real-time translation beyond UI language | TODO |
 
 ### Health Equity TODOs

@@ -261,6 +261,14 @@ class MainActivity : AppCompatActivity() {
     private var sdohScreeningComplete: Boolean = false
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // HEALTH LITERACY ASSESSMENT (Feature #85)
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var patientLiteracyLevel: String = "adequate"  // "inadequate", "marginal", "adequate", "proficient"
+    private var literacyAssessed: Boolean = false
+    private var teachBackRequired: Boolean = false
+    private var currentDischargeCondition: String? = null
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
     // ═══════════════════════════════════════════════════════════════════════════
     private var isAmbientMode: Boolean = false  // Continuous background listening
@@ -18660,6 +18668,347 @@ SOFA Score: [X]
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // HEALTH LITERACY ASSESSMENT (Feature #85)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Show current literacy status.
+     */
+    private fun showLiteracyStatus() {
+        val sb = StringBuilder()
+        sb.appendLine("📖 HEALTH LITERACY STATUS")
+        sb.appendLine()
+
+        val levelIcon = when (patientLiteracyLevel) {
+            "inadequate" -> "🔴"
+            "marginal" -> "🟡"
+            "adequate" -> "🟢"
+            else -> "🟢"
+        }
+        sb.appendLine("$levelIcon Level: ${patientLiteracyLevel.uppercase()}")
+        sb.appendLine("Assessed: ${if (literacyAssessed) "Yes" else "No"}")
+        sb.appendLine("Teach-back required: ${if (teachBackRequired) "Yes" else "No"}")
+        sb.appendLine()
+
+        val readingLevel = when (patientLiteracyLevel) {
+            "inadequate" -> "3rd-5th grade (pictures only)"
+            "marginal" -> "5th-6th grade (simple words)"
+            "adequate" -> "7th-8th grade (standard)"
+            else -> "9th-12th grade (medical OK)"
+        }
+        sb.appendLine("Recommended materials: $readingLevel")
+        sb.appendLine()
+        sb.appendLine("━━━ COMMANDS ━━━")
+        sb.appendLine("• \"Literacy screen\" - ask screening question")
+        sb.appendLine("• \"Low literacy\" / \"Marginal\" - set level")
+        sb.appendLine("• \"Diabetes instructions\" - simplified d/c")
+        sb.appendLine("• \"Teach back\" - verification checklist")
+        sb.appendLine("• \"Plain language\" - medical terms guide")
+
+        showDataOverlay("Literacy Status", sb.toString())
+        speakFeedback("Literacy level: $patientLiteracyLevel. ${if (teachBackRequired) "Teach-back required." else ""}")
+    }
+
+    /**
+     * Show the screening question for health literacy.
+     */
+    private fun showLiteracyScreeningQuestion() {
+        val sb = StringBuilder()
+        sb.appendLine("📖 HEALTH LITERACY SCREENING")
+        sb.appendLine()
+        sb.appendLine("━━━ ASK THIS QUESTION ━━━")
+        sb.appendLine()
+        sb.appendLine("\"How confident are you filling")
+        sb.appendLine(" out medical forms by yourself?\"")
+        sb.appendLine()
+        sb.appendLine("━━━ INTERPRET RESPONSE ━━━")
+        sb.appendLine()
+        sb.appendLine("🟢 \"Extremely\" = Proficient")
+        sb.appendLine("🟢 \"Quite a bit\" = Adequate")
+        sb.appendLine("🟡 \"Somewhat\" = Marginal")
+        sb.appendLine("🟡 \"A little bit\" = Marginal")
+        sb.appendLine("🔴 \"Not at all\" = Inadequate")
+        sb.appendLine()
+        sb.appendLine("━━━ SAY TO RECORD ━━━")
+        sb.appendLine("• \"Low literacy\" for inadequate")
+        sb.appendLine("• \"Marginal literacy\" for marginal")
+        sb.appendLine("• \"Adequate literacy\" for adequate")
+
+        showDataOverlay("Literacy Screen", sb.toString())
+        speakFeedback("Ask the patient: How confident are you filling out medical forms by yourself? Then say the result.")
+    }
+
+    /**
+     * Set literacy level.
+     */
+    private fun setLiteracyLevel(level: String) {
+        patientLiteracyLevel = level
+        literacyAssessed = true
+        teachBackRequired = level in listOf("inadequate", "marginal")
+
+        val displayLevel = level.replaceFirstChar { it.uppercase() }
+        speakFeedback("Literacy level set to $displayLevel. ${if (teachBackRequired) "Teach-back required for all instructions." else ""}")
+
+        // Show accommodations
+        showLiteracyAccommodations()
+    }
+
+    /**
+     * Show literacy accommodations.
+     */
+    private fun showLiteracyAccommodations() {
+        val sb = StringBuilder()
+        sb.appendLine("📖 LITERACY ACCOMMODATIONS")
+        sb.appendLine()
+        sb.appendLine("Level: ${patientLiteracyLevel.uppercase()}")
+        sb.appendLine()
+
+        when (patientLiteracyLevel) {
+            "inadequate" -> {
+                sb.appendLine("━━━ REQUIRED ACCOMMODATIONS ━━━")
+                sb.appendLine("🖼️ Use pictures and diagrams ONLY")
+                sb.appendLine("1️⃣ Limit to 1-2 key messages")
+                sb.appendLine("✅ Teach-back for EVERY instruction")
+                sb.appendLine("🗣️ Verbal instructions only")
+                sb.appendLine("💊 Pill organizers with pictures")
+                sb.appendLine("📅 More frequent follow-ups")
+                sb.appendLine("👨‍👩‍👧 Involve caregiver in education")
+                sb.appendLine("🎬 Use video if available")
+                sb.appendLine("❌ Avoid written materials")
+            }
+            "marginal" -> {
+                sb.appendLine("━━━ RECOMMENDED ACCOMMODATIONS ━━━")
+                sb.appendLine("📄 Use 5th grade materials")
+                sb.appendLine("🗣️ Supplement written with verbal")
+                sb.appendLine("• Use bullet points, not paragraphs")
+                sb.appendLine("🖼️ Include pictures with text")
+                sb.appendLine("🔆 Highlight key action items")
+                sb.appendLine("✅ Teach-back for critical points")
+                sb.appendLine("3️⃣ Limit to 3-4 key messages")
+                sb.appendLine("🔤 Large font (14pt minimum)")
+                sb.appendLine("❌ Avoid medical jargon")
+            }
+            else -> {
+                sb.appendLine("━━━ STANDARD ACCOMMODATIONS ━━━")
+                sb.appendLine("📄 7th-8th grade materials OK")
+                sb.appendLine("📖 Define medical terms used")
+                sb.appendLine("📋 Use headers and organization")
+                sb.appendLine("❓ Offer to answer questions")
+                sb.appendLine("✅ Confirm key points understood")
+            }
+        }
+
+        showDataOverlay("Accommodations", sb.toString())
+    }
+
+    /**
+     * Show simplified instructions.
+     */
+    private fun showSimplifiedInstructions() {
+        if (currentDischargeCondition == null) {
+            val sb = StringBuilder()
+            sb.appendLine("📋 SIMPLIFIED DISCHARGE TEMPLATES")
+            sb.appendLine()
+            sb.appendLine("Say one of these to get instructions:")
+            sb.appendLine()
+            sb.appendLine("• \"Diabetes instructions\"")
+            sb.appendLine("• \"Heart failure instructions\"")
+            sb.appendLine("• \"Blood pressure instructions\"")
+            sb.appendLine("• \"Blood thinner instructions\"")
+            sb.appendLine("• \"Antibiotic instructions\"")
+            sb.appendLine("• \"Post surgery instructions\"")
+
+            showDataOverlay("Instructions", sb.toString())
+            speakFeedback("Say the condition name to get simplified discharge instructions.")
+        } else {
+            showSimplifiedInstructionsFor(currentDischargeCondition!!)
+        }
+    }
+
+    /**
+     * Show simplified instructions for a specific condition.
+     */
+    private fun showSimplifiedInstructionsFor(condition: String) {
+        currentDischargeCondition = condition
+        val sb = StringBuilder()
+
+        when (condition) {
+            "diabetes" -> {
+                sb.appendLine("🩺 DIABETES CARE (Simplified)")
+                sb.appendLine()
+                sb.appendLine("━━━ TELL THE PATIENT ━━━")
+                sb.appendLine()
+                sb.appendLine("✓ Check your blood sugar every day")
+                sb.appendLine("✓ Eat healthy foods")
+                sb.appendLine("✓ Take medicine same time daily")
+                sb.appendLine()
+                sb.appendLine("━━━ RED FLAGS ━━━")
+                sb.appendLine("🔴 Sugar over 300 → Call doctor")
+                sb.appendLine("🔴 Sugar under 70 → Eat sugar, call")
+                sb.appendLine("🔴 Very thirsty + confused → ER")
+                sb.appendLine()
+                sb.appendLine("━━━ TEACH-BACK ━━━")
+                sb.appendLine("\"Show me how you check sugar\"")
+                sb.appendLine("\"When do you take medicine?\"")
+                sb.appendLine("\"What if sugar is too low?\"")
+            }
+            "heart_failure" -> {
+                sb.appendLine("❤️ HEART FAILURE CARE (Simplified)")
+                sb.appendLine()
+                sb.appendLine("━━━ TELL THE PATIENT ━━━")
+                sb.appendLine()
+                sb.appendLine("✓ Weigh yourself every morning")
+                sb.appendLine("✓ Write down your weight")
+                sb.appendLine("✓ Eat less salt (no added salt)")
+                sb.appendLine("✓ Take water pill in morning")
+                sb.appendLine()
+                sb.appendLine("━━━ RED FLAGS ━━━")
+                sb.appendLine("🔴 Gained 3 lbs in 1 day → Call")
+                sb.appendLine("🔴 Gained 5 lbs in 1 week → Call")
+                sb.appendLine("🔴 Can't breathe lying down → ER")
+                sb.appendLine()
+                sb.appendLine("━━━ TEACH-BACK ━━━")
+                sb.appendLine("\"When do you weigh yourself?\"")
+                sb.appendLine("\"What foods have lots of salt?\"")
+            }
+            "hypertension" -> {
+                sb.appendLine("💊 HIGH BLOOD PRESSURE (Simplified)")
+                sb.appendLine()
+                sb.appendLine("━━━ TELL THE PATIENT ━━━")
+                sb.appendLine()
+                sb.appendLine("✓ Take pill same time every day")
+                sb.appendLine("✓ Don't skip doses")
+                sb.appendLine("✓ Check BP at home")
+                sb.appendLine("✓ Eat less salt")
+                sb.appendLine()
+                sb.appendLine("━━━ RED FLAGS ━━━")
+                sb.appendLine("🔴 BP over 180/120 → ER")
+                sb.appendLine("🔴 Severe headache + high BP → ER")
+                sb.appendLine("🔴 Chest pain → Call 911")
+            }
+            "anticoagulation" -> {
+                sb.appendLine("💉 BLOOD THINNER (Simplified)")
+                sb.appendLine()
+                sb.appendLine("━━━ TELL THE PATIENT ━━━")
+                sb.appendLine()
+                sb.appendLine("✓ Take at same time every day")
+                sb.appendLine("✓ Don't skip doses")
+                sb.appendLine("✓ Watch for bleeding/bruising")
+                sb.appendLine("✓ Keep eating same foods")
+                sb.appendLine()
+                sb.appendLine("━━━ RED FLAGS ━━━")
+                sb.appendLine("🔴 Bleeding won't stop → ER")
+                sb.appendLine("🔴 Blood in urine/stool → Call")
+                sb.appendLine("🔴 Bad headache → ER")
+            }
+            "infection" -> {
+                sb.appendLine("💊 ANTIBIOTIC INSTRUCTIONS (Simplified)")
+                sb.appendLine()
+                sb.appendLine("━━━ TELL THE PATIENT ━━━")
+                sb.appendLine()
+                sb.appendLine("✓ Take ALL the pills")
+                sb.appendLine("✓ Don't stop when you feel better")
+                sb.appendLine("✓ Take with food if stomach upset")
+                sb.appendLine("✓ Finish the whole bottle")
+                sb.appendLine()
+                sb.appendLine("━━━ RED FLAGS ━━━")
+                sb.appendLine("🔴 Fever coming back → Call")
+                sb.appendLine("🔴 Rash or hives → Stop, call")
+                sb.appendLine("🔴 Getting worse → Call")
+            }
+            "post_surgery" -> {
+                sb.appendLine("🏥 AFTER SURGERY (Simplified)")
+                sb.appendLine()
+                sb.appendLine("━━━ TELL THE PATIENT ━━━")
+                sb.appendLine()
+                sb.appendLine("✓ Keep wound clean and dry")
+                sb.appendLine("✓ Take pain medicine as needed")
+                sb.appendLine("✓ Don't lift heavy things")
+                sb.appendLine("✓ Walk a little bit each day")
+                sb.appendLine()
+                sb.appendLine("━━━ RED FLAGS ━━━")
+                sb.appendLine("🔴 Wound red/hot/oozing → Call")
+                sb.appendLine("🔴 Fever over 101 → Call")
+                sb.appendLine("🔴 Wound opens up → ER")
+            }
+            else -> {
+                sb.appendLine("No template for: $condition")
+            }
+        }
+
+        showDataOverlay("$condition Instructions", sb.toString())
+        speakFeedback("Simplified ${condition.replace("_", " ")} instructions displayed. Use teach-back to verify understanding.")
+    }
+
+    /**
+     * Show teach-back checklist.
+     */
+    private fun showTeachBackChecklist() {
+        val sb = StringBuilder()
+        sb.appendLine("✅ TEACH-BACK CHECKLIST")
+        sb.appendLine()
+        sb.appendLine("\"Tell me in your own words...\"")
+        sb.appendLine()
+        sb.appendLine("━━━ MEDICATIONS ━━━")
+        sb.appendLine("□ Name of each medication")
+        sb.appendLine("□ What each medication is for")
+        sb.appendLine("□ When to take each medication")
+        sb.appendLine("□ How to take (with food, etc.)")
+        sb.appendLine("□ What if you miss a dose")
+        sb.appendLine("□ Side effects to watch for")
+        sb.appendLine()
+        sb.appendLine("━━━ WARNING SIGNS ━━━")
+        sb.appendLine("□ When to call the doctor")
+        sb.appendLine("□ When to go to the ER")
+        sb.appendLine("□ Who to call with questions")
+        sb.appendLine()
+        sb.appendLine("━━━ FOLLOW-UP ━━━")
+        sb.appendLine("□ When is next appointment")
+        sb.appendLine("□ What tests before appointment")
+        sb.appendLine()
+        sb.appendLine("If patient can't repeat back,")
+        sb.appendLine("re-teach with simpler language.")
+
+        showDataOverlay("Teach-Back", sb.toString())
+        speakFeedback("Teach-back checklist displayed. Ask patient to repeat each item in their own words.")
+    }
+
+    /**
+     * Show plain language guide.
+     */
+    private fun showPlainLanguageGuide() {
+        val sb = StringBuilder()
+        sb.appendLine("📖 PLAIN LANGUAGE GUIDE")
+        sb.appendLine()
+        sb.appendLine("━━━ SAY THIS ━━━    ━━━ NOT THIS ━━━")
+        sb.appendLine()
+        sb.appendLine("High blood pressure → Hypertension")
+        sb.appendLine("Fast heart rate → Tachycardia")
+        sb.appendLine("Trouble breathing → Dyspnea")
+        sb.appendLine("Swelling → Edema")
+        sb.appendLine("Sick to stomach → Nausea")
+        sb.appendLine("Throwing up → Emesis")
+        sb.appendLine("Fever → Pyrexia")
+        sb.appendLine("Long-lasting → Chronic")
+        sb.appendLine("Sudden/new → Acute")
+        sb.appendLine("What to expect → Prognosis")
+        sb.appendLine("Prevention → Prophylaxis")
+        sb.appendLine("Blood thinner → Anticoagulant")
+        sb.appendLine("Water pill → Diuretic")
+        sb.appendLine()
+        sb.appendLine("━━━ MEDICATION TIMING ━━━")
+        sb.appendLine("Once a day → QD")
+        sb.appendLine("Twice a day → BID")
+        sb.appendLine("Three times → TID")
+        sb.appendLine("As needed → PRN")
+        sb.appendLine("At bedtime → HS")
+        sb.appendLine("Nothing to eat → NPO")
+
+        showDataOverlay("Plain Language", sb.toString())
+        speakFeedback("Plain language guide displayed. Use simple words instead of medical terms.")
+    }
+
     // ============ Patient History Methods ============
 
     /**
@@ -21690,6 +22039,66 @@ SOFA Score: [X]
             lower.contains("z codes") || lower.contains("sdoh codes") ||
             lower.contains("social codes") -> {
                 showSdohZCodes()
+            }
+            // ═══ HEALTH LITERACY ASSESSMENT COMMANDS (Feature #85) ═══
+            lower.contains("literacy") || lower.contains("reading level") ||
+            lower.contains("health literacy") -> {
+                showLiteracyStatus()
+            }
+            lower.contains("literacy screen") || lower.contains("assess literacy") ||
+            lower.contains("literacy assessment") -> {
+                showLiteracyScreeningQuestion()
+            }
+            lower.contains("low literacy") || lower.contains("can't read") ||
+            lower.contains("inadequate literacy") -> {
+                setLiteracyLevel("inadequate")
+            }
+            lower.contains("marginal literacy") || lower.contains("some difficulty") ||
+            lower.contains("a little confident") -> {
+                setLiteracyLevel("marginal")
+            }
+            lower.contains("adequate literacy") || lower.contains("confident") ||
+            lower.contains("good literacy") -> {
+                setLiteracyLevel("adequate")
+            }
+            lower.contains("proficient") || lower.contains("very confident") ||
+            lower.contains("high literacy") -> {
+                setLiteracyLevel("proficient")
+            }
+            lower.contains("simplify") && (lower.contains("discharge") || lower.contains("instructions")) -> {
+                // Simplify discharge instructions for current condition
+                showSimplifiedInstructions()
+            }
+            lower.contains("diabetes instructions") || lower.contains("diabetes discharge") -> {
+                showSimplifiedInstructionsFor("diabetes")
+            }
+            lower.contains("heart failure instructions") || lower.contains("chf instructions") -> {
+                showSimplifiedInstructionsFor("heart_failure")
+            }
+            lower.contains("blood pressure instructions") || lower.contains("hypertension instructions") -> {
+                showSimplifiedInstructionsFor("hypertension")
+            }
+            lower.contains("blood thinner instructions") || lower.contains("anticoagulation instructions") ||
+            lower.contains("warfarin instructions") -> {
+                showSimplifiedInstructionsFor("anticoagulation")
+            }
+            lower.contains("antibiotic instructions") || lower.contains("infection instructions") -> {
+                showSimplifiedInstructionsFor("infection")
+            }
+            lower.contains("surgery instructions") || lower.contains("post op instructions") ||
+            lower.contains("post surgery") -> {
+                showSimplifiedInstructionsFor("post_surgery")
+            }
+            lower.contains("teach back") || lower.contains("teach-back") ||
+            lower.contains("verify understanding") -> {
+                showTeachBackChecklist()
+            }
+            lower.contains("plain language") || lower.contains("medical terms") ||
+            lower.contains("translate term") -> {
+                showPlainLanguageGuide()
+            }
+            lower.contains("literacy accommodations") || lower.contains("accommodations") -> {
+                showLiteracyAccommodations()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {

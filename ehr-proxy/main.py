@@ -1362,6 +1362,80 @@ class SDOHScreeningResponse(BaseModel):
     timestamp: str
 
 
+# HEALTH LITERACY ASSESSMENT (Feature #85)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class LiteracyLevel(str, Enum):
+    """Health literacy levels based on validated assessments"""
+    INADEQUATE = "inadequate"  # Below 6th grade, needs pictures/verbal
+    MARGINAL = "marginal"  # 6th-8th grade, simplified language
+    ADEQUATE = "adequate"  # High school level, standard instructions
+    PROFICIENT = "proficient"  # College level, can handle medical terminology
+
+
+class ReadingLevel(str, Enum):
+    """Reading grade levels for materials"""
+    GRADE_3_5 = "3-5"  # Very simple, picture-based
+    GRADE_5_6 = "5-6"  # Simple sentences, basic words
+    GRADE_7_8 = "7-8"  # Standard simplified
+    GRADE_9_12 = "9-12"  # Standard materials
+    COLLEGE = "college"  # Medical terminology acceptable
+
+
+class LiteracyScreeningMethod(str, Enum):
+    """Validated health literacy screening methods"""
+    BRIEF = "brief"  # Single question: "How confident filling out forms?"
+    REALM_SF = "realm_sf"  # Rapid Estimate of Adult Literacy in Medicine - Short Form
+    NVS = "nvs"  # Newest Vital Sign - 6 questions about nutrition label
+    SILS = "sils"  # Single Item Literacy Screener
+    OBSERVED = "observed"  # Clinician observation
+
+
+class TeachBackStatus(str, Enum):
+    """Status of teach-back verification"""
+    NOT_DONE = "not_done"
+    PARTIAL = "partial"  # Understood some concepts
+    COMPLETE = "complete"  # Successfully demonstrated understanding
+    NEEDS_REPEAT = "needs_repeat"  # Failed, needs re-education
+
+
+class LiteracyAssessment(BaseModel):
+    """Patient health literacy assessment result"""
+    patient_id: str
+    literacy_level: LiteracyLevel
+    recommended_reading_level: ReadingLevel
+    screening_method: LiteracyScreeningMethod
+    confidence_score: Optional[float] = None  # 0-1 confidence in assessment
+    risk_factors: List[str] = []  # Factors that may indicate low literacy
+    accommodations: List[str] = []  # Recommended accommodations
+    teach_back_required: bool = True
+    assessed_at: str
+
+
+class DischargeInstruction(BaseModel):
+    """Discharge instruction at specific reading level"""
+    topic: str
+    standard_text: str  # Original medical language
+    simplified_text: str  # Plain language version
+    reading_level: ReadingLevel
+    key_points: List[str] = []  # Bullet points to emphasize
+    visual_aids: List[str] = []  # Recommended images/diagrams
+    teach_back_questions: List[str] = []  # Questions to verify understanding
+
+
+class LiteracyAdaptedInstructions(BaseModel):
+    """Complete set of literacy-adapted patient instructions"""
+    patient_id: str
+    literacy_level: LiteracyLevel
+    reading_level: ReadingLevel
+    instructions: List[DischargeInstruction] = []
+    general_tips: List[str] = []  # Tips for clinician communication
+    red_flags_simplified: List[str] = []  # When to return, in plain language
+    medication_instructions: List[Dict[str, str]] = []  # Simplified med instructions
+    follow_up_simplified: str = ""  # Plain language follow-up info
+    teach_back_checklist: List[str] = []  # Items to verify understanding
+
+
 # Billing/Claim Models (Feature #71)
 class ClaimStatus(str, Enum):
     """Claim lifecycle status"""
@@ -6105,6 +6179,537 @@ async def get_adherence_risk_factors():
     return {
         "adherence_risk_factors": adherence_factors,
         "note": "These SDOH factors directly impact medication adherence. Address before assuming non-compliance."
+    }
+
+
+# HEALTH LITERACY ASSESSMENT (Feature #85)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Health literacy risk indicators
+LITERACY_RISK_INDICATORS = [
+    "Asks to take materials home to read",
+    "Identifies pills by color/shape not name",
+    "Unable to name medications",
+    "Frequently misses appointments",
+    "Forms consistently incomplete or incorrect",
+    "Brings someone to read for them",
+    "Says 'I forgot my glasses'",
+    "Avoids reading in front of clinician",
+    "Educational attainment below high school",
+    "Primary language not English",
+    "Elderly with no recent formal education",
+    "Previous medication errors",
+    "Difficulty following multi-step instructions"
+]
+
+# Accommodations by literacy level
+LITERACY_ACCOMMODATIONS = {
+    "inadequate": [
+        "Use pictures and diagrams exclusively",
+        "Limit to 1-2 key messages per visit",
+        "Use teach-back for every instruction",
+        "Provide verbal-only instructions",
+        "Use pill organizers with pictures",
+        "Schedule more frequent follow-ups",
+        "Involve family/caregiver in education",
+        "Use video instructions if available",
+        "Avoid written materials entirely",
+        "Use 'chunk and check' method"
+    ],
+    "marginal": [
+        "Use 5th grade reading level materials",
+        "Supplement written with verbal",
+        "Use bullet points, not paragraphs",
+        "Include pictures with text",
+        "Highlight key action items",
+        "Use teach-back for critical points",
+        "Limit to 3-4 key messages",
+        "Use large font (14pt minimum)",
+        "Avoid medical jargon completely"
+    ],
+    "adequate": [
+        "Use 7th-8th grade materials",
+        "Define any medical terms used",
+        "Use headers and organization",
+        "Offer to answer questions",
+        "Confirm understanding of key points",
+        "Standard discharge instructions acceptable"
+    ],
+    "proficient": [
+        "Standard medical materials acceptable",
+        "Can handle medical terminology",
+        "Written instructions sufficient",
+        "May appreciate detailed explanations"
+    ]
+}
+
+# Plain language translations for common medical terms
+PLAIN_LANGUAGE_DICTIONARY = {
+    "hypertension": "high blood pressure",
+    "hypotension": "low blood pressure",
+    "tachycardia": "fast heart rate",
+    "bradycardia": "slow heart rate",
+    "dyspnea": "trouble breathing",
+    "edema": "swelling",
+    "nausea": "sick to your stomach",
+    "emesis": "throwing up",
+    "pyrexia": "fever",
+    "afebrile": "no fever",
+    "ambulatory": "able to walk",
+    "bilateral": "both sides",
+    "benign": "not cancer",
+    "malignant": "cancer",
+    "chronic": "long-lasting",
+    "acute": "sudden or new",
+    "prognosis": "what to expect",
+    "diagnosis": "what is wrong",
+    "contraindicated": "should not use",
+    "prophylaxis": "prevention",
+    "subcutaneous": "under the skin",
+    "oral": "by mouth",
+    "topical": "on the skin",
+    "analgesic": "pain medicine",
+    "antibiotic": "medicine to fight infection",
+    "anticoagulant": "blood thinner",
+    "diuretic": "water pill",
+    "antihypertensive": "blood pressure medicine",
+    "NPO": "nothing to eat or drink",
+    "PRN": "as needed",
+    "BID": "twice a day",
+    "TID": "three times a day",
+    "QID": "four times a day",
+    "QD": "once a day",
+    "HS": "at bedtime",
+    "stat": "right away",
+    "CBC": "blood count test",
+    "BMP": "blood chemistry test",
+    "CT": "special X-ray scan",
+    "MRI": "special scan using magnets",
+    "EKG": "heart rhythm test"
+}
+
+# Simplified discharge templates by condition
+SIMPLIFIED_DISCHARGE_TEMPLATES = {
+    "diabetes": {
+        "topic": "Diabetes Care",
+        "standard": "Monitor blood glucose levels and maintain glycemic control through dietary modifications and medication adherence.",
+        "simplified": "Check your blood sugar every day. Eat healthy foods. Take your medicine the same time every day.",
+        "key_points": [
+            "Check blood sugar as told",
+            "Take medicine same time daily",
+            "Eat regular meals",
+            "Call if blood sugar very high or very low"
+        ],
+        "teach_back": [
+            "Show me how you check your blood sugar",
+            "When do you take your diabetes medicine?",
+            "What do you do if your blood sugar is too low?"
+        ],
+        "red_flags": [
+            "Blood sugar over 300 - call doctor",
+            "Blood sugar under 70 - eat sugar, call if not better",
+            "Very thirsty, peeing a lot, confused - go to ER"
+        ]
+    },
+    "heart_failure": {
+        "topic": "Heart Failure Care",
+        "standard": "Monitor daily weights, restrict sodium intake to <2g/day, and take diuretics as prescribed for fluid management.",
+        "simplified": "Weigh yourself every morning. Eat less salt. Take your water pill every day.",
+        "key_points": [
+            "Weigh yourself every morning",
+            "Write down your weight",
+            "Eat less salt (no added salt)",
+            "Take water pill in the morning"
+        ],
+        "teach_back": [
+            "When do you weigh yourself?",
+            "What foods have a lot of salt?",
+            "When should you call about your weight?"
+        ],
+        "red_flags": [
+            "Gained 3 pounds in one day - call doctor",
+            "Gained 5 pounds in one week - call doctor",
+            "Can't breathe lying down - go to ER",
+            "Legs very swollen - call doctor"
+        ]
+    },
+    "hypertension": {
+        "topic": "High Blood Pressure",
+        "standard": "Take antihypertensive medications as prescribed and monitor blood pressure regularly.",
+        "simplified": "Take your blood pressure pill every day at the same time. Check your blood pressure at home.",
+        "key_points": [
+            "Take pill same time every day",
+            "Don't skip doses",
+            "Check blood pressure at home",
+            "Eat less salt"
+        ],
+        "teach_back": [
+            "What time do you take your blood pressure pill?",
+            "What happens if you forget a dose?",
+            "What blood pressure number is too high?"
+        ],
+        "red_flags": [
+            "Blood pressure over 180/120 - go to ER",
+            "Severe headache with high BP - go to ER",
+            "Chest pain - call 911"
+        ]
+    },
+    "anticoagulation": {
+        "topic": "Blood Thinner Medicine",
+        "standard": "Take anticoagulant as prescribed, monitor for bleeding, and maintain consistent vitamin K intake.",
+        "simplified": "Take your blood thinner at the same time every day. Watch for bleeding. Eat the same amount of green vegetables every week.",
+        "key_points": [
+            "Take at same time every day",
+            "Don't skip doses",
+            "Watch for bleeding or bruising",
+            "Keep eating the same foods"
+        ],
+        "teach_back": [
+            "What time do you take your blood thinner?",
+            "What should you watch for?",
+            "What do you do if you cut yourself?"
+        ],
+        "red_flags": [
+            "Bleeding that won't stop - go to ER",
+            "Blood in urine or stool - call doctor",
+            "Bad headache or confusion - go to ER",
+            "Throwing up blood - call 911"
+        ]
+    },
+    "infection": {
+        "topic": "Taking Antibiotics",
+        "standard": "Complete the full course of antibiotics as prescribed, even if symptoms resolve.",
+        "simplified": "Take ALL your antibiotic pills, even if you feel better. Don't stop early.",
+        "key_points": [
+            "Take all the pills",
+            "Don't stop when you feel better",
+            "Take with food if it upsets stomach",
+            "Finish the whole bottle"
+        ],
+        "teach_back": [
+            "How many pills do you have left?",
+            "When do you stop taking them?",
+            "What if you feel better before they're gone?"
+        ],
+        "red_flags": [
+            "Fever coming back - call doctor",
+            "Rash or hives - stop and call doctor",
+            "Getting worse not better - call doctor"
+        ]
+    },
+    "post_surgery": {
+        "topic": "After Your Surgery",
+        "standard": "Monitor surgical site for signs of infection, take pain medication as needed, and follow activity restrictions.",
+        "simplified": "Keep your wound clean and dry. Take pain medicine if you need it. Rest and don't lift heavy things.",
+        "key_points": [
+            "Keep wound clean and dry",
+            "Take pain medicine as needed",
+            "Don't lift heavy things",
+            "Walk a little bit each day"
+        ],
+        "teach_back": [
+            "How do you keep your wound clean?",
+            "When can you take a shower?",
+            "What does an infected wound look like?"
+        ],
+        "red_flags": [
+            "Wound red, hot, or oozing - call doctor",
+            "Fever over 101 - call doctor",
+            "Wound opens up - go to ER",
+            "Pain getting much worse - call doctor"
+        ]
+    }
+}
+
+# Teach-back checklist items
+TEACH_BACK_CHECKLIST = {
+    "medications": [
+        "Name of each medication",
+        "What each medication is for",
+        "When to take each medication",
+        "How to take (with food, etc.)",
+        "What to do if a dose is missed",
+        "Side effects to watch for"
+    ],
+    "warning_signs": [
+        "What symptoms require calling the doctor",
+        "What symptoms require going to ER",
+        "Who to call with questions"
+    ],
+    "follow_up": [
+        "When and where is next appointment",
+        "What tests need to be done before appointment",
+        "How to reschedule if needed"
+    ],
+    "activity": [
+        "Activity restrictions",
+        "When to resume normal activities",
+        "Diet changes if any"
+    ]
+}
+
+
+def assess_literacy_level(
+    confidence_response: Optional[str] = None,
+    observed_indicators: List[str] = [],
+    known_sdoh_factors: List[str] = []
+) -> LiteracyAssessment:
+    """
+    Assess health literacy based on screening and observations.
+    Uses BRIEF screening (single confidence question) plus observed indicators.
+    """
+    risk_factors = []
+    literacy_level = LiteracyLevel.ADEQUATE
+    confidence_score = 0.5
+
+    # Process confidence response (BRIEF/SILS screening)
+    if confidence_response:
+        response_lower = confidence_response.lower()
+        if any(word in response_lower for word in ["not at all", "never", "not confident", "no"]):
+            literacy_level = LiteracyLevel.INADEQUATE
+            confidence_score = 0.8
+            risk_factors.append("Self-reported low confidence with health forms")
+        elif any(word in response_lower for word in ["sometimes", "a little", "somewhat"]):
+            literacy_level = LiteracyLevel.MARGINAL
+            confidence_score = 0.7
+            risk_factors.append("Self-reported moderate confidence with health forms")
+
+    # Process observed indicators
+    for indicator in observed_indicators:
+        if indicator in LITERACY_RISK_INDICATORS:
+            risk_factors.append(indicator)
+
+    # Adjust based on number of risk indicators
+    if len(risk_factors) >= 3 and literacy_level == LiteracyLevel.ADEQUATE:
+        literacy_level = LiteracyLevel.MARGINAL
+        confidence_score = 0.6
+
+    if len(risk_factors) >= 5:
+        literacy_level = LiteracyLevel.INADEQUATE
+        confidence_score = 0.7
+
+    # Check for SDOH factors that correlate with low literacy
+    sdoh_literacy_factors = ["low_health_literacy", "limited_english"]
+    for factor in known_sdoh_factors:
+        if factor in sdoh_literacy_factors:
+            if literacy_level == LiteracyLevel.ADEQUATE:
+                literacy_level = LiteracyLevel.MARGINAL
+            risk_factors.append(f"SDOH factor: {factor}")
+
+    # Determine recommended reading level
+    reading_level_map = {
+        LiteracyLevel.INADEQUATE: ReadingLevel.GRADE_3_5,
+        LiteracyLevel.MARGINAL: ReadingLevel.GRADE_5_6,
+        LiteracyLevel.ADEQUATE: ReadingLevel.GRADE_7_8,
+        LiteracyLevel.PROFICIENT: ReadingLevel.GRADE_9_12
+    }
+
+    return LiteracyAssessment(
+        patient_id="",  # Set by caller
+        literacy_level=literacy_level,
+        recommended_reading_level=reading_level_map[literacy_level],
+        screening_method=LiteracyScreeningMethod.BRIEF if confidence_response else LiteracyScreeningMethod.OBSERVED,
+        confidence_score=confidence_score,
+        risk_factors=risk_factors,
+        accommodations=LITERACY_ACCOMMODATIONS.get(literacy_level.value, []),
+        teach_back_required=literacy_level in [LiteracyLevel.INADEQUATE, LiteracyLevel.MARGINAL],
+        assessed_at=datetime.now(timezone.utc).isoformat()
+    )
+
+
+def get_simplified_instructions(
+    condition: str,
+    literacy_level: LiteracyLevel,
+    medications: List[str] = []
+) -> LiteracyAdaptedInstructions:
+    """
+    Get literacy-adapted discharge instructions for a condition.
+    """
+    template = SIMPLIFIED_DISCHARGE_TEMPLATES.get(condition.lower().replace(" ", "_"), {})
+
+    instructions = []
+    if template:
+        instructions.append(DischargeInstruction(
+            topic=template.get("topic", condition),
+            standard_text=template.get("standard", ""),
+            simplified_text=template.get("simplified", ""),
+            reading_level=ReadingLevel.GRADE_5_6 if literacy_level in [LiteracyLevel.INADEQUATE, LiteracyLevel.MARGINAL] else ReadingLevel.GRADE_7_8,
+            key_points=template.get("key_points", []),
+            visual_aids=["Use pill organizer picture", "Daily checklist"],
+            teach_back_questions=template.get("teach_back", [])
+        ))
+
+    # Generate simplified medication instructions
+    med_instructions = []
+    for med in medications:
+        med_instructions.append({
+            "medication": med,
+            "simplified": f"Take your {med} at the same time every day. Don't skip doses."
+        })
+
+    # Get red flags in plain language
+    red_flags = template.get("red_flags", [
+        "Fever over 101°F - call doctor",
+        "Getting worse instead of better - call doctor",
+        "Can't eat or drink - go to ER"
+    ])
+
+    return LiteracyAdaptedInstructions(
+        patient_id="",  # Set by caller
+        literacy_level=literacy_level,
+        reading_level=ReadingLevel.GRADE_5_6 if literacy_level in [LiteracyLevel.INADEQUATE, LiteracyLevel.MARGINAL] else ReadingLevel.GRADE_7_8,
+        instructions=instructions,
+        general_tips=LITERACY_ACCOMMODATIONS.get(literacy_level.value, [])[:5],
+        red_flags_simplified=red_flags,
+        medication_instructions=med_instructions,
+        follow_up_simplified="Come back to see us on your appointment date. Bring all your medicine bottles.",
+        teach_back_checklist=TEACH_BACK_CHECKLIST.get("medications", []) + TEACH_BACK_CHECKLIST.get("warning_signs", [])
+    )
+
+
+@app.post("/api/v1/literacy/assess")
+async def assess_health_literacy(
+    patient_id: str,
+    confidence_response: Optional[str] = None,
+    observed_indicators: List[str] = [],
+    known_sdoh_factors: List[str] = []
+):
+    """
+    Assess patient's health literacy level.
+    Uses BRIEF single-question screening plus observed indicators.
+    """
+    # Log HIPAA audit
+    audit_logger.log(
+        action=AuditAction.PHI_ACCESS,
+        patient_id=patient_id,
+        details={"endpoint": "/api/v1/literacy/assess"}
+    )
+
+    assessment = assess_literacy_level(confidence_response, observed_indicators, known_sdoh_factors)
+    assessment.patient_id = patient_id
+
+    return assessment
+
+
+@app.get("/api/v1/literacy/screening-question")
+async def get_literacy_screening_question():
+    """
+    Get the validated single-item literacy screening question.
+    """
+    return {
+        "method": "BRIEF / SILS",
+        "question": "How confident are you filling out medical forms by yourself?",
+        "response_options": [
+            {"value": "extremely", "interpretation": "proficient"},
+            {"value": "quite a bit", "interpretation": "adequate"},
+            {"value": "somewhat", "interpretation": "marginal"},
+            {"value": "a little bit", "interpretation": "marginal"},
+            {"value": "not at all", "interpretation": "inadequate"}
+        ],
+        "note": "A response of 'somewhat' or below indicates possible limited health literacy and need for accommodation."
+    }
+
+
+@app.get("/api/v1/literacy/risk-indicators")
+async def get_literacy_risk_indicators():
+    """
+    Get observable risk indicators for low health literacy.
+    """
+    return {
+        "indicators": LITERACY_RISK_INDICATORS,
+        "note": "Observe for these behaviors during patient encounters. 3+ indicators suggest need for literacy assessment."
+    }
+
+
+@app.get("/api/v1/literacy/accommodations/{level}")
+async def get_literacy_accommodations(level: str):
+    """
+    Get recommended accommodations for a literacy level.
+    """
+    if level not in LITERACY_ACCOMMODATIONS:
+        raise HTTPException(status_code=404, detail=f"Level not found. Use: inadequate, marginal, adequate, proficient")
+
+    return {
+        "level": level,
+        "accommodations": LITERACY_ACCOMMODATIONS[level],
+        "teach_back_required": level in ["inadequate", "marginal"]
+    }
+
+
+@app.get("/api/v1/literacy/plain-language")
+async def get_plain_language_dictionary():
+    """
+    Get dictionary of plain language translations for medical terms.
+    """
+    return {
+        "translations": PLAIN_LANGUAGE_DICTIONARY,
+        "note": "Use these plain language alternatives when communicating with patients with limited health literacy."
+    }
+
+
+@app.post("/api/v1/literacy/simplify-instructions")
+async def simplify_discharge_instructions(
+    patient_id: str,
+    condition: str,
+    literacy_level: str = "marginal",
+    medications: List[str] = []
+):
+    """
+    Get literacy-adapted discharge instructions for a condition.
+    """
+    # Log HIPAA audit
+    audit_logger.log(
+        action=AuditAction.PHI_ACCESS,
+        patient_id=patient_id,
+        details={"endpoint": "/api/v1/literacy/simplify-instructions", "condition": condition}
+    )
+
+    try:
+        level = LiteracyLevel(literacy_level)
+    except ValueError:
+        level = LiteracyLevel.MARGINAL
+
+    instructions = get_simplified_instructions(condition, level, medications)
+    instructions.patient_id = patient_id
+
+    return instructions
+
+
+@app.get("/api/v1/literacy/discharge-templates")
+async def get_discharge_templates():
+    """
+    Get available simplified discharge instruction templates.
+    """
+    return {
+        "conditions": list(SIMPLIFIED_DISCHARGE_TEMPLATES.keys()),
+        "templates": {
+            condition: {
+                "topic": data["topic"],
+                "has_simplified": True,
+                "key_points_count": len(data.get("key_points", [])),
+                "red_flags_count": len(data.get("red_flags", []))
+            }
+            for condition, data in SIMPLIFIED_DISCHARGE_TEMPLATES.items()
+        }
+    }
+
+
+@app.get("/api/v1/literacy/teach-back-checklist")
+async def get_teach_back_checklist(category: Optional[str] = None):
+    """
+    Get teach-back verification checklist items.
+    """
+    if category:
+        if category not in TEACH_BACK_CHECKLIST:
+            raise HTTPException(status_code=404, detail=f"Category not found. Use: medications, warning_signs, follow_up, activity")
+        return {
+            "category": category,
+            "items": TEACH_BACK_CHECKLIST[category]
+        }
+
+    return {
+        "categories": list(TEACH_BACK_CHECKLIST.keys()),
+        "checklist": TEACH_BACK_CHECKLIST
     }
 
 
