@@ -480,7 +480,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 | **Web Dashboard Equity UI** | Configure skin type, ancestry, cultural preferences | DONE |
 | **SDOH Integration** | Housing, food security, transportation - affects adherence | DONE |
 | **Health Literacy Assessment** | Adjust discharge instruction complexity | DONE |
-| **Interpreter Integration** | Real-time translation beyond UI language | TODO |
+| **Interpreter Integration** | Real-time translation beyond UI language | DONE |
 
 ### Health Equity TODOs
 

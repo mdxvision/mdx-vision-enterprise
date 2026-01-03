@@ -1436,6 +1436,98 @@ class LiteracyAdaptedInstructions(BaseModel):
     teach_back_checklist: List[str] = []  # Items to verify understanding
 
 
+# INTERPRETER INTEGRATION (Feature #86)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class InterpreterType(str, Enum):
+    """Type of interpreter service"""
+    IN_PERSON = "in_person"  # On-site interpreter
+    VIDEO = "video"  # Video remote interpreting (VRI)
+    PHONE = "phone"  # Over-the-phone interpreting (OPI)
+    STAFF = "staff"  # Qualified bilingual staff
+    AD_HOC = "ad_hoc"  # Qualified ad-hoc interpreter
+
+
+class InterpreterStatus(str, Enum):
+    """Status of interpreter request"""
+    REQUESTED = "requested"
+    CONFIRMED = "confirmed"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    NO_SHOW = "no_show"
+
+
+class LanguagePreference(BaseModel):
+    """Patient's language preferences"""
+    preferred_language: str  # ISO 639-1 code (es, zh, vi, etc.)
+    preferred_language_name: str  # Display name
+    english_proficiency: str  # "none", "limited", "functional", "fluent"
+    reads_preferred_language: bool = True
+    writes_preferred_language: bool = True
+    sign_language: Optional[str] = None  # ASL, BSL, etc.
+    interpreter_required: bool = True
+    family_interpreter_declined: bool = False  # Patient declined using family
+
+
+class InterpreterRequest(BaseModel):
+    """Request for interpreter services"""
+    request_id: Optional[str] = None
+    patient_id: str
+    language: str  # ISO 639-1 code
+    language_name: str
+    interpreter_type: InterpreterType
+    urgency: str = "routine"  # "stat", "urgent", "routine"
+    encounter_type: str = "outpatient"  # "outpatient", "inpatient", "ED", "procedure"
+    estimated_duration: int = 30  # minutes
+    special_needs: List[str] = []  # "medical_terminology", "pediatric", "mental_health"
+    requested_at: Optional[str] = None
+    status: InterpreterStatus = InterpreterStatus.REQUESTED
+
+
+class InterpreterSession(BaseModel):
+    """Active interpreter session tracking"""
+    session_id: str
+    request_id: str
+    patient_id: str
+    language: str
+    interpreter_type: InterpreterType
+    interpreter_id: Optional[str] = None
+    interpreter_name: Optional[str] = None
+    start_time: str
+    end_time: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    topics_covered: List[str] = []  # "consent", "discharge", "medication", etc.
+    status: InterpreterStatus = InterpreterStatus.IN_PROGRESS
+
+
+class InterpreterDocumentation(BaseModel):
+    """Documentation of interpreter use for compliance"""
+    patient_id: str
+    encounter_id: Optional[str] = None
+    language: str
+    interpreter_type: InterpreterType
+    interpreter_id: Optional[str] = None
+    session_start: str
+    session_end: str
+    duration_minutes: int
+    topics: List[str] = []
+    patient_understanding_confirmed: bool = False
+    notes: Optional[str] = None
+    documented_by: Optional[str] = None
+    documented_at: str
+
+
+class TranslatedPhrase(BaseModel):
+    """Pre-translated clinical phrase"""
+    category: str  # "greeting", "pain", "consent", "discharge", etc.
+    english: str
+    translated: str
+    phonetic: Optional[str] = None  # Pronunciation guide
+    audio_url: Optional[str] = None
+    context_notes: Optional[str] = None
+
+
 # Billing/Claim Models (Feature #71)
 class ClaimStatus(str, Enum):
     """Claim lifecycle status"""
@@ -6710,6 +6802,453 @@ async def get_teach_back_checklist(category: Optional[str] = None):
     return {
         "categories": list(TEACH_BACK_CHECKLIST.keys()),
         "checklist": TEACH_BACK_CHECKLIST
+    }
+
+
+# INTERPRETER INTEGRATION (Feature #86) - Real-time translation services
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Supported languages with common medical phrases
+SUPPORTED_LANGUAGES = {
+    "es": {"name": "Spanish", "native": "Español", "speakers_us": "41M"},
+    "zh": {"name": "Chinese", "native": "中文", "speakers_us": "3.5M"},
+    "vi": {"name": "Vietnamese", "native": "Tiếng Việt", "speakers_us": "1.5M"},
+    "ko": {"name": "Korean", "native": "한국어", "speakers_us": "1.1M"},
+    "tl": {"name": "Tagalog", "native": "Tagalog", "speakers_us": "1.7M"},
+    "ru": {"name": "Russian", "native": "Русский", "speakers_us": "900K"},
+    "ar": {"name": "Arabic", "native": "العربية", "speakers_us": "1.2M"},
+    "ht": {"name": "Haitian Creole", "native": "Kreyòl Ayisyen", "speakers_us": "900K"},
+    "fr": {"name": "French", "native": "Français", "speakers_us": "1.3M"},
+    "pt": {"name": "Portuguese", "native": "Português", "speakers_us": "700K"},
+    "de": {"name": "German", "native": "Deutsch", "speakers_us": "1M"},
+    "ja": {"name": "Japanese", "native": "日本語", "speakers_us": "450K"},
+    "hi": {"name": "Hindi", "native": "हिन्दी", "speakers_us": "650K"},
+    "bn": {"name": "Bengali", "native": "বাংলা", "speakers_us": "300K"},
+    "pa": {"name": "Punjabi", "native": "ਪੰਜਾਬੀ", "speakers_us": "280K"},
+    "asl": {"name": "American Sign Language", "native": "ASL", "speakers_us": "500K"}
+}
+
+# Pre-translated clinical phrases by category
+CLINICAL_PHRASES = {
+    "es": {
+        "greeting": [
+            {"english": "Hello, I am your doctor.", "translated": "Hola, soy su médico.", "phonetic": "OH-lah, soy soo MEH-dee-koh"},
+            {"english": "How are you feeling today?", "translated": "¿Cómo se siente hoy?", "phonetic": "KOH-moh seh see-EN-teh oy"},
+            {"english": "I need an interpreter.", "translated": "Necesito un intérprete.", "phonetic": "neh-seh-SEE-toh oon een-TEHR-preh-teh"}
+        ],
+        "pain": [
+            {"english": "Where does it hurt?", "translated": "¿Dónde le duele?", "phonetic": "DOHN-deh leh DWEH-leh"},
+            {"english": "How bad is the pain? 1 to 10?", "translated": "¿Qué tan fuerte es el dolor? ¿1 a 10?", "phonetic": "keh tahn FWEHR-teh es el doh-LOHR"},
+            {"english": "Is the pain sharp or dull?", "translated": "¿Es el dolor agudo o sordo?", "phonetic": "es el doh-LOHR ah-GOO-doh oh SOHR-doh"},
+            {"english": "Point to where it hurts.", "translated": "Señale dónde le duele.", "phonetic": "seh-NYAH-leh DOHN-deh leh DWEH-leh"}
+        ],
+        "consent": [
+            {"english": "I need your permission.", "translated": "Necesito su permiso.", "phonetic": "neh-seh-SEE-toh soo pehr-MEE-soh"},
+            {"english": "Do you understand?", "translated": "¿Entiende?", "phonetic": "en-tee-EN-deh"},
+            {"english": "Do you have questions?", "translated": "¿Tiene preguntas?", "phonetic": "tee-EH-neh preh-GOON-tahs"},
+            {"english": "Please sign here.", "translated": "Por favor, firme aquí.", "phonetic": "pohr fah-VOHR, FEER-meh ah-KEE"}
+        ],
+        "medication": [
+            {"english": "Take this medicine.", "translated": "Tome esta medicina.", "phonetic": "TOH-meh ES-tah meh-dee-SEE-nah"},
+            {"english": "Once a day.", "translated": "Una vez al día.", "phonetic": "OO-nah vehs ahl DEE-ah"},
+            {"english": "Twice a day.", "translated": "Dos veces al día.", "phonetic": "dohs VEH-sehs ahl DEE-ah"},
+            {"english": "With food.", "translated": "Con comida.", "phonetic": "kohn koh-MEE-dah"},
+            {"english": "Are you allergic to any medicines?", "translated": "¿Es alérgico a alguna medicina?", "phonetic": "es ah-LEHR-hee-koh ah ahl-GOO-nah meh-dee-SEE-nah"}
+        ],
+        "emergency": [
+            {"english": "Call 911.", "translated": "Llame al 911.", "phonetic": "YAH-meh ahl noo-EH-veh OON-seh"},
+            {"english": "Go to the emergency room.", "translated": "Vaya a la sala de emergencias.", "phonetic": "VAH-yah ah lah SAH-lah deh eh-mehr-HEN-see-ahs"},
+            {"english": "This is serious.", "translated": "Esto es serio.", "phonetic": "ES-toh es SEH-ree-oh"}
+        ],
+        "discharge": [
+            {"english": "Come back if you feel worse.", "translated": "Regrese si se siente peor.", "phonetic": "reh-GREH-seh see seh see-EN-teh peh-OHR"},
+            {"english": "Your follow-up appointment is...", "translated": "Su cita de seguimiento es...", "phonetic": "soo SEE-tah deh seh-gee-mee-EN-toh es"},
+            {"english": "Take all of your medicine.", "translated": "Tome toda su medicina.", "phonetic": "TOH-meh TOH-dah soo meh-dee-SEE-nah"}
+        ]
+    },
+    "zh": {
+        "greeting": [
+            {"english": "Hello, I am your doctor.", "translated": "你好，我是你的医生。", "phonetic": "nǐ hǎo, wǒ shì nǐ de yī shēng"},
+            {"english": "How are you feeling today?", "translated": "你今天感觉怎么样？", "phonetic": "nǐ jīn tiān gǎn jué zěn me yàng"},
+            {"english": "I need an interpreter.", "translated": "我需要翻译。", "phonetic": "wǒ xū yào fān yì"}
+        ],
+        "pain": [
+            {"english": "Where does it hurt?", "translated": "哪里疼？", "phonetic": "nǎ lǐ téng"},
+            {"english": "How bad is the pain? 1 to 10?", "translated": "疼痛有多严重？1到10?", "phonetic": "téng tòng yǒu duō yán zhòng"},
+            {"english": "Point to where it hurts.", "translated": "指着疼的地方。", "phonetic": "zhǐ zhe téng de dì fang"}
+        ],
+        "medication": [
+            {"english": "Take this medicine.", "translated": "吃这个药。", "phonetic": "chī zhè ge yào"},
+            {"english": "Once a day.", "translated": "每天一次。", "phonetic": "měi tiān yī cì"},
+            {"english": "Twice a day.", "translated": "每天两次。", "phonetic": "měi tiān liǎng cì"}
+        ]
+    },
+    "vi": {
+        "greeting": [
+            {"english": "Hello, I am your doctor.", "translated": "Xin chào, tôi là bác sĩ của bạn.", "phonetic": "sin chow, toy la bahk see koo-ah bahn"},
+            {"english": "How are you feeling today?", "translated": "Hôm nay bạn cảm thấy thế nào?", "phonetic": "hohm nay bahn kahm thay theh now"}
+        ],
+        "pain": [
+            {"english": "Where does it hurt?", "translated": "Đau ở đâu?", "phonetic": "dow uh dow"},
+            {"english": "How bad is the pain? 1 to 10?", "translated": "Đau nhiều không? 1 đến 10?", "phonetic": "dow nyew kohng"}
+        ]
+    }
+}
+
+# Interpreter service contact info (template - hospitals configure their own)
+INTERPRETER_SERVICES = {
+    "language_line": {
+        "name": "Language Line Solutions",
+        "phone": "1-800-752-6096",
+        "type": "phone",
+        "available": "24/7",
+        "languages": 240
+    },
+    "cyracom": {
+        "name": "CyraCom",
+        "phone": "1-800-713-4950",
+        "type": "phone",
+        "available": "24/7",
+        "languages": 200
+    },
+    "stratus_video": {
+        "name": "Stratus Video",
+        "phone": "1-888-475-0049",
+        "type": "video",
+        "available": "24/7",
+        "languages": 175
+    }
+}
+
+# In-memory storage for interpreter requests/sessions
+interpreter_requests: Dict[str, InterpreterRequest] = {}
+interpreter_sessions: Dict[str, InterpreterSession] = {}
+patient_language_preferences: Dict[str, LanguagePreference] = {}
+
+
+@app.get("/api/v1/interpreter/languages")
+async def get_supported_languages():
+    """
+    Get list of supported languages for interpreter services.
+    """
+    return {
+        "languages": SUPPORTED_LANGUAGES,
+        "total": len(SUPPORTED_LANGUAGES),
+        "note": "Language codes follow ISO 639-1 standard. ASL is included for deaf/hard-of-hearing patients."
+    }
+
+
+@app.post("/api/v1/interpreter/request")
+async def request_interpreter(
+    patient_id: str,
+    language: str,
+    interpreter_type: str = "phone",
+    urgency: str = "routine",
+    estimated_duration: int = 30
+):
+    """
+    Request interpreter services for a patient.
+    """
+    if language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"Language not supported: {language}")
+
+    # Log HIPAA audit
+    audit_logger.log(
+        action=AuditAction.PHI_ACCESS,
+        patient_id=patient_id,
+        details={"endpoint": "/api/v1/interpreter/request", "language": language}
+    )
+
+    request_id = str(uuid.uuid4())[:8]
+    lang_info = SUPPORTED_LANGUAGES[language]
+
+    request = InterpreterRequest(
+        request_id=request_id,
+        patient_id=patient_id,
+        language=language,
+        language_name=lang_info["name"],
+        interpreter_type=InterpreterType(interpreter_type),
+        urgency=urgency,
+        estimated_duration=estimated_duration,
+        requested_at=datetime.now(timezone.utc).isoformat(),
+        status=InterpreterStatus.REQUESTED
+    )
+
+    interpreter_requests[request_id] = request
+
+    # Get service info based on type
+    service = None
+    if interpreter_type == "phone":
+        service = INTERPRETER_SERVICES.get("language_line")
+    elif interpreter_type == "video":
+        service = INTERPRETER_SERVICES.get("stratus_video")
+
+    return {
+        "request_id": request_id,
+        "status": "requested",
+        "language": lang_info["name"],
+        "interpreter_type": interpreter_type,
+        "urgency": urgency,
+        "service": service,
+        "message": f"Interpreter requested for {lang_info['name']}. {'Call service immediately.' if urgency == 'stat' else 'Service will connect shortly.'}"
+    }
+
+
+@app.post("/api/v1/interpreter/start-session")
+async def start_interpreter_session(request_id: str):
+    """
+    Start an interpreter session after connection is established.
+    """
+    if request_id not in interpreter_requests:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    request = interpreter_requests[request_id]
+    session_id = str(uuid.uuid4())[:8]
+
+    session = InterpreterSession(
+        session_id=session_id,
+        request_id=request_id,
+        patient_id=request.patient_id,
+        language=request.language,
+        interpreter_type=request.interpreter_type,
+        start_time=datetime.now(timezone.utc).isoformat(),
+        status=InterpreterStatus.IN_PROGRESS
+    )
+
+    interpreter_sessions[session_id] = session
+    request.status = InterpreterStatus.IN_PROGRESS
+
+    # Log HIPAA audit
+    audit_logger.log(
+        action=AuditAction.PHI_ACCESS,
+        patient_id=request.patient_id,
+        details={"endpoint": "/api/v1/interpreter/start-session", "session_id": session_id}
+    )
+
+    return {
+        "session_id": session_id,
+        "status": "in_progress",
+        "language": SUPPORTED_LANGUAGES[request.language]["name"],
+        "start_time": session.start_time,
+        "message": "Interpreter session started. Document topics covered."
+    }
+
+
+@app.post("/api/v1/interpreter/end-session")
+async def end_interpreter_session(
+    session_id: str,
+    topics_covered: List[str] = [],
+    patient_understanding_confirmed: bool = False
+):
+    """
+    End an interpreter session and document for compliance.
+    """
+    if session_id not in interpreter_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = interpreter_sessions[session_id]
+    end_time = datetime.now(timezone.utc)
+    start_time = datetime.fromisoformat(session.start_time.replace('Z', '+00:00'))
+    duration = int((end_time - start_time).total_seconds() / 60)
+
+    session.end_time = end_time.isoformat()
+    session.duration_minutes = duration
+    session.topics_covered = topics_covered
+    session.status = InterpreterStatus.COMPLETED
+
+    # Update request status
+    if session.request_id in interpreter_requests:
+        interpreter_requests[session.request_id].status = InterpreterStatus.COMPLETED
+
+    # Log HIPAA audit
+    audit_logger.log(
+        action=AuditAction.PHI_ACCESS,
+        patient_id=session.patient_id,
+        details={
+            "endpoint": "/api/v1/interpreter/end-session",
+            "session_id": session_id,
+            "duration_minutes": duration,
+            "topics": topics_covered
+        }
+    )
+
+    return {
+        "session_id": session_id,
+        "status": "completed",
+        "duration_minutes": duration,
+        "topics_covered": topics_covered,
+        "patient_understanding_confirmed": patient_understanding_confirmed,
+        "documentation": {
+            "language": SUPPORTED_LANGUAGES[session.language]["name"],
+            "interpreter_type": session.interpreter_type.value,
+            "start_time": session.start_time,
+            "end_time": session.end_time,
+            "duration": f"{duration} minutes",
+            "compliance_note": "Interpreter services documented for Title VI compliance."
+        }
+    }
+
+
+@app.get("/api/v1/interpreter/phrases/{language}")
+async def get_clinical_phrases(language: str, category: Optional[str] = None):
+    """
+    Get pre-translated clinical phrases for a language.
+    """
+    if language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=404, detail=f"Language not supported: {language}")
+
+    phrases = CLINICAL_PHRASES.get(language, {})
+    if not phrases:
+        return {
+            "language": SUPPORTED_LANGUAGES[language]["name"],
+            "phrases": {},
+            "note": "Detailed phrases not yet available for this language. Use interpreter service."
+        }
+
+    if category:
+        if category not in phrases:
+            raise HTTPException(status_code=404, detail=f"Category not found: {category}")
+        return {
+            "language": SUPPORTED_LANGUAGES[language]["name"],
+            "category": category,
+            "phrases": phrases[category]
+        }
+
+    return {
+        "language": SUPPORTED_LANGUAGES[language]["name"],
+        "categories": list(phrases.keys()),
+        "phrases": phrases
+    }
+
+
+@app.post("/api/v1/interpreter/set-preference")
+async def set_language_preference(
+    patient_id: str,
+    preferred_language: str,
+    english_proficiency: str = "limited",
+    reads_language: bool = True,
+    interpreter_required: bool = True
+):
+    """
+    Set patient's language preference.
+    """
+    if preferred_language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"Language not supported: {preferred_language}")
+
+    lang_info = SUPPORTED_LANGUAGES[preferred_language]
+
+    preference = LanguagePreference(
+        preferred_language=preferred_language,
+        preferred_language_name=lang_info["name"],
+        english_proficiency=english_proficiency,
+        reads_preferred_language=reads_language,
+        interpreter_required=interpreter_required
+    )
+
+    patient_language_preferences[patient_id] = preference
+
+    # Log HIPAA audit
+    audit_logger.log(
+        action=AuditAction.PHI_ACCESS,
+        patient_id=patient_id,
+        details={"endpoint": "/api/v1/interpreter/set-preference", "language": preferred_language}
+    )
+
+    return {
+        "patient_id": patient_id,
+        "language": lang_info["name"],
+        "native_name": lang_info["native"],
+        "english_proficiency": english_proficiency,
+        "interpreter_required": interpreter_required,
+        "message": f"Language preference set to {lang_info['name']}. {'Interpreter required for all encounters.' if interpreter_required else ''}"
+    }
+
+
+@app.get("/api/v1/interpreter/preference/{patient_id}")
+async def get_language_preference(patient_id: str):
+    """
+    Get patient's language preference.
+    """
+    if patient_id not in patient_language_preferences:
+        return {
+            "patient_id": patient_id,
+            "preference_set": False,
+            "message": "No language preference recorded. Ask patient about preferred language."
+        }
+
+    pref = patient_language_preferences[patient_id]
+    lang_info = SUPPORTED_LANGUAGES.get(pref.preferred_language, {})
+
+    return {
+        "patient_id": patient_id,
+        "preference_set": True,
+        "preferred_language": pref.preferred_language,
+        "language_name": pref.preferred_language_name,
+        "native_name": lang_info.get("native", ""),
+        "english_proficiency": pref.english_proficiency,
+        "interpreter_required": pref.interpreter_required,
+        "reads_language": pref.reads_preferred_language
+    }
+
+
+@app.get("/api/v1/interpreter/services")
+async def get_interpreter_services():
+    """
+    Get available interpreter service contact information.
+    """
+    return {
+        "services": INTERPRETER_SERVICES,
+        "note": "Contact your hospital's interpreter services department for in-person interpreters. These are backup phone/video services."
+    }
+
+
+@app.get("/api/v1/interpreter/compliance-checklist")
+async def get_interpreter_compliance_checklist():
+    """
+    Get Title VI compliance checklist for interpreter use.
+    """
+    return {
+        "title": "Title VI Language Access Compliance",
+        "checklist": [
+            {"item": "Offer interpreter at first contact", "required": True},
+            {"item": "Document patient's preferred language", "required": True},
+            {"item": "Use qualified interpreter, not family", "required": True, "note": "Family may be used only if patient declines and is documented"},
+            {"item": "Document interpreter use in medical record", "required": True},
+            {"item": "Provide translated vital documents", "required": True},
+            {"item": "Post language access notices", "required": True},
+            {"item": "Confirm patient understanding", "required": True}
+        ],
+        "family_interpreter_warning": "Using family members (especially children) as interpreters is discouraged due to privacy concerns, potential for omission/modification of information, and added emotional burden. Document if patient specifically requests family interpreter.",
+        "documentation_required": [
+            "Language identified",
+            "Interpreter type (in-person, phone, video)",
+            "Interpreter ID if available",
+            "Session duration",
+            "Topics discussed",
+            "Patient understanding confirmed"
+        ]
+    }
+
+
+@app.get("/api/v1/interpreter/vital-documents")
+async def get_vital_documents_list():
+    """
+    Get list of vital documents that must be translated per Title VI.
+    """
+    return {
+        "vital_documents": [
+            "Consent forms (surgical, procedure, treatment)",
+            "Complaint forms",
+            "Intake forms with medical history",
+            "Notices of eligibility and rights",
+            "Discharge instructions",
+            "Medication instructions",
+            "Advance directives",
+            "HIPAA privacy notices",
+            "Financial assistance applications"
+        ],
+        "threshold": "Documents must be translated when language group exceeds 5% of population served or 1,000 individuals",
+        "note": "Even if below threshold, meaningful access must still be provided through interpreter services"
     }
 
 

@@ -269,6 +269,20 @@ class MainActivity : AppCompatActivity() {
     private var currentDischargeCondition: String? = null
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // INTERPRETER INTEGRATION (Feature #86) - Real-time language services
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var interpreterSessionActive: Boolean = false
+    private var interpreterSessionId: String? = null
+    private var interpreterType: String = "phone"  // "in_person", "video", "phone", "staff", "ad_hoc"
+    private var patientPreferredLanguage: String? = null  // ISO code (es, zh, vi, etc.)
+    private var patientPreferredLanguageName: String? = null  // Full name (Spanish, Chinese, etc.)
+    private var interpreterRequired: Boolean = false
+    private var familyInterpreterDeclined: Boolean = false
+    private var currentInterpreterService: String? = null  // "language_line", "cyracom", "stratus"
+    private var interpreterPhoneNumber: String? = null  // For phone interpretation
+    private var clinicalPhrases: MutableList<JSONObject> = mutableListOf()  // Pre-translated phrases
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
     // ═══════════════════════════════════════════════════════════════════════════
     private var isAmbientMode: Boolean = false  // Continuous background listening
@@ -19009,6 +19023,701 @@ SOFA Score: [X]
         speakFeedback("Plain language guide displayed. Use simple words instead of medical terms.")
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // INTERPRETER INTEGRATION HELPER FUNCTIONS (Feature #86)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Request an interpreter (general).
+     */
+    private fun requestInterpreter() {
+        val sb = StringBuilder()
+        sb.appendLine("🌐 REQUEST INTERPRETER")
+        sb.appendLine()
+        sb.appendLine("━━━ QUICK REQUEST ━━━")
+        sb.appendLine()
+        sb.appendLine("Say language + \"interpreter\":")
+        sb.appendLine("• \"Spanish interpreter\"")
+        sb.appendLine("• \"Chinese interpreter\"")
+        sb.appendLine("• \"Vietnamese interpreter\"")
+        sb.appendLine("• \"Arabic interpreter\"")
+        sb.appendLine("• \"Korean interpreter\"")
+        sb.appendLine("• \"ASL interpreter\"")
+        sb.appendLine()
+        sb.appendLine("━━━ OR SET TYPE FIRST ━━━")
+        sb.appendLine()
+        sb.appendLine("• \"Phone interpreter\" (fastest)")
+        sb.appendLine("• \"Video interpreter\" (VRI)")
+        sb.appendLine("• \"In-person interpreter\"")
+        sb.appendLine()
+        if (patientPreferredLanguage != null) {
+            sb.appendLine("━━━ PATIENT PREFERENCE ━━━")
+            sb.appendLine("Preferred: $patientPreferredLanguageName")
+            sb.appendLine("Say \"request interpreter\" to use")
+        }
+
+        showDataOverlay("Interpreter Request", sb.toString())
+        speakFeedback("Say the language followed by interpreter. For example, Spanish interpreter.")
+    }
+
+    /**
+     * Request interpreter for a specific language.
+     */
+    private fun requestInterpreterForLanguage(languageCode: String, languageName: String) {
+        val json = JSONObject()
+        json.put("language", languageCode)
+        json.put("interpreter_type", interpreterType)
+        json.put("urgency", "routine")
+        if (currentPatientId != null) {
+            json.put("patient_id", currentPatientId)
+        }
+
+        val requestBody = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$EHR_PROXY_URL/api/v1/interpreter/request")
+            .post(requestBody)
+            .build()
+
+        speakFeedback("Requesting $languageName interpreter")
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    // Fallback with service info
+                    showInterpreterServicesForLanguage(languageCode, languageName)
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                runOnUiThread {
+                    if (response.isSuccessful && body != null) {
+                        val resp = JSONObject(body)
+                        val sb = StringBuilder()
+                        sb.appendLine("✅ INTERPRETER REQUESTED")
+                        sb.appendLine()
+                        sb.appendLine("Language: $languageName")
+                        sb.appendLine("Type: ${interpreterType.replace("_", " ").capitalize()}")
+                        sb.appendLine("Request ID: ${resp.optString("request_id", "N/A")}")
+                        sb.appendLine("Status: ${resp.optString("status", "requested")}")
+                        sb.appendLine()
+
+                        val service = resp.optJSONObject("service")
+                        if (service != null) {
+                            sb.appendLine("━━━ SERVICE INFO ━━━")
+                            sb.appendLine("Provider: ${service.optString("name", "")}")
+                            sb.appendLine("Phone: ${service.optString("phone", "")}")
+                            sb.appendLine("Access Code: ${service.optString("access_code", "")}")
+                            interpreterPhoneNumber = service.optString("phone", null)
+                            currentInterpreterService = service.optString("id", null)
+                        }
+
+                        sb.appendLine()
+                        sb.appendLine("Say \"start interpreter\" when connected")
+
+                        showDataOverlay("Interpreter Request", sb.toString())
+                        speakFeedback("$languageName interpreter requested. Use service info to connect.")
+                    } else {
+                        showInterpreterServicesForLanguage(languageCode, languageName)
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Show interpreter service info for a language (fallback).
+     */
+    private fun showInterpreterServicesForLanguage(languageCode: String, languageName: String) {
+        val sb = StringBuilder()
+        sb.appendLine("📞 $languageName INTERPRETER")
+        sb.appendLine()
+        sb.appendLine("━━━ LANGUAGE LINE ━━━")
+        sb.appendLine("Phone: 1-800-526-7625")
+        sb.appendLine("Access Code: Check badge")
+        sb.appendLine("Available: 24/7")
+        sb.appendLine()
+        sb.appendLine("━━━ CYRACOM ━━━")
+        sb.appendLine("Phone: 1-844-797-2266")
+        sb.appendLine("Client ID: Check badge")
+        sb.appendLine()
+        sb.appendLine("━━━ STRATUS VIDEO ━━━")
+        sb.appendLine("For VRI (Video)")
+        sb.appendLine("Use iPad on wall")
+        sb.appendLine()
+        sb.appendLine("━━━ DOCUMENTATION ━━━")
+        sb.appendLine("Say \"document interpreter\" when done")
+
+        showDataOverlay("Interpreter Services", sb.toString())
+        speakFeedback("$languageName interpreter services displayed. Call Language Line or CyraCom to connect.")
+    }
+
+    /**
+     * Show interpreter status.
+     */
+    private fun showInterpreterStatus() {
+        val sb = StringBuilder()
+        sb.appendLine("🌐 INTERPRETER STATUS")
+        sb.appendLine()
+
+        if (interpreterSessionActive) {
+            sb.appendLine("✅ SESSION ACTIVE")
+            sb.appendLine()
+            sb.appendLine("Session ID: ${interpreterSessionId ?: "N/A"}")
+            sb.appendLine("Language: ${patientPreferredLanguageName ?: "Unknown"}")
+            sb.appendLine("Type: ${interpreterType.replace("_", " ").capitalize()}")
+            sb.appendLine("Service: ${currentInterpreterService ?: "Unknown"}")
+            sb.appendLine()
+            sb.appendLine("Say \"end interpreter\" when done")
+        } else {
+            sb.appendLine("⚪ NO ACTIVE SESSION")
+            sb.appendLine()
+            if (patientPreferredLanguage != null) {
+                sb.appendLine("━━━ PATIENT PREFERENCE ━━━")
+                sb.appendLine("Language: $patientPreferredLanguageName")
+                sb.appendLine("Interpreter Required: ${if (interpreterRequired) "Yes" else "No"}")
+                sb.appendLine("Family Declined: ${if (familyInterpreterDeclined) "Yes" else "No"}")
+            }
+            sb.appendLine()
+            sb.appendLine("Say \"need interpreter\" to request")
+        }
+
+        showDataOverlay("Interpreter Status", sb.toString())
+    }
+
+    /**
+     * Start interpreter session.
+     */
+    private fun startInterpreterSession() {
+        if (patientPreferredLanguage == null) {
+            speakFeedback("Set patient language first. Say patient speaks Spanish, for example.")
+            return
+        }
+
+        val json = JSONObject()
+        json.put("language", patientPreferredLanguage)
+        json.put("interpreter_type", interpreterType)
+        if (currentPatientId != null) {
+            json.put("patient_id", currentPatientId)
+        }
+
+        val requestBody = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$EHR_PROXY_URL/api/v1/interpreter/start-session")
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    // Start locally
+                    interpreterSessionActive = true
+                    interpreterSessionId = java.util.UUID.randomUUID().toString()
+                    speakFeedback("Interpreter session started for ${patientPreferredLanguageName ?: "patient"}.")
+                    showInterpreterStatus()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                runOnUiThread {
+                    if (response.isSuccessful && body != null) {
+                        val resp = JSONObject(body)
+                        interpreterSessionActive = true
+                        interpreterSessionId = resp.optString("session_id", java.util.UUID.randomUUID().toString())
+                        speakFeedback("Interpreter session started. Session ID: $interpreterSessionId")
+                    } else {
+                        interpreterSessionActive = true
+                        interpreterSessionId = java.util.UUID.randomUUID().toString()
+                        speakFeedback("Interpreter session started locally.")
+                    }
+                    showInterpreterStatus()
+                }
+            }
+        })
+    }
+
+    /**
+     * End interpreter session.
+     */
+    private fun endInterpreterSession() {
+        if (!interpreterSessionActive) {
+            speakFeedback("No active interpreter session.")
+            return
+        }
+
+        val json = JSONObject()
+        json.put("session_id", interpreterSessionId)
+
+        val requestBody = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder()
+            .url("$EHR_PROXY_URL/api/v1/interpreter/end-session")
+            .post(requestBody)
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    interpreterSessionActive = false
+                    val sessionId = interpreterSessionId
+                    interpreterSessionId = null
+                    speakFeedback("Interpreter session ended. Say document interpreter to add to chart.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                runOnUiThread {
+                    interpreterSessionActive = false
+                    interpreterSessionId = null
+
+                    if (response.isSuccessful && body != null) {
+                        val resp = JSONObject(body)
+                        val duration = resp.optInt("duration_minutes", 0)
+                        speakFeedback("Interpreter session ended. Duration: $duration minutes. Say document interpreter to add to chart.")
+                    } else {
+                        speakFeedback("Interpreter session ended.")
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Show language preference.
+     */
+    private fun showLanguagePreference() {
+        val sb = StringBuilder()
+        sb.appendLine("🌐 PATIENT LANGUAGE PREFERENCE")
+        sb.appendLine()
+
+        if (patientPreferredLanguage != null) {
+            sb.appendLine("Preferred: $patientPreferredLanguageName")
+            sb.appendLine("Code: $patientPreferredLanguage")
+            sb.appendLine("Interpreter Required: ${if (interpreterRequired) "Yes" else "No"}")
+            sb.appendLine()
+            sb.appendLine("Family interpreter declined: ${if (familyInterpreterDeclined) "Yes" else "No"}")
+        } else {
+            sb.appendLine("⚠️ NOT SET")
+            sb.appendLine()
+            sb.appendLine("━━━ SET PREFERENCE ━━━")
+            sb.appendLine("\"Set language Spanish\"")
+            sb.appendLine("\"Set language Chinese\"")
+            sb.appendLine("\"Set language Vietnamese\"")
+            sb.appendLine()
+            sb.appendLine("Or fetch from chart")
+        }
+
+        showDataOverlay("Language Preference", sb.toString())
+    }
+
+    /**
+     * Set patient language preference.
+     */
+    private fun setPatientLanguagePreference(languageCode: String, languageName: String) {
+        patientPreferredLanguage = languageCode
+        patientPreferredLanguageName = languageName
+        interpreterRequired = true
+
+        speakFeedback("Patient language set to $languageName. Interpreter required.")
+
+        // Optionally save to server
+        if (currentPatientId != null) {
+            val json = JSONObject()
+            json.put("patient_id", currentPatientId)
+            json.put("preferred_language", languageCode)
+            json.put("preferred_language_name", languageName)
+            json.put("interpreter_required", true)
+            json.put("family_interpreter_declined", familyInterpreterDeclined)
+
+            val requestBody = json.toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("$EHR_PROXY_URL/api/v1/interpreter/set-preference")
+                .post(requestBody)
+                .build()
+
+            httpClient.newCall(request).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    Log.e(TAG, "Failed to save language preference: ${e.message}")
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    Log.d(TAG, "Language preference saved")
+                }
+            })
+        }
+
+        showLanguagePreference()
+    }
+
+    /**
+     * Show clinical phrases for patient's language.
+     */
+    private fun showClinicalPhrases() {
+        val language = patientPreferredLanguage ?: "es"  // Default to Spanish
+
+        val request = Request.Builder()
+            .url("$EHR_PROXY_URL/api/v1/interpreter/phrases/$language")
+            .get()
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    showLocalClinicalPhrases(language)
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                runOnUiThread {
+                    if (response.isSuccessful && body != null) {
+                        val resp = JSONObject(body)
+                        val phrases = resp.optJSONArray("phrases") ?: JSONArray()
+                        val languageName = resp.optString("language_name", language)
+
+                        val sb = StringBuilder()
+                        sb.appendLine("📖 CLINICAL PHRASES - $languageName")
+                        sb.appendLine()
+
+                        for (i in 0 until minOf(phrases.length(), 15)) {
+                            val phrase = phrases.getJSONObject(i)
+                            sb.appendLine("━━━ ${phrase.optString("category", "").uppercase()} ━━━")
+                            sb.appendLine("EN: ${phrase.optString("english", "")}")
+                            sb.appendLine("TR: ${phrase.optString("translation", "")}")
+                            val phonetic = phrase.optString("phonetic", "")
+                            if (phonetic.isNotEmpty()) {
+                                sb.appendLine("Say: $phonetic")
+                            }
+                            sb.appendLine()
+                        }
+
+                        showDataOverlay("Clinical Phrases", sb.toString())
+                        speakFeedback("$languageName clinical phrases displayed.")
+                    } else {
+                        showLocalClinicalPhrases(language)
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Show local clinical phrases (fallback).
+     */
+    private fun showLocalClinicalPhrases(language: String) {
+        val sb = StringBuilder()
+
+        when (language) {
+            "es" -> {
+                sb.appendLine("📖 SPANISH CLINICAL PHRASES")
+                sb.appendLine()
+                sb.appendLine("━━━ GREETINGS ━━━")
+                sb.appendLine("EN: Hello, I am your doctor")
+                sb.appendLine("ES: Hola, soy su doctor")
+                sb.appendLine("Say: OH-lah, soy soo dok-TOR")
+                sb.appendLine()
+                sb.appendLine("━━━ PAIN ━━━")
+                sb.appendLine("EN: Where does it hurt?")
+                sb.appendLine("ES: ¿Dónde le duele?")
+                sb.appendLine("Say: DOHN-day leh DWEH-leh")
+                sb.appendLine()
+                sb.appendLine("EN: Rate your pain 1-10")
+                sb.appendLine("ES: Del 1 al 10, ¿cuánto dolor?")
+                sb.appendLine("Say: del OO-no al dee-ES, KWAHN-toh doh-LOR")
+                sb.appendLine()
+                sb.appendLine("━━━ INSTRUCTIONS ━━━")
+                sb.appendLine("EN: Take a deep breath")
+                sb.appendLine("ES: Respire profundo")
+                sb.appendLine("Say: res-PEE-ray pro-FOON-doh")
+                sb.appendLine()
+                sb.appendLine("EN: Open your mouth")
+                sb.appendLine("ES: Abra la boca")
+                sb.appendLine("Say: AH-brah lah BOH-kah")
+            }
+            "zh" -> {
+                sb.appendLine("📖 CHINESE CLINICAL PHRASES")
+                sb.appendLine()
+                sb.appendLine("━━━ GREETINGS ━━━")
+                sb.appendLine("EN: Hello, I am your doctor")
+                sb.appendLine("ZH: 你好，我是你的医生")
+                sb.appendLine("Pinyin: Nǐ hǎo, wǒ shì nǐ de yīshēng")
+                sb.appendLine()
+                sb.appendLine("━━━ PAIN ━━━")
+                sb.appendLine("EN: Where does it hurt?")
+                sb.appendLine("ZH: 哪里痛？")
+                sb.appendLine("Pinyin: Nǎlǐ tòng?")
+            }
+            "vi" -> {
+                sb.appendLine("📖 VIETNAMESE CLINICAL PHRASES")
+                sb.appendLine()
+                sb.appendLine("━━━ GREETINGS ━━━")
+                sb.appendLine("EN: Hello, I am your doctor")
+                sb.appendLine("VI: Xin chào, tôi là bác sĩ của bạn")
+                sb.appendLine()
+                sb.appendLine("━━━ PAIN ━━━")
+                sb.appendLine("EN: Where does it hurt?")
+                sb.appendLine("VI: Đau ở đâu?")
+            }
+            else -> {
+                sb.appendLine("📖 CLINICAL PHRASES")
+                sb.appendLine()
+                sb.appendLine("Phrases not available for: $language")
+                sb.appendLine()
+                sb.appendLine("Use interpreter service instead")
+            }
+        }
+
+        showDataOverlay("Clinical Phrases", sb.toString())
+        speakFeedback("Clinical phrases displayed.")
+    }
+
+    /**
+     * Show phrases for a specific language with optional phrase filter.
+     */
+    private fun showPhrasesForLanguage(languageCode: String, phraseFilter: String?) {
+        patientPreferredLanguage = languageCode
+        showClinicalPhrases()
+    }
+
+    /**
+     * Extract phrase to translate from voice command.
+     */
+    private fun extractPhraseToTranslate(transcript: String): String? {
+        val lower = transcript.lowercase()
+        return when {
+            lower.contains("how do i say") -> {
+                transcript.substringAfter("how do i say", "").substringBefore(" in ").trim()
+            }
+            lower.contains("say in") -> {
+                transcript.substringBefore("say in", "").replace("how do i", "").trim()
+            }
+            else -> null
+        }
+    }
+
+    /**
+     * Show interpreter services.
+     */
+    private fun showInterpreterServices() {
+        val request = Request.Builder()
+            .url("$EHR_PROXY_URL/api/v1/interpreter/services")
+            .get()
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    showLocalInterpreterServices()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                runOnUiThread {
+                    if (response.isSuccessful && body != null) {
+                        val resp = JSONObject(body)
+                        val services = resp.optJSONArray("services") ?: JSONArray()
+
+                        val sb = StringBuilder()
+                        sb.appendLine("📞 INTERPRETER SERVICES")
+                        sb.appendLine()
+
+                        for (i in 0 until services.length()) {
+                            val service = services.getJSONObject(i)
+                            sb.appendLine("━━━ ${service.optString("name", "").uppercase()} ━━━")
+                            sb.appendLine("Phone: ${service.optString("phone", "")}")
+                            sb.appendLine("Access: ${service.optString("access_code", "Check badge")}")
+                            sb.appendLine("Hours: ${service.optString("available", "")}")
+                            val types = service.optJSONArray("types")
+                            if (types != null && types.length() > 0) {
+                                val typesList = (0 until types.length()).map { types.getString(it) }
+                                sb.appendLine("Types: ${typesList.joinToString(", ")}")
+                            }
+                            sb.appendLine()
+                        }
+
+                        showDataOverlay("Interpreter Services", sb.toString())
+                        speakFeedback("Interpreter services displayed.")
+                    } else {
+                        showLocalInterpreterServices()
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Show local interpreter services (fallback).
+     */
+    private fun showLocalInterpreterServices() {
+        val sb = StringBuilder()
+        sb.appendLine("📞 INTERPRETER SERVICES")
+        sb.appendLine()
+        sb.appendLine("━━━ LANGUAGE LINE ━━━")
+        sb.appendLine("Phone: 1-800-526-7625")
+        sb.appendLine("Access: Check badge/ID card")
+        sb.appendLine("Hours: 24/7/365")
+        sb.appendLine("Types: Phone, Video")
+        sb.appendLine()
+        sb.appendLine("━━━ CYRACOM ━━━")
+        sb.appendLine("Phone: 1-844-797-2266")
+        sb.appendLine("Access: Client ID on badge")
+        sb.appendLine("Hours: 24/7/365")
+        sb.appendLine("Types: Phone, Video")
+        sb.appendLine()
+        sb.appendLine("━━━ STRATUS VIDEO ━━━")
+        sb.appendLine("Use: iPad/tablet on wall")
+        sb.appendLine("Hours: 24/7/365")
+        sb.appendLine("Types: Video (VRI)")
+        sb.appendLine()
+        sb.appendLine("━━━ IN-PERSON ━━━")
+        sb.appendLine("Contact: Interpreter Services")
+        sb.appendLine("Ext: Check hospital directory")
+
+        showDataOverlay("Interpreter Services", sb.toString())
+        speakFeedback("Interpreter services displayed. Language Line and CyraCom available 24/7.")
+    }
+
+    /**
+     * Show interpreter compliance checklist (Title VI).
+     */
+    private fun showInterpreterComplianceChecklist() {
+        val request = Request.Builder()
+            .url("$EHR_PROXY_URL/api/v1/interpreter/compliance-checklist")
+            .get()
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    showLocalComplianceChecklist()
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                runOnUiThread {
+                    if (response.isSuccessful && body != null) {
+                        val resp = JSONObject(body)
+                        val items = resp.optJSONArray("checklist") ?: JSONArray()
+
+                        val sb = StringBuilder()
+                        sb.appendLine("📋 INTERPRETER COMPLIANCE")
+                        sb.appendLine("Title VI Requirements")
+                        sb.appendLine()
+
+                        for (i in 0 until items.length()) {
+                            val item = items.getJSONObject(i)
+                            val checked = if (item.optBoolean("required", true)) "□" else "✓"
+                            sb.appendLine("$checked ${item.optString("item", "")}")
+                        }
+
+                        sb.appendLine()
+                        sb.appendLine("━━━ REMEMBER ━━━")
+                        sb.appendLine("• Never use children as interpreters")
+                        sb.appendLine("• Document family declined if applicable")
+                        sb.appendLine("• Document interpreter use in chart")
+
+                        showDataOverlay("Compliance Checklist", sb.toString())
+                        speakFeedback("Title VI compliance checklist displayed.")
+                    } else {
+                        showLocalComplianceChecklist()
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Show local compliance checklist (fallback).
+     */
+    private fun showLocalComplianceChecklist() {
+        val sb = StringBuilder()
+        sb.appendLine("📋 TITLE VI COMPLIANCE")
+        sb.appendLine("Language Access Requirements")
+        sb.appendLine()
+        sb.appendLine("━━━ BEFORE ENCOUNTER ━━━")
+        sb.appendLine("□ Identify patient's language")
+        sb.appendLine("□ Offer qualified interpreter")
+        sb.appendLine("□ Document if family declines")
+        sb.appendLine("□ Never use children (<18)")
+        sb.appendLine()
+        sb.appendLine("━━━ DURING ENCOUNTER ━━━")
+        sb.appendLine("□ Speak directly to patient")
+        sb.appendLine("□ Use short, simple sentences")
+        sb.appendLine("□ Pause for interpretation")
+        sb.appendLine("□ Avoid medical jargon")
+        sb.appendLine()
+        sb.appendLine("━━━ DOCUMENTATION ━━━")
+        sb.appendLine("□ Language preference")
+        sb.appendLine("□ Interpreter used (type)")
+        sb.appendLine("□ Interpreter ID/name")
+        sb.appendLine("□ Duration of service")
+        sb.appendLine()
+        sb.appendLine("━━━ VITAL DOCUMENTS ━━━")
+        sb.appendLine("Must be translated:")
+        sb.appendLine("• Consent forms")
+        sb.appendLine("• Discharge instructions")
+        sb.appendLine("• HIPAA notices")
+
+        showDataOverlay("Compliance Checklist", sb.toString())
+        speakFeedback("Title VI compliance checklist displayed. Document interpreter use in chart.")
+    }
+
+    /**
+     * Set family interpreter declined.
+     */
+    private fun setFamilyInterpreterDeclined(declined: Boolean) {
+        familyInterpreterDeclined = declined
+        if (declined) {
+            speakFeedback("Documented: Family member as interpreter declined by patient. Qualified interpreter required.")
+        }
+    }
+
+    /**
+     * Set interpreter type.
+     */
+    private fun setInterpreterType(type: String) {
+        interpreterType = type
+        speakFeedback("Interpreter type set to ${type.replace("_", " ")}.")
+    }
+
+    /**
+     * Document interpreter use in note.
+     */
+    private fun documentInterpreterUse() {
+        val sb = StringBuilder()
+        sb.appendLine("📝 INTERPRETER DOCUMENTATION")
+        sb.appendLine()
+        sb.appendLine("━━━ ADD TO NOTE ━━━")
+        sb.appendLine()
+        sb.appendLine("Language: ${patientPreferredLanguageName ?: "Unknown"}")
+        sb.appendLine("Interpreter Type: ${interpreterType.replace("_", " ").capitalize()}")
+        sb.appendLine("Service: ${currentInterpreterService ?: "Unknown"}")
+        sb.appendLine("Family Declined: ${if (familyInterpreterDeclined) "Yes" else "N/A"}")
+        sb.appendLine()
+
+        // Build documentation string
+        val docString = buildString {
+            append("Interpreter Services Used: ")
+            append("${patientPreferredLanguageName ?: "Unknown"} ")
+            append("via ${interpreterType.replace("_", " ")} interpretation. ")
+            if (familyInterpreterDeclined) {
+                append("Patient declined family member as interpreter. ")
+            }
+            append("Qualified medical interpreter used per Title VI requirements.")
+        }
+
+        sb.appendLine("━━━ DOCUMENTATION TEXT ━━━")
+        sb.appendLine()
+        sb.appendLine(docString)
+        sb.appendLine()
+        sb.appendLine("Copy to Plan section of note")
+
+        showDataOverlay("Interpreter Documentation", sb.toString())
+        speakFeedback("Interpreter documentation prepared. Add to plan section of note.")
+    }
+
     // ============ Patient History Methods ============
 
     /**
@@ -22099,6 +22808,93 @@ SOFA Score: [X]
             }
             lower.contains("literacy accommodations") || lower.contains("accommodations") -> {
                 showLiteracyAccommodations()
+            }
+            // ═══ INTERPRETER INTEGRATION COMMANDS (Feature #86) ═══
+            lower.contains("interpreter") && (lower.contains("need") || lower.contains("request") || lower.contains("call")) -> {
+                requestInterpreter()
+            }
+            lower.contains("interpreter status") || lower.contains("interpreter session") -> {
+                showInterpreterStatus()
+            }
+            lower.contains("start interpreter") || lower.contains("begin interpreter") -> {
+                startInterpreterSession()
+            }
+            lower.contains("end interpreter") || lower.contains("stop interpreter") ||
+            lower.contains("disconnect interpreter") -> {
+                endInterpreterSession()
+            }
+            lower.contains("spanish interpreter") || lower.contains("spanish speaking") -> {
+                requestInterpreterForLanguage("es", "Spanish")
+            }
+            lower.contains("mandarin interpreter") || lower.contains("chinese interpreter") -> {
+                requestInterpreterForLanguage("zh", "Chinese (Mandarin)")
+            }
+            lower.contains("vietnamese interpreter") -> {
+                requestInterpreterForLanguage("vi", "Vietnamese")
+            }
+            lower.contains("arabic interpreter") -> {
+                requestInterpreterForLanguage("ar", "Arabic")
+            }
+            lower.contains("russian interpreter") -> {
+                requestInterpreterForLanguage("ru", "Russian")
+            }
+            lower.contains("korean interpreter") -> {
+                requestInterpreterForLanguage("ko", "Korean")
+            }
+            lower.contains("portuguese interpreter") -> {
+                requestInterpreterForLanguage("pt", "Portuguese")
+            }
+            lower.contains("sign language interpreter") || lower.contains("asl interpreter") ||
+            lower.contains("deaf interpreter") -> {
+                requestInterpreterForLanguage("asl", "ASL (American Sign Language)")
+            }
+            lower.contains("patient speaks") || lower.contains("language preference") ||
+            lower.contains("preferred language") -> {
+                showLanguagePreference()
+            }
+            lower.contains("set language") && lower.contains("spanish") -> {
+                setPatientLanguagePreference("es", "Spanish")
+            }
+            lower.contains("set language") && (lower.contains("chinese") || lower.contains("mandarin")) -> {
+                setPatientLanguagePreference("zh", "Chinese (Mandarin)")
+            }
+            lower.contains("set language") && lower.contains("vietnamese") -> {
+                setPatientLanguagePreference("vi", "Vietnamese")
+            }
+            lower.contains("clinical phrases") || lower.contains("common phrases") ||
+            lower.contains("translated phrases") -> {
+                showClinicalPhrases()
+            }
+            lower.contains("say in spanish") || (lower.contains("spanish") && lower.contains("how do i say")) -> {
+                val phrase = extractPhraseToTranslate(transcript)
+                showPhrasesForLanguage("es", phrase)
+            }
+            lower.contains("say in chinese") || (lower.contains("chinese") && lower.contains("how do i say")) -> {
+                val phrase = extractPhraseToTranslate(transcript)
+                showPhrasesForLanguage("zh", phrase)
+            }
+            lower.contains("interpreter services") || lower.contains("language line") ||
+            lower.contains("interpreter phone") -> {
+                showInterpreterServices()
+            }
+            lower.contains("compliance checklist") || lower.contains("interpreter compliance") ||
+            lower.contains("title vi") || lower.contains("title 6") -> {
+                showInterpreterComplianceChecklist()
+            }
+            lower.contains("family interpreter declined") || lower.contains("no family interpreter") -> {
+                setFamilyInterpreterDeclined(true)
+            }
+            lower.contains("video interpreter") -> {
+                setInterpreterType("video")
+            }
+            lower.contains("phone interpreter") -> {
+                setInterpreterType("phone")
+            }
+            lower.contains("in person interpreter") || lower.contains("in-person interpreter") -> {
+                setInterpreterType("in_person")
+            }
+            lower.contains("document interpreter") || lower.contains("interpreter documentation") -> {
+                documentInterpreterUse()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
