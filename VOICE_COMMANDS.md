@@ -518,4 +518,74 @@ Say "bias resources" for training materials.
 
 ---
 
-*Last updated: Feature #81 (Implicit Bias Alerts)*
+## Maternal Health Monitoring (Feature #82)
+
+High-risk OB alerts addressing the 3-4x maternal mortality rate for Black women. Most maternal deaths are preventable.
+
+### Status Commands
+
+| Command | What it Does | How to Use |
+|---------|--------------|------------|
+| "patient is pregnant" | Set maternal status to pregnant | When starting OB care |
+| "patient is postpartum" | Set maternal status to postpartum | After delivery |
+| "clear maternal" / "not pregnant" | Clear maternal status | When no longer applies |
+| "maternal health" | Run full maternal health assessment | Assess current patient |
+
+### Warning Signs & Protocols
+
+| Command | What it Does | How to Use |
+|---------|--------------|------------|
+| "warning signs" | Show all maternal warning signs | Emergency, urgent, routine |
+| "preeclampsia" | Show preeclampsia warning signs | BP thresholds, symptoms, labs |
+| "hemorrhage" | Show hemorrhage protocol | Bleeding assessment |
+| "postpartum checklist" | Show 10-item postpartum checklist | At each postpartum visit |
+| "ppd screen" / "postpartum depression" | Show Edinburgh Scale screening | Mental health check |
+| "maternal risk" | Show patient's risk level | Based on ancestry + conditions |
+| "maternal disparity" / "mortality data" | Show CDC disparity data | Educational |
+
+### Risk Levels
+
+| Level | Indicator | Criteria |
+|-------|-----------|----------|
+| 🟢 Standard | Green | No elevated risk factors |
+| 🟡 Elevated | Yellow | High-risk ancestry OR conditions |
+| 🔴 High | Red | High-risk ancestry AND conditions, or emergency symptoms |
+
+### Emergency Warning Signs (Call 911)
+
+| Symptom | Ask Patient |
+|---------|-------------|
+| Severe headache | "Do you have a headache that won't go away?" |
+| Vision changes | "Have you noticed spots or blurry vision?" |
+| Difficulty breathing | "Are you having trouble breathing?" |
+| Chest pain | "Do you have any chest pain or pressure?" |
+| Heavy bleeding | "Are you soaking a pad in an hour or less?" |
+| Seizures | "Have you had any seizures?" |
+
+### Example Assessment Display
+
+```
+🤰 MATERNAL HEALTH ASSESSMENT
+
+🟡 Risk Level: ELEVATED
+Status: Postpartum
+
+⚠️ DISPARITY ALERT:
+CDC 2023: Black women are 3-4 times more likely
+to die from pregnancy-related causes...
+
+━━━ ALERTS ━━━
+🟡 Maternal Health Disparity Alert
+   This patient is in a demographic group with
+   3-4x higher maternal mortality rate.
+
+━━━ CHECK FOR ━━━
+• Severe headache
+• Vision changes
+• Difficulty breathing
+• Chest pain
+```
+
+---
+
+*Last updated: Feature #82 (Maternal Health Monitoring)*

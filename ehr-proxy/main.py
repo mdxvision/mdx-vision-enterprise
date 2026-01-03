@@ -1225,6 +1225,67 @@ class ImplicitBiasResponse(BaseModel):
     timestamp: str
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# MATERNAL HEALTH MONITORING (Feature #82) - High-risk OB alerts for Black mothers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MaternalStatus(str, Enum):
+    """Patient's maternal status"""
+    NOT_PREGNANT = "not_pregnant"
+    PREGNANT = "pregnant"
+    POSTPARTUM = "postpartum"  # Within 12 months of delivery
+    UNKNOWN = "unknown"
+
+
+class MaternalRiskLevel(str, Enum):
+    """Risk stratification for maternal patients"""
+    STANDARD = "standard"
+    ELEVATED = "elevated"  # Based on ancestry disparity data
+    HIGH = "high"  # Multiple risk factors
+
+
+class MaternalWarningSign(BaseModel):
+    """Individual warning sign with urgency level"""
+    symptom: str
+    description: str
+    urgency: str  # "emergency", "urgent", "routine"
+    action: str  # What to do if present
+    ask_patient: str  # How to ask about this symptom
+
+
+class MaternalHealthAlert(BaseModel):
+    """Alert for maternal health considerations"""
+    alert_type: str  # "disparity_awareness", "warning_sign", "postpartum_check", "preeclampsia", etc.
+    severity: str  # "info", "warning", "critical"
+    title: str
+    message: str
+    recommendation: str
+    warning_signs: List[MaternalWarningSign] = []
+    evidence: Optional[str] = None
+
+
+class MaternalHealthRequest(BaseModel):
+    """Request maternal health assessment"""
+    patient_id: str
+    patient_ancestry: Optional[str] = None
+    maternal_status: MaternalStatus = MaternalStatus.UNKNOWN
+    gestational_weeks: Optional[int] = None  # If pregnant
+    postpartum_weeks: Optional[int] = None  # If postpartum
+    current_symptoms: List[str] = []  # Symptoms patient is reporting
+    vital_signs: Optional[Dict] = None  # BP, HR, etc.
+    conditions: List[str] = []  # Existing conditions from chart
+
+
+class MaternalHealthResponse(BaseModel):
+    """Response with maternal health alerts and guidance"""
+    risk_level: MaternalRiskLevel
+    alerts: List[MaternalHealthAlert] = []
+    warning_signs_to_check: List[MaternalWarningSign] = []
+    disparity_context: Optional[str] = None  # Explanation of disparity risk
+    postpartum_checklist: List[str] = []
+    timestamp: str
+
+
 # Billing/Claim Models (Feature #71)
 class ClaimStatus(str, Enum):
     """Claim lifecycle status"""
@@ -5147,6 +5208,360 @@ async def get_bias_resources():
             "Pletcher MJ et al. (2008). Trends in opioid prescribing by race/ethnicity. JAMA.",
             "Chapman EN et al. (2013). Physicians and implicit bias: How doctors may unwittingly perpetuate health care disparities. JGIM."
         ]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MATERNAL HEALTH MONITORING (Feature #82) - High-risk OB alerts for Black mothers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Maternal warning signs database - evidence-based from ACOG, CDC, and NIH
+MATERNAL_WARNING_SIGNS = {
+    "emergency": [
+        {
+            "symptom": "Severe headache",
+            "description": "Headache that doesn't go away with medication, especially with vision changes",
+            "urgency": "emergency",
+            "action": "Evaluate immediately for preeclampsia/eclampsia. Check BP, urine protein, reflexes.",
+            "ask_patient": "Do you have a headache that won't go away, even with pain medication?"
+        },
+        {
+            "symptom": "Vision changes",
+            "description": "Blurry vision, seeing spots, flashing lights, or temporary blindness",
+            "urgency": "emergency",
+            "action": "Evaluate immediately for preeclampsia. Stat BP, magnesium sulfate if severe.",
+            "ask_patient": "Have you noticed any changes in your vision - spots, flashing lights, or blurry vision?"
+        },
+        {
+            "symptom": "Seizures",
+            "description": "Any seizure activity during pregnancy or postpartum",
+            "urgency": "emergency",
+            "action": "Eclampsia protocol - secure airway, magnesium sulfate, emergent delivery evaluation.",
+            "ask_patient": "Have you had any seizures or episodes of shaking you couldn't control?"
+        },
+        {
+            "symptom": "Difficulty breathing",
+            "description": "Shortness of breath, chest tightness, or feeling like can't get enough air",
+            "urgency": "emergency",
+            "action": "Evaluate for peripartum cardiomyopathy, PE, or amniotic fluid embolism. Stat EKG, BNP, echo.",
+            "ask_patient": "Are you having trouble breathing or feeling short of breath?"
+        },
+        {
+            "symptom": "Chest pain",
+            "description": "Any chest pain or pressure, especially with exertion",
+            "urgency": "emergency",
+            "action": "Cardiac workup - EKG, troponin, echo. Consider PE, aortic dissection, cardiomyopathy.",
+            "ask_patient": "Do you have any pain or pressure in your chest?"
+        },
+        {
+            "symptom": "Heavy bleeding",
+            "description": "Soaking more than one pad per hour, or passing clots larger than an egg",
+            "urgency": "emergency",
+            "action": "Postpartum hemorrhage protocol. Type and cross, IV access, uterotonics, possible transfusion.",
+            "ask_patient": "How much are you bleeding? Are you soaking through a pad in an hour or less?"
+        }
+    ],
+    "urgent": [
+        {
+            "symptom": "Fever",
+            "description": "Temperature 100.4°F (38°C) or higher",
+            "urgency": "urgent",
+            "action": "Evaluate for endometritis, mastitis, UTI, wound infection. CBC, blood cultures, UA.",
+            "ask_patient": "Have you had a fever or felt feverish? Have you checked your temperature?"
+        },
+        {
+            "symptom": "Severe abdominal pain",
+            "description": "Abdominal pain not relieved by position change or medication",
+            "urgency": "urgent",
+            "action": "Evaluate for uterine rupture, placental abruption, ectopic, appendicitis.",
+            "ask_patient": "Do you have severe stomach or belly pain that won't go away?"
+        },
+        {
+            "symptom": "Swelling of face or hands",
+            "description": "New or worsening swelling of face, hands, especially if sudden",
+            "urgency": "urgent",
+            "action": "Check BP, urine protein. Evaluate for preeclampsia even postpartum.",
+            "ask_patient": "Have you noticed new swelling in your face or hands?"
+        },
+        {
+            "symptom": "Leg pain or swelling",
+            "description": "Pain, redness, or swelling in one leg more than the other",
+            "urgency": "urgent",
+            "action": "Evaluate for DVT. Consider D-dimer, lower extremity doppler.",
+            "ask_patient": "Do you have pain or swelling in one leg, especially the calf?"
+        },
+        {
+            "symptom": "Thoughts of self-harm",
+            "description": "Thoughts of hurting self or baby, feeling like family would be better off without you",
+            "urgency": "urgent",
+            "action": "Immediate psychiatric evaluation. Do not leave patient alone. Safety plan.",
+            "ask_patient": "Have you had any thoughts of hurting yourself or your baby?"
+        },
+        {
+            "symptom": "Overwhelming sadness",
+            "description": "Crying all the time, feeling hopeless, unable to care for self or baby",
+            "urgency": "urgent",
+            "action": "Screen for postpartum depression (EPDS). Consider psych referral, medication.",
+            "ask_patient": "How are you feeling emotionally? Are you having trouble coping or feeling very sad?"
+        }
+    ],
+    "routine": [
+        {
+            "symptom": "Fatigue",
+            "description": "Extreme tiredness beyond normal postpartum exhaustion",
+            "urgency": "routine",
+            "action": "Check CBC for anemia, TSH for thyroid. Assess sleep, support system.",
+            "ask_patient": "How tired are you feeling? Is it more than you'd expect?"
+        },
+        {
+            "symptom": "Difficulty bonding",
+            "description": "Trouble feeling connected to or caring for baby",
+            "urgency": "routine",
+            "action": "Screen for postpartum depression, assess support system, lactation issues.",
+            "ask_patient": "How are you feeling about the baby? Are you having trouble connecting?"
+        },
+        {
+            "symptom": "Incision concerns",
+            "description": "Redness, drainage, or opening of C-section or perineal incision",
+            "urgency": "routine",
+            "action": "Examine wound, consider infection. Antibiotics if infected, wound care.",
+            "ask_patient": "How does your incision look? Any redness, drainage, or opening?"
+        }
+    ]
+}
+
+# Disparity awareness data
+MATERNAL_DISPARITY_DATA = {
+    "african": {
+        "mortality_ratio": "3-4x higher than white women",
+        "evidence": "CDC 2023: Black women are 3-4 times more likely to die from pregnancy-related causes than white women. This disparity persists across all income and education levels.",
+        "key_factors": [
+            "Cardiovascular conditions including cardiomyopathy",
+            "Preeclampsia and eclampsia",
+            "Hemorrhage",
+            "Infection/sepsis"
+        ],
+        "recommendation": "Lower threshold for intervention. Believe patient-reported symptoms. Close follow-up especially postpartum. Screen for cardiomyopathy if any cardiac symptoms."
+    },
+    "native_american": {
+        "mortality_ratio": "2-3x higher than white women",
+        "evidence": "CDC 2023: American Indian/Alaska Native women have significantly elevated maternal mortality rates.",
+        "key_factors": [
+            "Access to care barriers",
+            "Higher rates of chronic conditions",
+            "Hemorrhage"
+        ],
+        "recommendation": "Ensure close follow-up, address access barriers, consider telemedicine for remote patients."
+    }
+}
+
+POSTPARTUM_CHECKLIST = [
+    "Blood pressure check (preeclampsia can occur up to 6 weeks postpartum)",
+    "Bleeding assessment (amount, color, clots)",
+    "Emotional wellbeing screening (Edinburgh Postnatal Depression Scale)",
+    "Incision/wound check if applicable",
+    "Feeding assessment (breast or bottle, any issues)",
+    "Pain level assessment",
+    "Sleep and fatigue evaluation",
+    "Social support assessment",
+    "Contraception discussion",
+    "Follow-up appointment scheduled"
+]
+
+
+def determine_maternal_risk_level(ancestry: Optional[str], conditions: List[str], symptoms: List[str]) -> MaternalRiskLevel:
+    """Determine maternal risk level based on ancestry, conditions, and symptoms."""
+    high_risk_ancestries = ["african", "black", "native_american", "indigenous", "alaska_native"]
+    high_risk_conditions = ["hypertension", "diabetes", "obesity", "preeclampsia", "cardiac", "cardiomyopathy", "sickle cell"]
+
+    # Check for high-risk factors
+    has_ancestry_risk = ancestry and any(hra in ancestry.lower() for hra in high_risk_ancestries)
+    has_condition_risk = any(any(hrc in cond.lower() for hrc in high_risk_conditions) for cond in conditions)
+    has_emergency_symptoms = any(
+        any(ws["symptom"].lower() in symptom.lower() for ws in MATERNAL_WARNING_SIGNS["emergency"])
+        for symptom in symptoms
+    )
+
+    if has_emergency_symptoms:
+        return MaternalRiskLevel.HIGH
+    elif has_ancestry_risk and has_condition_risk:
+        return MaternalRiskLevel.HIGH
+    elif has_ancestry_risk or has_condition_risk:
+        return MaternalRiskLevel.ELEVATED
+    else:
+        return MaternalRiskLevel.STANDARD
+
+
+def generate_maternal_alerts(
+    ancestry: Optional[str],
+    maternal_status: MaternalStatus,
+    risk_level: MaternalRiskLevel,
+    symptoms: List[str],
+    vital_signs: Optional[Dict]
+) -> List[MaternalHealthAlert]:
+    """Generate maternal health alerts based on patient data."""
+    alerts = []
+
+    # Disparity awareness alert for high-risk ancestry
+    high_risk_ancestries = ["african", "black", "native_american", "indigenous"]
+    if ancestry and any(hra in ancestry.lower() for hra in high_risk_ancestries):
+        ancestry_key = "african" if any(a in ancestry.lower() for a in ["african", "black"]) else "native_american"
+        disparity_data = MATERNAL_DISPARITY_DATA.get(ancestry_key, MATERNAL_DISPARITY_DATA["african"])
+
+        alerts.append(MaternalHealthAlert(
+            alert_type="disparity_awareness",
+            severity="warning",
+            title="Maternal Health Disparity Alert",
+            message=f"This patient is in a demographic group with {disparity_data['mortality_ratio']} maternal mortality rate.",
+            recommendation=disparity_data["recommendation"],
+            evidence=disparity_data["evidence"]
+        ))
+
+    # Check vital signs for concerning values
+    if vital_signs:
+        bp_systolic = vital_signs.get("bp_systolic", 0)
+        bp_diastolic = vital_signs.get("bp_diastolic", 0)
+
+        if bp_systolic >= 160 or bp_diastolic >= 110:
+            alerts.append(MaternalHealthAlert(
+                alert_type="preeclampsia",
+                severity="critical",
+                title="Severe Hypertension - Preeclampsia Risk",
+                message=f"BP {bp_systolic}/{bp_diastolic} is severely elevated. Immediate evaluation needed.",
+                recommendation="Start antihypertensive therapy. Check urine protein, LFTs, platelets. Consider magnesium sulfate.",
+                warning_signs=[MaternalWarningSign(**ws) for ws in MATERNAL_WARNING_SIGNS["emergency"][:3]]
+            ))
+        elif bp_systolic >= 140 or bp_diastolic >= 90:
+            alerts.append(MaternalHealthAlert(
+                alert_type="hypertension",
+                severity="warning",
+                title="Elevated Blood Pressure",
+                message=f"BP {bp_systolic}/{bp_diastolic} is elevated. Monitor closely for preeclampsia.",
+                recommendation="Repeat BP in 15 min. Check urine protein. Review preeclampsia symptoms."
+            ))
+
+    # Check for emergency symptoms in reported symptoms
+    for symptom in symptoms:
+        symptom_lower = symptom.lower()
+        for emergency in MATERNAL_WARNING_SIGNS["emergency"]:
+            if emergency["symptom"].lower() in symptom_lower or symptom_lower in emergency["symptom"].lower():
+                alerts.append(MaternalHealthAlert(
+                    alert_type="warning_sign",
+                    severity="critical",
+                    title=f"Emergency Warning Sign: {emergency['symptom']}",
+                    message=emergency["description"],
+                    recommendation=emergency["action"],
+                    warning_signs=[MaternalWarningSign(**emergency)]
+                ))
+                break
+
+    # Postpartum-specific alerts
+    if maternal_status == MaternalStatus.POSTPARTUM:
+        alerts.append(MaternalHealthAlert(
+            alert_type="postpartum_check",
+            severity="info",
+            title="Postpartum Assessment Due",
+            message="This patient is in the postpartum period. Complete postpartum checklist.",
+            recommendation="Review all warning signs with patient. Schedule follow-up if not already done."
+        ))
+
+    return alerts
+
+
+@app.post("/api/v1/maternal-health/assess")
+async def assess_maternal_health(request: MaternalHealthRequest, req: Request):
+    """
+    Assess maternal health and generate alerts.
+
+    Provides heightened alerts for patients in demographic groups with
+    elevated maternal mortality risk. Based on CDC, ACOG, and NIH data.
+    """
+    # HIPAA audit logging
+    log_audit_event(
+        event_type="maternal_health_assessment",
+        patient_id=request.patient_id,
+        action="maternal_risk_assessment",
+        details={
+            "maternal_status": request.maternal_status.value,
+            "ancestry_provided": request.patient_ancestry is not None
+        },
+        request=req
+    )
+
+    # Determine risk level
+    risk_level = determine_maternal_risk_level(
+        request.patient_ancestry,
+        request.conditions,
+        request.current_symptoms
+    )
+
+    # Generate alerts
+    alerts = generate_maternal_alerts(
+        request.patient_ancestry,
+        request.maternal_status,
+        risk_level,
+        request.current_symptoms,
+        request.vital_signs
+    )
+
+    # Get warning signs to check based on status and risk
+    warning_signs = []
+    if risk_level in [MaternalRiskLevel.ELEVATED, MaternalRiskLevel.HIGH]:
+        # Include all emergency and urgent signs
+        for ws in MATERNAL_WARNING_SIGNS["emergency"]:
+            warning_signs.append(MaternalWarningSign(**ws))
+        for ws in MATERNAL_WARNING_SIGNS["urgent"]:
+            warning_signs.append(MaternalWarningSign(**ws))
+    else:
+        # Include emergency signs only
+        for ws in MATERNAL_WARNING_SIGNS["emergency"]:
+            warning_signs.append(MaternalWarningSign(**ws))
+
+    # Get disparity context
+    disparity_context = None
+    high_risk_ancestries = ["african", "black", "native_american", "indigenous"]
+    if request.patient_ancestry and any(hra in request.patient_ancestry.lower() for hra in high_risk_ancestries):
+        ancestry_key = "african" if any(a in request.patient_ancestry.lower() for a in ["african", "black"]) else "native_american"
+        disparity_data = MATERNAL_DISPARITY_DATA.get(ancestry_key)
+        if disparity_data:
+            disparity_context = disparity_data["evidence"]
+
+    return MaternalHealthResponse(
+        risk_level=risk_level,
+        alerts=alerts,
+        warning_signs_to_check=warning_signs,
+        disparity_context=disparity_context,
+        postpartum_checklist=POSTPARTUM_CHECKLIST if request.maternal_status == MaternalStatus.POSTPARTUM else [],
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.get("/api/v1/maternal-health/warning-signs")
+async def get_maternal_warning_signs():
+    """Get all maternal warning signs organized by urgency."""
+    return {
+        "emergency": MATERNAL_WARNING_SIGNS["emergency"],
+        "urgent": MATERNAL_WARNING_SIGNS["urgent"],
+        "routine": MATERNAL_WARNING_SIGNS["routine"]
+    }
+
+
+@app.get("/api/v1/maternal-health/postpartum-checklist")
+async def get_postpartum_checklist():
+    """Get the postpartum assessment checklist."""
+    return {
+        "checklist": POSTPARTUM_CHECKLIST,
+        "note": "Complete all items at each postpartum visit. Preeclampsia can occur up to 6 weeks postpartum."
+    }
+
+
+@app.get("/api/v1/maternal-health/disparity-data")
+async def get_maternal_disparity_data():
+    """Get maternal mortality disparity data by ancestry."""
+    return {
+        "disparity_data": MATERNAL_DISPARITY_DATA,
+        "source": "CDC Pregnancy Mortality Surveillance System, 2023",
+        "key_message": "Black women are 3-4 times more likely to die from pregnancy-related causes than white women. This disparity persists across all income and education levels."
     }
 
 

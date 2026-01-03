@@ -244,6 +244,14 @@ class MainActivity : AppCompatActivity() {
     private var currentBiasContext: String? = null  // "pain_assessment", "cardiac_symptoms", etc.
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // MATERNAL HEALTH MONITORING (Feature #82) - High-risk OB alerts for Black mothers
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var currentMaternalStatus: String? = null  // "pregnant", "postpartum", null
+    private var maternalRiskLevel: String = "standard"  // "standard", "elevated", "high"
+    private var maternalAlerts: MutableList<JSONObject> = mutableListOf()
+    private var postpartumChecklist: List<String> = emptyList()
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE (ACI) - Auto-documentation from room audio
     // ═══════════════════════════════════════════════════════════════════════════
     private var isAmbientMode: Boolean = false  // Continuous background listening
@@ -17771,6 +17779,517 @@ SOFA Score: [X]
         currentBiasContext = null
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // MATERNAL HEALTH MONITORING (Feature #82) - High-risk OB alerts for Black mothers
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Set maternal status for current patient.
+     */
+    private fun setMaternalStatus(status: String?) {
+        currentMaternalStatus = status
+        if (status == null) {
+            maternalAlerts.clear()
+            maternalRiskLevel = "standard"
+            speakFeedback("Maternal status cleared.")
+            Toast.makeText(this, "Maternal status: None", Toast.LENGTH_SHORT).show()
+        } else {
+            val displayStatus = status.replaceFirstChar { it.uppercase() }
+            speakFeedback("Patient marked as $displayStatus. Assessing maternal health.")
+            Toast.makeText(this, "Status: $displayStatus", Toast.LENGTH_SHORT).show()
+            assessMaternalHealth()
+        }
+    }
+
+    /**
+     * Assess maternal health and generate alerts.
+     */
+    private fun assessMaternalHealth() {
+        val patientId = currentPatientData?.optString("patient_id")
+        if (patientId == null) {
+            speakFeedback("No patient loaded. Load a patient first.")
+            return
+        }
+
+        if (currentMaternalStatus == null) {
+            speakFeedback("No maternal status set. Say patient is pregnant or patient is postpartum.")
+            return
+        }
+
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/maternal-health/assess")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+
+                val requestBody = JSONObject().apply {
+                    put("patient_id", patientId)
+                    currentPatientAncestry?.let { put("patient_ancestry", it) }
+                    put("maternal_status", currentMaternalStatus)
+                    put("current_symptoms", org.json.JSONArray(extractedEntities.symptoms))
+                    put("conditions", org.json.JSONArray(extractedEntities.symptoms))  // Use extracted conditions
+                }
+
+                connection.outputStream.bufferedWriter().use { it.write(requestBody.toString()) }
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+
+                    maternalRiskLevel = json.optString("risk_level", "standard")
+                    val alerts = json.optJSONArray("alerts")
+                    val checklist = json.optJSONArray("postpartum_checklist")
+                    val disparityContext = json.optString("disparity_context", "")
+
+                    runOnUiThread {
+                        maternalAlerts.clear()
+                        alerts?.let {
+                            for (i in 0 until it.length()) {
+                                maternalAlerts.add(it.getJSONObject(i))
+                            }
+                        }
+
+                        postpartumChecklist = mutableListOf<String>().apply {
+                            checklist?.let {
+                                for (i in 0 until it.length()) {
+                                    add(it.getString(i))
+                                }
+                            }
+                        }
+
+                        displayMaternalAssessment(json)
+                    }
+                } else {
+                    runOnUiThread {
+                        showDefaultMaternalAssessment()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to assess maternal health: ${e.message}")
+                runOnUiThread {
+                    showDefaultMaternalAssessment()
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Display maternal health assessment results.
+     */
+    private fun displayMaternalAssessment(json: JSONObject) {
+        val sb = StringBuilder()
+        val riskLevel = json.optString("risk_level", "standard")
+        val riskIcon = when (riskLevel) {
+            "high" -> "🔴"
+            "elevated" -> "🟡"
+            else -> "🟢"
+        }
+
+        sb.appendLine("🤰 MATERNAL HEALTH ASSESSMENT")
+        sb.appendLine()
+        sb.appendLine("$riskIcon Risk Level: ${riskLevel.uppercase()}")
+        sb.appendLine("Status: ${currentMaternalStatus?.replaceFirstChar { it.uppercase() }}")
+        sb.appendLine()
+
+        // Show disparity context if present
+        val disparityContext = json.optString("disparity_context", "")
+        if (disparityContext.isNotEmpty()) {
+            sb.appendLine("⚠️ DISPARITY ALERT:")
+            sb.appendLine(disparityContext.take(150))
+            sb.appendLine()
+        }
+
+        // Show alerts
+        val alerts = json.optJSONArray("alerts")
+        if (alerts != null && alerts.length() > 0) {
+            sb.appendLine("━━━ ALERTS ━━━")
+            for (i in 0 until alerts.length()) {
+                val alert = alerts.getJSONObject(i)
+                val severity = alert.optString("severity", "info")
+                val icon = when (severity) {
+                    "critical" -> "🔴"
+                    "warning" -> "🟡"
+                    else -> "🔵"
+                }
+                sb.appendLine("$icon ${alert.optString("title")}")
+                sb.appendLine("   ${alert.optString("message")}")
+                sb.appendLine()
+            }
+        }
+
+        // Show key warning signs to check
+        val warningSigns = json.optJSONArray("warning_signs_to_check")
+        if (warningSigns != null && warningSigns.length() > 0) {
+            sb.appendLine("━━━ CHECK FOR ━━━")
+            val maxSigns = minOf(4, warningSigns.length())
+            for (i in 0 until maxSigns) {
+                val sign = warningSigns.getJSONObject(i)
+                sb.appendLine("• ${sign.optString("symptom")}")
+            }
+            if (warningSigns.length() > 4) {
+                sb.appendLine("• ... and ${warningSigns.length() - 4} more")
+            }
+        }
+
+        showDataOverlay("Maternal Assessment", sb.toString())
+
+        // Speak critical alerts
+        if (riskLevel == "high" || riskLevel == "elevated") {
+            val spokenAlert = when {
+                riskLevel == "high" -> "High risk maternal patient. Review alerts immediately."
+                disparityContext.isNotEmpty() -> "Elevated risk: Patient is in a demographic group with higher maternal mortality. Lower threshold for intervention."
+                else -> "Elevated risk maternal patient."
+            }
+            speakFeedback(spokenAlert)
+        } else {
+            speakFeedback("Maternal assessment complete. Standard risk level.")
+        }
+    }
+
+    /**
+     * Default maternal assessment when backend unavailable.
+     */
+    private fun showDefaultMaternalAssessment() {
+        val sb = StringBuilder()
+        sb.appendLine("🤰 MATERNAL HEALTH CHECK")
+        sb.appendLine()
+        sb.appendLine("Status: ${currentMaternalStatus?.replaceFirstChar { it.uppercase() }}")
+        sb.appendLine()
+        sb.appendLine("━━━ EMERGENCY SIGNS ━━━")
+        sb.appendLine("🔴 Severe headache unrelieved by meds")
+        sb.appendLine("🔴 Vision changes (spots, blurry)")
+        sb.appendLine("🔴 Difficulty breathing")
+        sb.appendLine("🔴 Chest pain")
+        sb.appendLine("🔴 Heavy bleeding (pad/hour)")
+        sb.appendLine("🔴 Seizures")
+        sb.appendLine()
+        sb.appendLine("━━━ URGENT SIGNS ━━━")
+        sb.appendLine("🟡 Fever ≥100.4°F")
+        sb.appendLine("🟡 Severe abdominal pain")
+        sb.appendLine("🟡 Swelling face/hands")
+        sb.appendLine("🟡 Thoughts of self-harm")
+
+        showDataOverlay("Maternal Health", sb.toString())
+        speakFeedback("Maternal health checklist displayed. Review emergency and urgent signs.")
+    }
+
+    /**
+     * Show maternal warning signs.
+     */
+    private fun showMaternalWarningSigns() {
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/maternal-health/warning-signs")
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+
+                if (connection.responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+                    runOnUiThread { displayWarningSigns(json) }
+                } else {
+                    runOnUiThread { showDefaultMaternalAssessment() }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { showDefaultMaternalAssessment() }
+            }
+        }.start()
+    }
+
+    private fun displayWarningSigns(json: JSONObject) {
+        val sb = StringBuilder()
+        sb.appendLine("🚨 MATERNAL WARNING SIGNS")
+        sb.appendLine()
+
+        sb.appendLine("━━━ EMERGENCY (Call 911) ━━━")
+        json.optJSONArray("emergency")?.let { signs ->
+            for (i in 0 until signs.length()) {
+                val sign = signs.getJSONObject(i)
+                sb.appendLine("🔴 ${sign.optString("symptom")}")
+                sb.appendLine("   Ask: ${sign.optString("ask_patient")}")
+            }
+        }
+
+        sb.appendLine()
+        sb.appendLine("━━━ URGENT (Same Day) ━━━")
+        json.optJSONArray("urgent")?.let { signs ->
+            for (i in 0 until signs.length()) {
+                val sign = signs.getJSONObject(i)
+                sb.appendLine("🟡 ${sign.optString("symptom")}")
+            }
+        }
+
+        showDataOverlay("Warning Signs", sb.toString())
+        speakFeedback("Maternal warning signs displayed. Red items require immediate action.")
+    }
+
+    /**
+     * Show postpartum checklist.
+     */
+    private fun showPostpartumChecklist() {
+        if (postpartumChecklist.isEmpty()) {
+            Thread {
+                try {
+                    val url = java.net.URL("$EHR_PROXY_URL/api/v1/maternal-health/postpartum-checklist")
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.requestMethod = "GET"
+
+                    if (connection.responseCode == 200) {
+                        val response = connection.inputStream.bufferedReader().readText()
+                        val json = JSONObject(response)
+                        val checklist = json.optJSONArray("checklist")
+                        runOnUiThread {
+                            postpartumChecklist = mutableListOf<String>().apply {
+                                checklist?.let {
+                                    for (i in 0 until it.length()) {
+                                        add(it.getString(i))
+                                    }
+                                }
+                            }
+                            displayPostpartumChecklist()
+                        }
+                    }
+                } catch (e: Exception) {
+                    runOnUiThread { displayDefaultPostpartumChecklist() }
+                }
+            }.start()
+        } else {
+            displayPostpartumChecklist()
+        }
+    }
+
+    private fun displayPostpartumChecklist() {
+        val sb = StringBuilder()
+        sb.appendLine("📋 POSTPARTUM CHECKLIST")
+        sb.appendLine()
+        sb.appendLine("Complete at each postpartum visit:")
+        sb.appendLine()
+
+        postpartumChecklist.forEachIndexed { index, item ->
+            sb.appendLine("☐ ${index + 1}. $item")
+        }
+
+        sb.appendLine()
+        sb.appendLine("⚠️ Preeclampsia can occur up to")
+        sb.appendLine("   6 weeks postpartum!")
+
+        showDataOverlay("Postpartum Check", sb.toString())
+        speakFeedback("Postpartum checklist displayed. Remember: preeclampsia can occur up to 6 weeks postpartum.")
+    }
+
+    private fun displayDefaultPostpartumChecklist() {
+        postpartumChecklist = listOf(
+            "Blood pressure check",
+            "Bleeding assessment",
+            "Emotional wellbeing (EPDS)",
+            "Incision/wound check",
+            "Feeding assessment",
+            "Pain level",
+            "Sleep and fatigue",
+            "Social support",
+            "Contraception discussion",
+            "Follow-up scheduled"
+        )
+        displayPostpartumChecklist()
+    }
+
+    /**
+     * Show maternal risk level.
+     */
+    private fun showMaternalRiskLevel() {
+        if (currentMaternalStatus == null) {
+            speakFeedback("No maternal status set for this patient.")
+            return
+        }
+
+        val riskIcon = when (maternalRiskLevel) {
+            "high" -> "🔴"
+            "elevated" -> "🟡"
+            else -> "🟢"
+        }
+
+        val ancestry = currentPatientAncestry ?: "Not specified"
+        val isHighRisk = currentPatientAncestry?.lowercase()?.let {
+            it.contains("african") || it.contains("black") || it.contains("native")
+        } ?: false
+
+        val display = """
+            |$riskIcon MATERNAL RISK: ${maternalRiskLevel.uppercase()}
+            |
+            |Status: ${currentMaternalStatus?.replaceFirstChar { it.uppercase() }}
+            |Ancestry: $ancestry
+            |
+            |${if (isHighRisk) """
+            |⚠️ DISPARITY ALERT
+            |Black women: 3-4x higher maternal mortality
+            |Native American: 2-3x higher mortality
+            |
+            |RECOMMENDED ACTIONS:
+            |• Lower threshold for intervention
+            |• Believe patient-reported symptoms
+            |• Close follow-up especially postpartum
+            |• Screen for cardiomyopathy if cardiac symptoms
+            """.trimMargin() else "Standard risk monitoring protocols apply."}
+            """.trimMargin()
+
+        showDataOverlay("Maternal Risk", display)
+        if (isHighRisk) {
+            speakFeedback("Elevated maternal risk due to disparity data. Lower threshold for intervention recommended.")
+        }
+    }
+
+    /**
+     * Show maternal disparity data.
+     */
+    private fun showMaternalDisparityData() {
+        val display = """
+            |📊 MATERNAL MORTALITY DISPARITIES
+            |Source: CDC 2023
+            |
+            |━━━ BLACK WOMEN ━━━
+            |3-4x higher maternal mortality than white women
+            |
+            |This disparity persists across ALL:
+            |• Income levels
+            |• Education levels
+            |• Geographic regions
+            |
+            |Leading causes:
+            |• Cardiovascular/cardiomyopathy
+            |• Preeclampsia/eclampsia
+            |• Hemorrhage
+            |• Infection/sepsis
+            |
+            |━━━ NATIVE AMERICAN WOMEN ━━━
+            |2-3x higher maternal mortality
+            |
+            |━━━ CLINICAL IMPLICATIONS ━━━
+            |• Lower threshold for intervention
+            |• Believe patient-reported symptoms
+            |• Screen for cardiomyopathy early
+            |• Close postpartum follow-up critical
+            |• Most deaths are PREVENTABLE
+            """.trimMargin()
+
+        showDataOverlay("Disparity Data", display)
+        speakFeedback("Maternal mortality disparity data displayed. Most maternal deaths are preventable with timely intervention.")
+    }
+
+    /**
+     * Show preeclampsia warning signs.
+     */
+    private fun showPreeclampsiaWarning() {
+        val display = """
+            |🚨 PREECLAMPSIA WARNING SIGNS
+            |
+            |━━━ SEVERE FEATURES (EMERGENCY) ━━━
+            |🔴 BP ≥160/110 on two readings
+            |🔴 Severe headache unrelieved by meds
+            |🔴 Visual disturbances (spots, blurry)
+            |🔴 Epigastric/RUQ pain
+            |🔴 Altered mental status
+            |🔴 Pulmonary edema
+            |🔴 Seizure (eclampsia)
+            |
+            |━━━ LAB FINDINGS ━━━
+            |• Platelets <100,000
+            |• AST/ALT 2x normal
+            |• Creatinine >1.1 or doubled
+            |• Proteinuria ≥300mg/24h
+            |
+            |━━━ ACTION ━━━
+            |If severe: Magnesium sulfate, consider delivery
+            |Check: BP, urine protein, CBC, CMP, LFTs
+            |
+            |⚠️ Can occur up to 6 WEEKS postpartum!
+            """.trimMargin()
+
+        showDataOverlay("Preeclampsia", display)
+        speakFeedback("Preeclampsia warning signs displayed. Remember this can occur up to 6 weeks postpartum.")
+    }
+
+    /**
+     * Show hemorrhage warning.
+     */
+    private fun showHemorrhageWarning() {
+        val display = """
+            |🩸 POSTPARTUM HEMORRHAGE
+            |
+            |━━━ DEFINITION ━━━
+            |Blood loss ≥1000mL or signs of hypovolemia
+            |
+            |━━━ WARNING SIGNS ━━━
+            |🔴 Soaking ≥1 pad per hour
+            |🔴 Passing large clots (>egg size)
+            |🔴 Dizziness or lightheadedness
+            |🔴 Racing heart
+            |🔴 Feeling faint
+            |🔴 Pale, clammy skin
+            |
+            |━━━ RISK FACTORS ━━━
+            |• Uterine atony (most common)
+            |• Retained placenta
+            |• Trauma/lacerations
+            |• Coagulopathy
+            |
+            |━━━ IMMEDIATE ACTION ━━━
+            |• IV access, type and cross
+            |• Uterotonics (oxytocin, methergine)
+            |• Uterine massage
+            |• Consider transfusion if ongoing
+            |
+            |⚠️ Leading cause of preventable
+            |   maternal death worldwide
+            """.trimMargin()
+
+        showDataOverlay("Hemorrhage Alert", display)
+        speakFeedback("Postpartum hemorrhage information displayed. Key sign: soaking more than one pad per hour.")
+    }
+
+    /**
+     * Show postpartum depression screening.
+     */
+    private fun showPostpartumDepressionScreen() {
+        val display = """
+            |💭 POSTPARTUM DEPRESSION SCREENING
+            |
+            |━━━ EDINBURGH SCALE (EPDS) ━━━
+            |Screen at every postpartum visit
+            |Score ≥10: Further evaluation needed
+            |Score ≥13: High probability of depression
+            |
+            |━━━ KEY QUESTIONS TO ASK ━━━
+            |"In the past 7 days..."
+            |
+            |• Have you been able to laugh and
+            |  see the funny side of things?
+            |
+            |• Have you blamed yourself unnecessarily
+            |  when things went wrong?
+            |
+            |• Have you felt scared or panicky
+            |  for no good reason?
+            |
+            |• Have things been getting on top
+            |  of you?
+            |
+            |🔴 ALWAYS ASK:
+            |"Have you had thoughts of harming
+            | yourself or your baby?"
+            |
+            |━━━ ACTION ━━━
+            |Positive screen → Psychiatric referral
+            |Thoughts of harm → Immediate evaluation
+            |
+            |PPD affects 1 in 7 mothers
+            """.trimMargin()
+
+        showDataOverlay("PPD Screening", display)
+        speakFeedback("Postpartum depression screening guidance displayed. Always ask about thoughts of self-harm.")
+    }
+
     // ============ Patient History Methods ============
 
     /**
@@ -20697,6 +21216,53 @@ SOFA Score: [X]
             lower.contains("noted") && lastBiasAlert != null -> {
                 // Acknowledge and dismiss the bias alert
                 acknowledgeBiasAlert()
+            }
+            // ═══ MATERNAL HEALTH MONITORING COMMANDS (Feature #82) ═══
+            lower.contains("maternal health") || lower.contains("pregnancy check") ||
+            lower.contains("ob assessment") || lower.contains("obstetric check") -> {
+                // Trigger maternal health assessment
+                assessMaternalHealth()
+            }
+            lower.contains("patient is pregnant") || lower.contains("mark pregnant") ||
+            lower.contains("pregnancy status pregnant") -> {
+                setMaternalStatus("pregnant")
+            }
+            lower.contains("patient is postpartum") || lower.contains("mark postpartum") ||
+            lower.contains("post partum") || lower.contains("just delivered") -> {
+                setMaternalStatus("postpartum")
+            }
+            lower.contains("clear maternal") || lower.contains("not pregnant") ||
+            lower.contains("clear pregnancy") -> {
+                setMaternalStatus(null)
+            }
+            lower.contains("warning signs") && (lower.contains("maternal") || lower.contains("pregnancy") ||
+            lower.contains("postpartum") || currentMaternalStatus != null) -> {
+                // Show maternal warning signs
+                showMaternalWarningSigns()
+            }
+            lower.contains("postpartum checklist") || lower.contains("postpartum check") ||
+            (lower.contains("checklist") && currentMaternalStatus == "postpartum") -> {
+                showPostpartumChecklist()
+            }
+            lower.contains("maternal risk") || lower.contains("pregnancy risk") ||
+            lower.contains("ob risk") || lower.contains("obstetric risk") -> {
+                showMaternalRiskLevel()
+            }
+            lower.contains("disparity data") || lower.contains("mortality data") ||
+            lower.contains("maternal disparity") || lower.contains("maternal mortality") -> {
+                showMaternalDisparityData()
+            }
+            lower.contains("preeclampsia") || lower.contains("pre eclampsia") ||
+            lower.contains("eclampsia signs") -> {
+                showPreeclampsiaWarning()
+            }
+            lower.contains("hemorrhage") || lower.contains("bleeding check") ||
+            (lower.contains("heavy bleeding") && currentMaternalStatus != null) -> {
+                showHemorrhageWarning()
+            }
+            lower.contains("postpartum depression") || lower.contains("ppd screen") ||
+            lower.contains("edinburgh") || lower.contains("emotional check") -> {
+                showPostpartumDepressionScreen()
             }
             // Transcript preview voice commands
             lower.contains("generate note") || lower.contains("create note") || lower.contains("looks good") || lower.contains("that's good") -> {
