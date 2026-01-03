@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background_dark">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="16dp">
+
+            <ImageView
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_glasses"
+                android:contentDescription="Glasses icon" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:paddingStart="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="MDx Vision"
+                    android:textColor="@color/primary_green"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Ray-Ban Meta Companion"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Glasses Status Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_background"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:id="@+id/glassesStatusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="👓 Glasses: Not Connected"
+                android:textColor="@color/warning_orange"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Status: Initializing..."
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:paddingTop="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingTop="16dp">
+
+                <Button
+                    android:id="@+id/connectButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Connect"
+                    android:layout_marginEnd="8dp" />
+
+                <Button
+                    android:id="@+id/streamButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Start Voice"
+                    android:enabled="false" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Patient Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_background"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="👤 Patient"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/patientDataText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="No patient loaded\n\nSay \"Load patient [name]\" to search"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:paddingTop="8dp" />
+        </LinearLayout>
+
+        <!-- Glasses Display Preview -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_background"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📺 Glasses Display Preview"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/glassesDisplayText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="(waiting for content...)"
+                android:textColor="@color/primary_green"
+                android:textSize="16sp"
+                android:paddingTop="8dp"
+                android:fontFamily="monospace"
+                android:minHeight="100dp" />
+        </LinearLayout>
+
+        <!-- Transcript -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_background"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📝 Live Transcript"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/transcriptText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="(waiting for audio...)"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:paddingTop="8dp"
+                android:minHeight="150dp" />
+        </LinearLayout>
+
+        <!-- Voice Commands Help -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/card_background"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎤 Voice Commands"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:paddingTop="8dp"
+                android:text="• \"Hey MDx\" - Activate\n• \"Load patient [name]\" - Search patient\n• \"Show vitals/allergies/meds/labs\"\n• \"Start note\" - Begin documentation\n• \"Copilot [question]\" - Ask AI\n• \"Spanish interpreter\" - Request interpreter\n• \"Literacy screen\" - Assess literacy" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

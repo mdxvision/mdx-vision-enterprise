@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MDx Vision Ray-Ban</string>
+    <string name="glasses_not_connected">👓 Glasses: Not Connected</string>
+    <string name="glasses_connected">👓 Glasses: Connected</string>
+    <string name="status_initializing">Status: Initializing...</string>
+    <string name="status_ready">Status: Ready to connect</string>
+    <string name="status_connecting">Status: Connecting...</string>
+    <string name="status_connected">Status: Connected</string>
+    <string name="status_streaming">Status: Streaming audio...</string>
+    <string name="status_documenting">Status: Documenting...</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="start_voice">Start Voice</string>
+    <string name="stop_voice">Stop Voice</string>
+    <string name="no_patient">No patient loaded</string>
+    <string name="waiting_audio">Waiting for audio...</string>
+</resources>

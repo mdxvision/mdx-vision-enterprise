@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Primary Colors -->
+    <color name="primary_green">#4CAF50</color>
+    <color name="primary_green_dark">#388E3C</color>
+    <color name="primary_blue">#2196F3</color>
+
+    <!-- Background Colors -->
+    <color name="background_dark">#0A1628</color>
+    <color name="card_background">#1A2744</color>
+    <color name="surface">#1E3A5F</color>
+
+    <!-- Text Colors -->
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B0BEC5</color>
+    <color name="text_disabled">#616161</color>
+
+    <!-- Status Colors -->
+    <color name="success_green">#4CAF50</color>
+    <color name="warning_orange">#FF5722</color>
+    <color name="error_red">#F44336</color>
+    <color name="info_blue">#2196F3</color>
+
+    <!-- Special Colors -->
+    <color name="critical_alert">#FF1744</color>
+    <color name="allergy_warning">#FF9800</color>
+</resources>

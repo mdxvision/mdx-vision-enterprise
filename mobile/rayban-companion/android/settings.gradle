@@ -1,0 +1,20 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        // Meta SDK repository (when available)
+        // maven { url 'https://maven.pkg.github.com/meta-platform/wearables-sdk' }
+    }
+}
+
+rootProject.name = "RayBanCompanion"
+include ':app'

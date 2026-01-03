@@ -564,7 +564,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 | Priority | Task | Owner | Status |
 |----------|------|-------|--------|
 | P0 | **Buy Meta Ray-Ban Display** ($799) | Ops | TODO |
-| P0 | Build Ray-Ban prototype | Engineering | TODO |
+| P0 | Build Ray-Ban prototype | Engineering | DONE |
 | P0 | Draft HIPAA Policies & Procedures | Legal/Ops | TODO |
 | P0 | Create BAA template | Legal | TODO |
 | P0 | Sign BAA with cloud provider | Ops | TODO |
