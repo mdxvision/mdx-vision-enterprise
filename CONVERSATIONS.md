@@ -32,6 +32,7 @@
 ### Fixes Applied
 | Issue | Root Cause | Fix |
 |-------|-----------|-----|
+| Brief me not speaking | speak() called after showQuickPatientSummary() which could crash | Call speak() FIRST, wrap visual display in try-catch |
 | Save note allergies display | allergies.optString(i) fails on JSONObjects | Try-catch to extract name field from JSONObject or fall back to string |
 | Save note PMH/conditions | conditions.optString(i) fails on JSONObjects | Same pattern - extract name from JSONObject or string |
 | Plan section | Entity extraction from ambient transcript | Reviewed plan triggers - working as expected |
@@ -45,6 +46,7 @@
 ### Commits This Session
 | Commit | Description |
 |--------|-------------|
+| 40cfd8b | Fix Brief me TTS and add robust JSON array handling |
 | fc18b60 | Fix allergies and conditions display in save note UI |
 | cd75eeb | Fix JSONException crash in conditions array parsing (7 locations) |
 | 04a6ff5 | Update session log with ambient mode and UI fixes |
