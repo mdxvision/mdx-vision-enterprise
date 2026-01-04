@@ -11825,7 +11825,17 @@ SOFA Score: [X]
         sb.append("⚠️ ALLERGIES\n")
         if (allergies != null && allergies.length() > 0) {
             for (i in 0 until minOf(allergies.length(), 5)) {
-                sb.append("  • ${allergies.getString(i)}\n")
+                // Handle both string and JSONObject formats
+                val allergyName = try {
+                    allergies.getString(i)
+                } catch (e: Exception) {
+                    try {
+                        allergies.getJSONObject(i).optString("name", "")
+                    } catch (e2: Exception) { "" }
+                }
+                if (allergyName.isNotBlank()) {
+                    sb.append("  • $allergyName\n")
+                }
             }
             if (allergies.length() > 5) sb.append("  (+${allergies.length() - 5} more)\n")
         } else {
@@ -11869,7 +11879,17 @@ SOFA Score: [X]
         sb.append("💊 CURRENT MEDICATIONS\n")
         if (meds != null && meds.length() > 0) {
             for (i in 0 until minOf(meds.length(), 5)) {
-                sb.append("  • ${meds.getString(i)}\n")
+                // Handle both string and JSONObject formats
+                val medName = try {
+                    meds.getString(i)
+                } catch (e: Exception) {
+                    try {
+                        meds.getJSONObject(i).optString("name", "")
+                    } catch (e2: Exception) { "" }
+                }
+                if (medName.isNotBlank()) {
+                    sb.append("  • $medName\n")
+                }
             }
             if (meds.length() > 5) sb.append("  (+${meds.length() - 5} more)\n")
         } else {
@@ -12185,7 +12205,17 @@ SOFA Score: [X]
         if (allergies != null && allergies.length() > 0) {
             speechBuilder.append("Alert: Patient has ${allergies.length()} known ${if (allergies.length() == 1) "allergy" else "allergies"}. ")
             for (i in 0 until minOf(allergies.length(), 3)) {
-                speechBuilder.append("${allergies.getString(i)}. ")
+                // Handle both string and JSONObject formats
+                val allergyName = try {
+                    allergies.getString(i)
+                } catch (e: Exception) {
+                    try {
+                        allergies.getJSONObject(i).optString("name", "")
+                    } catch (e2: Exception) { "" }
+                }
+                if (allergyName.isNotBlank()) {
+                    speechBuilder.append("$allergyName. ")
+                }
             }
             if (allergies.length() > 3) {
                 speechBuilder.append("And ${allergies.length() - 3} more. ")
@@ -12221,7 +12251,16 @@ SOFA Score: [X]
             speechBuilder.append("On ${meds.length()} ${if (meds.length() == 1) "medication" else "medications"}. ")
             // Only read top 2 for brevity
             for (i in 0 until minOf(meds.length(), 2)) {
-                speechBuilder.append("${meds.getString(i)}. ")
+                val medName = try {
+                    meds.getString(i)
+                } catch (e: Exception) {
+                    try {
+                        meds.getJSONObject(i).optString("name", "")
+                    } catch (e2: Exception) { "" }
+                }
+                if (medName.isNotBlank()) {
+                    speechBuilder.append("$medName. ")
+                }
             }
         }
 
@@ -12242,12 +12281,16 @@ SOFA Score: [X]
 
         speechBuilder.append("End of summary.")
 
-        // Also show on screen while speaking
-        showQuickPatientSummary()
-
-        // Speak the summary
+        // Speak the summary FIRST (in case visual display has issues)
         speak(speechBuilder.toString())
         Log.d(TAG, "Speaking patient summary for $name")
+
+        // Then show on screen (wrapped in try-catch to not interrupt TTS)
+        try {
+            showQuickPatientSummary()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing visual summary: ${e.message}")
+        }
     }
 
     /**
