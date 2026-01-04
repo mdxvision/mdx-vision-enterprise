@@ -8,7 +8,7 @@
 ## Active Session: Vuzix Microphone & Ambient Mode Fix (Jan 4, 2025)
 
 **Started:** 2025-01-04
-**Focus:** Fixing Vuzix Blade 2 microphone sensitivity, ambient mode, and UI visibility
+**Focus:** Fixing Vuzix Blade 2 microphone sensitivity, ambient mode, UI visibility, and crash fixes
 
 ### Session Summary
 - **Diagnosed root cause**: Vuzix Blade 2 microphone outputs audio ~40dB too quiet
@@ -17,7 +17,8 @@
 - **Added 10x software gain boost**: Amplifies Vuzix audio before sending to AssemblyAI
 - **Fixed ambient mode command matching**: Added "starts ambient" pattern (transcription adds 's')
 - **Fixed save note UI**: Changed from dark theme to light theme for AR visibility
-- **Result**: Voice commands, ambient mode, and note UI all working on Vuzix Blade 2
+- **Fixed JSONException crash**: Conditions array can contain strings OR JSONObjects - added handlers for both
+- **Result**: Voice commands, ambient mode working; save note UI needs further refinement
 
 ### Technical Details
 | Issue | Root Cause | Fix |
@@ -26,6 +27,14 @@
 | Voice commands fail | Audio too quiet for speech recognition | VOICE_RECOGNITION audio source |
 | Ambient mode not matching | Transcription says "starts ambient" not "start ambient" | Added "starts ambient" pattern |
 | Save note UI too dark | Dark background on AR display | Light theme (#F8FAFC background, dark text) |
+| Crash during ambient | conditions.getJSONObject() on string array | Try-catch in 7 locations |
+
+### Fixes Applied
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| Save note allergies display | allergies.optString(i) fails on JSONObjects | Try-catch to extract name field from JSONObject or fall back to string |
+| Save note PMH/conditions | conditions.optString(i) fails on JSONObjects | Same pattern - extract name from JSONObject or string |
+| Plan section | Entity extraction from ambient transcript | Reviewed plan triggers - working as expected |
 
 ### Audio Level Diagnostics Added
 ```
@@ -36,6 +45,9 @@
 ### Commits This Session
 | Commit | Description |
 |--------|-------------|
+| 2ea7da7 | Fix allergies and conditions display in save note UI |
+| cd75eeb | Fix JSONException crash in conditions array parsing (7 locations) |
+| 04a6ff5 | Update session log with ambient mode and UI fixes |
 | 4c46157 | Fix save note UI for AR glasses visibility |
 | 485cb22 | Fix ambient mode command matching for transcription variations |
 | 6354a53 | Update session log: Vuzix Microphone Sensitivity Fix |

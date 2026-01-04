@@ -4308,9 +4308,20 @@ SOFA Score: [X]
             if (conditions != null && conditions.length() > 0) {
                 val condList = mutableListOf<String>()
                 for (i in 0 until minOf(conditions.length(), 5)) {
-                    conditions.optString(i)?.let { condList.add(it) }
+                    // Conditions can be JSONObjects or strings
+                    val condName = try {
+                        val condObj = conditions.getJSONObject(i)
+                        condObj.optString("name", "")
+                    } catch (e: Exception) {
+                        conditions.optString(i, "")
+                    }
+                    if (condName.isNotBlank()) condList.add(condName)
                 }
-                noteBuilder.append("Per chart: ${condList.joinToString(", ")}")
+                if (condList.isNotEmpty()) {
+                    noteBuilder.append("Per chart: ${condList.joinToString(", ")}")
+                } else {
+                    noteBuilder.append("See chart for complete history")
+                }
             } else {
                 noteBuilder.append("See chart for complete history")
             }
@@ -4332,9 +4343,20 @@ SOFA Score: [X]
         if (allergies != null && allergies.length() > 0) {
             val allergyList = mutableListOf<String>()
             for (i in 0 until allergies.length()) {
-                allergies.optString(i)?.let { allergyList.add(it) }
+                // Allergies can be JSONObjects or strings
+                val allergyName = try {
+                    val allergyObj = allergies.getJSONObject(i)
+                    allergyObj.optString("name", allergyObj.optString("substance", ""))
+                } catch (e: Exception) {
+                    allergies.optString(i, "")
+                }
+                if (allergyName.isNotBlank()) allergyList.add(allergyName)
             }
-            noteBuilder.append(allergyList.joinToString(", "))
+            if (allergyList.isNotEmpty()) {
+                noteBuilder.append(allergyList.joinToString(", "))
+            } else {
+                noteBuilder.append("NKDA")
+            }
         } else {
             noteBuilder.append("NKDA")
         }
