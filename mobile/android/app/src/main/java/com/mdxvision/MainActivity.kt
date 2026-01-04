@@ -3350,7 +3350,9 @@ SOFA Score: [X]
      * Uses WebSocket transcription on Vuzix, local Android speech otherwise
      */
     private fun startAmbientMode() {
+        Log.d(TAG, "ACI: startAmbientMode() called")
         if (currentPatientData == null) {
+            Log.w(TAG, "ACI: No patient loaded - ambient mode requires patient")
             speakFeedback("Load a patient first before starting ambient mode")
             Toast.makeText(this, "Load patient first", Toast.LENGTH_SHORT).show()
             return
@@ -22393,7 +22395,8 @@ SOFA Score: [X]
             }
             // ═══ AMBIENT CLINICAL INTELLIGENCE COMMANDS ═══
             lower.contains("ambient mode") || lower.contains("start ambient") ||
-            lower.contains("ambient listening") || lower.contains("clinical intelligence") ||
+            lower.contains("starts ambient") || lower.contains("ambient listening") ||
+            lower.contains("clinical intelligence") || lower.contains("room mode") ||
             lower.contains("auto document") || lower.contains("auto-document") -> {
                 // Start Ambient Clinical Intelligence mode
                 if (!isAmbientMode) {
