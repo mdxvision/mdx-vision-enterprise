@@ -2714,6 +2714,7 @@ SOFA Score: [X]
         mainLayout.addView(statusBar)
 
         // Voice commands grid - 2 columns, 6 rows (12 buttons)
+        // Hidden on Vuzix for simplified voice-only interface
         val gridLayout = android.widget.GridLayout(this).apply {
             columnCount = 2
             rowCount = 6
@@ -2721,6 +2722,22 @@ SOFA Score: [X]
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                 0, 1f
             )
+            // Hide buttons on Vuzix - voice-first interface
+            if (isVuzixDevice()) {
+                visibility = android.view.View.GONE
+            }
+        }
+
+        // Vuzix-specific: Add simple voice indicator
+        if (isVuzixDevice()) {
+            val vuzixStatus = TextView(this).apply {
+                text = "🎤 Voice Ready - Say \"help\" for commands"
+                textSize = 18f
+                setTextColor(0xFF10B981.toInt())
+                gravity = android.view.Gravity.CENTER
+                setPadding(16, 48, 16, 48)
+            }
+            mainLayout.addView(vuzixStatus)
         }
 
         // Define all voice commands
@@ -3330,7 +3347,7 @@ SOFA Score: [X]
 
     /**
      * Start Ambient Clinical Intelligence mode
-     * Uses local Android speech recognition for reliability
+     * Uses WebSocket transcription on Vuzix, local Android speech otherwise
      */
     private fun startAmbientMode() {
         if (currentPatientData == null) {
@@ -3351,13 +3368,54 @@ SOFA Score: [X]
         // Show ACI overlay
         showAciOverlay()
 
-        // Use local Android speech recognition for ambient mode (more reliable)
-        // This reuses the existing continuous listening infrastructure
         speakFeedback("Ambient mode started. Say stop ambient when finished.")
-        Log.d(TAG, "ACI: Ambient mode started with local speech recognition")
 
-        // Start continuous voice recognition for ambient capture
-        startAmbientVoiceRecognition()
+        // On Vuzix or devices without Google Speech, use WebSocket (AssemblyAI)
+        if (useWebSocketForCommands) {
+            Log.d(TAG, "ACI: Ambient mode using WebSocket transcription")
+            startAmbientWebSocket()
+        } else {
+            Log.d(TAG, "ACI: Ambient mode using local speech recognition")
+            startAmbientVoiceRecognition()
+        }
+    }
+
+    /**
+     * Start WebSocket-based ambient mode (for Vuzix/devices without Google Speech)
+     */
+    private fun startAmbientWebSocket() {
+        // Create dedicated ambient streaming service
+        val ambientService = AudioStreamingService(this) { result ->
+            runOnUiThread {
+                if (result.text.isNotBlank()) {
+                    // Add to ambient transcript buffer
+                    ambientTranscriptBuffer.append(result.text).append(" ")
+
+                    // Extract clinical entities
+                    extractClinicalEntities(result.text)
+
+                    // Update display
+                    transcriptText.text = "\"${result.text}\""
+
+                    // Check for stop commands
+                    val lower = result.text.lowercase()
+                    if (lower.contains("stop ambient") || lower.contains("end ambient") ||
+                        lower.contains("finish ambient") || lower.contains("stop listening")) {
+                        stopAmbientMode(generateNote = true)
+                    }
+                }
+            }
+        }
+
+        if (ambientService.startStreaming() == true) {
+            audioStreamingService = ambientService
+            Log.d(TAG, "ACI: WebSocket ambient streaming started")
+        } else {
+            Log.e(TAG, "ACI: Failed to start WebSocket ambient streaming")
+            statusText.text = "Ambient mode failed"
+            isAmbientMode = false
+            hideAciOverlay()
+        }
     }
 
     /**
@@ -23086,7 +23144,7 @@ SOFA Score: [X]
                 // Show clinical notes from EHR
                 fetchPatientSection("clinical_notes")
             }
-            lower == "help" || lower.contains("what can i say") || lower.contains("voice commands") || lower.contains("show commands") || lower.contains("list commands") || lower.contains("available commands") -> {
+            lower.contains("help") || lower.contains("what can i say") || lower.contains("voice commands") || lower.contains("show commands") || lower.contains("list commands") || lower.contains("available commands") -> {
                 // Show voice command help
                 showVoiceCommandHelp()
             }
