@@ -24,6 +24,10 @@ MDx Vision is an AR smart glasses platform for healthcare documentation. It impl
 /web                        # Next.js admin dashboard
 ```
 
+## Session History
+
+See [CONVERSATIONS.md](CONVERSATIONS.md) for session history, decisions, and progress tracking.
+
 ## Sales & Marketing Materials
 
 See [SALES_MATERIALS.md](SALES_MATERIALS.md) for complete index.

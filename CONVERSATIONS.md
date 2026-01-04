@@ -1,0 +1,263 @@
+# MDx Vision Enterprise - Conversation Log
+
+> This file is continuously updated with session history, key decisions, and progress.
+> **Session naming convention:** Use descriptive names for easy reference.
+
+---
+
+## Active Session: MDx Vision Enterprise (Jan 2025)
+
+**Started:** 2025-01-03
+**Focus:** Maintenance, documentation sync, continued development
+
+### Session Summary
+- Pushed 5 pending commits to origin/main
+- Updated CLAUDE.md date to Jan 2025
+- Created CONVERSATIONS.md for session tracking
+- Synced all documentation files
+
+---
+
+## Project Status Overview
+
+### Current State (January 2025)
+| Metric | Value |
+|--------|-------|
+| **Features Implemented** | 91 |
+| **Tests Passing** | 194 |
+| **Test Coverage** | 100% |
+| **Git Status** | Up to date with origin/main |
+
+### Technology Stack
+| Component | Technology | Port |
+|-----------|------------|------|
+| EHR Proxy | Python FastAPI | 8002 |
+| Web Dashboard | Next.js 14 | 5173 |
+| Android App | Kotlin + Vuzix SDK | - |
+| Backend (Legacy) | Java Spring Boot | 8080 |
+
+---
+
+## Feature Development History
+
+### December 2024 - January 2025
+
+#### RAG Clinical Knowledge System (Features #88-91)
+| Feature | Description | Status |
+|---------|-------------|--------|
+| #88 | RAG Clinical Knowledge System - ChromaDB + 12 built-in guidelines | Complete |
+| #89 | RAG Knowledge Management - Versioning, PubMed ingestion, feedback | Complete |
+| #90 | Scheduled RAG Updates - Automated updates with review checklists | Complete |
+| #91 | Knowledge Updates Dashboard - Web UI at /dashboard/knowledge | Complete |
+
+#### Health Equity Features (Features #79-87)
+| Feature | Description | Status |
+|---------|-------------|--------|
+| #79 | Racial Medicine Awareness - Fitzpatrick skin type, pulse ox alerts | Complete |
+| #80 | Cultural Care Preferences - Religious/dietary/modesty preferences | Complete |
+| #81 | Implicit Bias Alerts - Evidence-based reminders during documentation | Complete |
+| #82 | Maternal Health Monitoring - High-risk OB alerts, 3-4x mortality awareness | Complete |
+| #83 | Web Dashboard Equity UI - Settings page for equity preferences | Complete |
+| #84 | SDOH Integration - Social determinants screening, Z-codes | Complete |
+| #85 | Health Literacy Assessment - Plain language, teach-back checklists | Complete |
+| #86 | Interpreter Integration - 16 languages, Title VI compliance | Complete |
+| #87 | Ray-Ban Meta Companion App - Phone companion for Meta glasses | Complete |
+
+#### Device & Security Features (Features #73-78)
+| Feature | Description | Status |
+|---------|-------------|--------|
+| #73 | Vuzix HUD Native Overlay - Always-on patient info for Blade 2 | Complete |
+| #74 | Audit Log Viewer Dashboard - Web UI at /dashboard/audit | Complete |
+| #75 | Gesture Control - Nod/shake for Vuzix glasses | Complete |
+| #76 | Wink Gesture (Micro-Tilt) - Quick head dip for rapid selection | Complete |
+| #77 | Voice Biometric Continuous Auth - Periodic re-verification | Complete |
+| #78 | AI Clinical Co-pilot - Interactive AI dialogue during documentation | Complete |
+
+#### Billing & Revenue Cycle (Features #71-72)
+| Feature | Description | Status |
+|---------|-------------|--------|
+| #71 | Billing/Coding Submission - Create claims from clinical notes | Complete |
+| #72 | DNFB (Discharged Not Final Billed) - Revenue cycle management | Complete |
+
+---
+
+## Key Decisions Made
+
+### Architecture
+1. **Primary Backend**: Python FastAPI (ehr-proxy) - handles all AR glasses communication
+2. **Legacy Java Backend**: Minimal use, most logic migrated to Python
+3. **Database**: PostgreSQL planned, currently using in-memory/file storage
+4. **Transcription**: Dual provider support (AssemblyAI + Deepgram)
+
+### Security & Compliance
+1. **HIPAA Audit Logging**: JSON-structured logs for all PHI access
+2. **Encryption**: AES-256-GCM via Android Keystore
+3. **Authentication**: TOTP + Voiceprint biometric
+4. **Session Management**: 12-hour tokens with proximity auto-lock
+
+### Health Equity (Differentiator)
+1. **First-of-its-kind**: Racial medicine awareness not in any commercial EHR
+2. **Evidence-based**: All bias alerts include research citations
+3. **Actionable**: Specific clinical guidance, not just warnings
+
+---
+
+## Files Reference
+
+### Documentation
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | Development context for Claude Code |
+| `FEATURES.md` | Complete 91-feature checklist |
+| `CONVERSATIONS.md` | This file - session history |
+| `STRATEGIC_ROADMAP.md` | Product and business roadmap |
+| `VOICE_COMMANDS.md` | All 100+ voice commands |
+| `SALES_MATERIALS.md` | Index of investor/hospital decks |
+
+### Research Documents
+| File | Purpose |
+|------|---------|
+| `RACIAL_MEDICINE_DISPARITIES.md` | Research on racial disparities in medicine |
+| `CULTURAL_CARE_PREFERENCES.md` | Religious/cultural care preferences research |
+
+### Key Code Files
+| File | Purpose |
+|------|---------|
+| `ehr-proxy/main.py` | Core API (434KB) - SOAP notes, ICD-10/CPT, transcription |
+| `ehr-proxy/rag.py` | RAG clinical knowledge system |
+| `ehr-proxy/auth.py` | Multi-EHR auth + voiceprint verification |
+| `mobile/android/app/src/main/java/com/mdxvision/MainActivity.kt` | Android main activity |
+| `web/src/app/dashboard/knowledge/page.tsx` | Knowledge Updates Dashboard |
+
+---
+
+## API Endpoints Quick Reference
+
+### Patient Data
+```
+GET  /api/v1/patient/{id}
+GET  /api/v1/patient/search?name=
+GET  /api/v1/patient/mrn/{mrn}
+```
+
+### Clinical Notes
+```
+POST /api/v1/notes/generate        # SOAP note generation
+POST /api/v1/notes/quick           # AR display optimization
+POST /api/v1/notes/save
+```
+
+### Transcription
+```
+WS   /ws/transcribe                # Real-time streaming
+WS   /ws/transcribe/{provider}     # Specific provider
+GET  /api/v1/transcription/status
+```
+
+### Health Equity
+```
+GET  /api/v1/racial-medicine/alerts
+GET  /api/v1/cultural-care/preferences/{patient_id}
+GET  /api/v1/sdoh/screen
+GET  /api/v1/literacy/assess
+GET  /api/v1/interpreter/languages
+```
+
+### RAG Knowledge Base
+```
+GET  /api/v1/rag/status
+POST /api/v1/rag/initialize
+POST /api/v1/rag/query
+GET  /api/v1/updates/dashboard
+GET  /api/v1/updates/pending
+```
+
+---
+
+## Test Data
+
+### Cerner Sandbox Patient
+- **Patient ID**: 12724066
+- **Name**: SMARTS SR., NANCYS II
+- **DOB**: 1990-09-15
+
+### Test Commands
+```bash
+# Get patient
+curl http://localhost:8002/api/v1/patient/12724066
+
+# Generate SOAP note
+curl -X POST http://localhost:8002/api/v1/notes/quick \
+  -H "Content-Type: application/json" \
+  -d '{"transcript": "Patient has headache and fever", "chief_complaint": "Headache"}'
+
+# Check transcription status
+curl http://localhost:8002/api/v1/transcription/status
+
+# RAG status
+curl http://localhost:8002/api/v1/rag/status
+```
+
+---
+
+## Run Commands
+
+### Start Services
+```bash
+# EHR Proxy (main backend)
+cd ehr-proxy && python main.py
+
+# Web Dashboard
+cd web && npm run dev
+
+# Android Build
+cd mobile/android
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+./gradlew assembleDebug
+```
+
+### Install APK
+```bash
+adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
+```
+
+---
+
+## Next Steps (Backlog)
+
+### Production Readiness
+- [ ] HIPAA compliance documentation
+- [ ] SOC 2 Type II audit
+- [ ] Cloud deployment (AWS/GCP/Azure with HIPAA BAA)
+
+### EHR Integration
+- [ ] Epic live integration (needs OAuth credentials)
+- [ ] Veradigm live integration (needs credentials)
+
+### Hardware
+- [ ] Vuzix Blade 2 physical device testing
+- [ ] Ray-Ban Meta glasses validation
+- [ ] Magic Leap 2 support
+
+### AI Improvements
+- [ ] Custom medical LLM fine-tuning
+- [ ] Hospital-specific RAG content
+
+---
+
+## Git Commits (Recent)
+
+| Commit | Date | Description |
+|--------|------|-------------|
+| 53202e6 | Jan 3, 2025 | Update CLAUDE.md date to Jan 2025 |
+| ec54b68 | Jan 3, 2025 | Update documentation with latest feature counts |
+| c02c29f | Dec 31, 2024 | Add Knowledge Updates Dashboard (Feature #91) |
+| 4b8a0f1 | Dec 30, 2024 | Add Scheduled RAG Updates with Review Checklists (Feature #90) |
+| aaead1e | Dec 29, 2024 | Add RAG Knowledge Management (Feature #89) |
+| 4090c85 | Dec 28, 2024 | Add RAG Clinical Knowledge System (Feature #88) |
+| 102e3b6 | Dec 27, 2024 | Add Ray-Ban Meta Companion App (Feature #87) |
+
+---
+
+*Last updated: 2025-01-03*

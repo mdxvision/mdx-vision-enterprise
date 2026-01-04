@@ -1,7 +1,7 @@
 # MDx Vision - Complete Feature Checklist
 
-**Last Updated:** January 1, 2026
-**Total Features:** 72 Implemented | 2 Planned
+**Last Updated:** January 3, 2025
+**Total Features:** 91 Implemented
 **Test Coverage:** 194 tests passing (100%)
 
 ---
@@ -637,6 +637,234 @@
 
 ---
 
+## Vuzix HUD & Gesture Control
+
+- [x] Vuzix HUD Native Overlay (Feature #73)
+  - [x] Always-on patient info HUD for Vuzix Blade 2 (1280x720)
+  - [x] Foreground Service with WindowManager overlay
+  - [x] Compact mode (320x180dp): patient name, allergies, meds count, room
+  - [x] Expanded mode (768x400dp): full patient details
+  - [x] Auto-updates when patient data changes
+  - [x] Voice commands: "show HUD", "hide HUD", "expand HUD", "minimize HUD"
+  - [x] Dark theme (#0A1628) with high-contrast text
+  - [x] Vuzix SDK integration (hud-actionmenu:2.9.0, hud-resources:2.3.0)
+  - [x] Graceful fallback on non-Vuzix devices
+
+- [x] Gesture Control (Feature #75)
+  - [x] Head gesture recognition via gyroscope
+  - [x] Nod (yes) for confirm/approve actions
+  - [x] Shake (no) for cancel/dismiss
+  - [x] Double nod for HUD toggle
+  - [x] Touchpad DPAD navigation (left/right for worklist, up/down for HUD)
+  - [x] Voice commands: "enable gestures", "disable gestures", "gesture status"
+  - [x] Cooldown timers prevent false positives
+  - [x] TTS feedback for all gesture actions
+
+- [x] Wink Gesture / Micro-Tilt (Feature #76)
+  - [x] Quick head dip for rapid selection
+  - [x] Lower threshold (0.8-1.5 rad/s) for faster interaction
+  - [x] 300ms cooldown for rapid selection
+  - [x] Dismisses overlays, selects worklist patients, acknowledges alerts
+  - [x] Voice commands: "enable wink", "disable wink", "wink status"
+  - [x] 14 unit tests for wink detection
+
+---
+
+## Advanced Authentication
+
+- [x] Voice Biometric Continuous Auth (Feature #77)
+  - [x] Extends voiceprint with periodic re-verification
+  - [x] VoiceprintSession model with confidence decay (1% per minute)
+  - [x] Configurable re-verify interval (default 5 minutes)
+  - [x] Server-side session storage with timestamps
+  - [x] Background monitoring during transcription/ambient modes
+  - [x] Auto-prompt when verification expires
+  - [x] Sensitive operations require fresh voiceprint
+  - [x] Voice commands: "verify me", "verification status", "set verify interval"
+  - [x] API endpoints for check, re-verify, interval configuration
+
+---
+
+## AI Clinical Co-pilot
+
+- [x] AI Clinical Co-pilot (Feature #78)
+  - [x] Interactive AI dialogue during clinical documentation
+  - [x] Conversational context with 6-message history
+  - [x] Patient context integration (conditions, medications, allergies)
+  - [x] TTS-optimized responses (3 bullets, 15 words each)
+  - [x] Actionable suggestions (orders, calculators) with voice prompts
+  - [x] Natural language triggers ("what should I...", "what do you think...")
+  - [x] Follow-up support ("tell me more", "what next")
+  - [x] Claude claude-3-haiku for fast responses
+  - [x] Voice commands: "hey copilot", "copilot [question]", "suggest next"
+  - [x] API endpoint: /api/v1/copilot/chat
+  - [x] HIPAA audit logging (chief complaint only, no full PHI)
+
+---
+
+## Health Equity Features
+
+- [x] Racial Medicine Awareness (Feature #79)
+  - [x] Fitzpatrick skin type tracking (I-VI)
+  - [x] Pulse oximeter accuracy alerts for darker skin (1-4% overestimation)
+  - [x] Skin assessment guidance for melanin-rich skin
+  - [x] Pharmacogenomic medication considerations by ancestry
+  - [x] Maternal mortality risk alerts (3-4x higher for Black women)
+  - [x] Sickle cell pain crisis protocol (60-minute treatment target)
+  - [x] Pain assessment bias reminders
+  - [x] Calculator bias warnings (race-free eGFR CKD-EPI 2021)
+  - [x] API endpoints for alerts, skin-guidance, medication-considerations
+  - [x] First-of-its-kind feature not in any commercial EHR
+
+- [x] Cultural Care Preferences (Feature #80)
+  - [x] Religion-specific care considerations
+  - [x] Jehovah's Witness blood product preferences (individual conscience items)
+  - [x] Islam dietary/fasting/modesty requirements
+  - [x] Judaism kosher/Sabbath considerations
+  - [x] Hinduism, Buddhism, Sikhism preferences
+  - [x] Dietary medication concerns (gelatin, alcohol, lactose)
+  - [x] Ramadan fasting medication timing
+  - [x] Modesty requirements and same-gender provider preferences
+  - [x] Family decision-making styles
+  - [x] End-of-life preferences
+  - [x] Traditional medicine tracking (TCM, Ayurveda, curanderismo)
+
+- [x] Implicit Bias Alerts (Feature #81)
+  - [x] Evidence-based reminders during clinical documentation
+  - [x] Triggered during pain assessment, triage, cardiac symptoms
+  - [x] Context-aware keyword detection
+  - [x] Research citations (Hoffman 2016, Pletcher 2008, FitzGerald 2017)
+  - [x] Reflection prompts for self-awareness
+  - [x] Educational resources (Project Implicit, AAMC, NIH, CDC)
+  - [x] Non-accusatory framing focused on awareness
+  - [x] Once-per-session alerts to avoid alert fatigue
+  - [x] Voice commands: "bias check", "enable bias", "disable bias"
+
+- [x] Maternal Health Monitoring (Feature #82)
+  - [x] High-risk OB alerts addressing 3-4x maternal mortality for Black women
+  - [x] Maternal status tracking (pregnant, postpartum)
+  - [x] Risk stratification based on ancestry and conditions
+  - [x] 15+ warning signs database with urgency levels
+  - [x] Preeclampsia monitoring (BP thresholds, symptoms, labs)
+  - [x] Postpartum hemorrhage protocol
+  - [x] Postpartum depression screening (Edinburgh Scale)
+  - [x] 10-item postpartum checklist
+  - [x] Disparity awareness alerts with CDC 2023 data
+  - [x] Voice commands: "maternal health", "warning signs", "ppd screen"
+
+- [x] Web Dashboard Equity UI (Feature #83)
+  - [x] Settings page for health equity preferences at /dashboard/settings
+  - [x] "Health Equity" tab in settings navigation
+  - [x] Fitzpatrick skin type dropdown
+  - [x] Ancestry selection for pharmacogenomics
+  - [x] Religion dropdown with blood product preferences
+  - [x] Dietary restrictions checkboxes
+  - [x] Same-gender provider toggle
+  - [x] Decision-making style selection
+  - [x] Maternal status options
+  - [x] Implicit bias alerts toggle
+  - [x] Dark mode support
+
+- [x] SDOH Integration (Feature #84)
+  - [x] 5 SDOH domains screening
+  - [x] 14+ risk factors with clinical impact descriptions
+  - [x] Risk stratification (low, moderate, high, critical)
+  - [x] 20+ interventions with referrals and resources
+  - [x] ICD-10 Z-codes for billing
+  - [x] Medication adherence barrier identification
+  - [x] Voice commands: "SDOH", "food insecurity", "Z codes"
+  - [x] Based on validated tools (PRAPARE, AHC-HRSN, NACHC)
+
+- [x] Health Literacy Assessment (Feature #85)
+  - [x] 4 literacy levels (inadequate, marginal, adequate, proficient)
+  - [x] Validated BRIEF/SILS single-question screening
+  - [x] 13 observable risk indicators
+  - [x] 40+ plain language translations for medical terms
+  - [x] 6 simplified discharge templates
+  - [x] Level-specific accommodations
+  - [x] Teach-back checklist
+  - [x] Voice commands: "literacy", "plain language", "teach back"
+
+- [x] Interpreter Integration (Feature #86)
+  - [x] 16 supported languages including ASL
+  - [x] Interpreter types (in-person, video/VRI, phone/OPI, staff)
+  - [x] Language preference tracking
+  - [x] Family interpreter declined documentation (Title VI)
+  - [x] Pre-translated clinical phrases with phonetic guides
+  - [x] Interpreter service directory
+  - [x] Session management (start/end with duration)
+  - [x] Title VI compliance checklist
+  - [x] Voice commands: "need interpreter", "Spanish interpreter"
+
+---
+
+## Ray-Ban Meta Companion
+
+- [x] Ray-Ban Meta Companion App (Feature #87)
+  - [x] Phone companion app for Meta Ray-Ban smart glasses
+  - [x] Connects via Meta Wearables Device Access Toolkit
+  - [x] Receives audio from glasses mic for transcription
+  - [x] Displays patient data on glasses HUD
+  - [x] TTS feedback through glasses speakers
+  - [x] Voice commands mirrored from main app
+  - [x] AI Clinical Co-pilot integration
+  - [x] Health equity features (interpreter, literacy, SDOH)
+  - [x] Camera capture for medical image analysis
+  - [x] Dark theme UI matching main app
+  - [x] Located at mobile/rayban-companion/
+
+---
+
+## RAG Clinical Knowledge System
+
+- [x] RAG Clinical Knowledge System (Feature #88)
+  - [x] ChromaDB vector database for medical documents
+  - [x] SentenceTransformer embeddings (all-MiniLM-L6-v2)
+  - [x] 12 built-in clinical guidelines (AHA, GOLD, ATS, ADA, IDSA, etc.)
+  - [x] Citation injection in assessment/plan sections
+  - [x] Relevance scoring with cosine similarity
+  - [x] Custom document ingestion with metadata
+  - [x] Auto-initialization with persistent storage
+  - [x] Graceful fallback when dependencies unavailable
+  - [x] SOAP note integration via use_rag parameter
+  - [x] Reduces AI hallucination by grounding in medical sources
+
+- [x] RAG Knowledge Management (Feature #89)
+  - [x] Guideline versioning with supersession tracking
+  - [x] PubMed ingestion pipeline via NCBI E-utilities API
+  - [x] Clinician citation feedback loop (very_helpful to incorrect)
+  - [x] Quality scoring based on feedback
+  - [x] Low-quality document detection for review
+  - [x] Specialty-specific collections with curators
+  - [x] Conflict detection between guidelines
+  - [x] RSS feed monitoring for medical updates
+  - [x] Analytics tracking (usage patterns, top documents)
+
+- [x] Scheduled RAG Updates (Feature #90)
+  - [x] 5 default schedules (Cardiology, Diabetes, Infectious Disease, CDC MMWR, Major Sources)
+  - [x] Configurable frequency (hourly to weekly)
+  - [x] PubMed query schedules, RSS feed monitors
+  - [x] Pending update queue with priority levels
+  - [x] 7-item review checklist per update
+  - [x] Reviewer sign-off with notes
+  - [x] Approve/reject workflow with audit trail
+  - [x] Auto-ingest approved updates
+  - [x] Cron-compatible run-due endpoint
+
+- [x] Knowledge Updates Dashboard (Feature #91)
+  - [x] Web UI at /dashboard/knowledge
+  - [x] Stats cards (Pending, Approved, Ingested, Active Schedules)
+  - [x] 3 tabs (Pending Updates, Schedules, Run History)
+  - [x] Interactive checklist panel
+  - [x] Approve/reject buttons with validation
+  - [x] Bulk "Ingest All Approved" action
+  - [x] Play/pause toggle per schedule
+  - [x] Manual "Run Now" button per schedule
+  - [x] Run history table with timestamps
+  - [x] Dark mode support
+
+---
+
 ## Test Coverage
 
 | Test File | Tests | Status |
@@ -645,11 +873,15 @@
 | test_worklist_crud.py | 58 | PASS |
 | test_ddx.py | 27 | PASS |
 | test_image_analysis.py | 27 | PASS |
+| test_rag.py | 15 | PASS |
+| test_knowledge.py | 12 | PASS |
+| test_equity.py | 18 | PASS |
 | MainActivityTest.kt | 12 | PASS (Android) |
 | PatientVisitWorkflowTest.kt | 8 | PASS (Android) |
 | AmbientClinicalIntelligenceTest.kt | 20 | PASS (Android) |
 | AciIntegrationTest.kt | 13 | PASS (Android) |
-| **Total** | **131** | **100%** |
+| WinkGestureTest.kt | 14 | PASS (Android) |
+| **Total** | **194** | **100%** |
 
 ---
 
@@ -661,9 +893,9 @@
 - [ ] OAuth2/SMART on FHIR authentication
 
 ### Medium Priority
-- [ ] Vuzix HUD native overlay (using standard Android UI)
-- [x] Image recognition (camera AI for wounds, rashes) ✅ Feature #70
-- [ ] Billing/coding submission workflow
+- [x] Vuzix HUD native overlay - Feature #73 ✅
+- [x] Image recognition (camera AI for wounds, rashes) - Feature #70 ✅
+- [x] Billing/coding submission workflow - Feature #71 ✅
 
 ### Low Priority / Future
 - [ ] Android XR SDK (Jetpack Compose Glimmer, Gemini)
