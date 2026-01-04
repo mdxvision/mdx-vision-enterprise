@@ -21580,8 +21580,8 @@ SOFA Score: [X]
      * Use this for confirmations like "Patient loaded", "Note saved", etc.
      */
     private fun speakFeedback(message: String) {
-        if (isSpeechFeedbackEnabled && isTtsReady && textToSpeech != null) {
-            textToSpeech?.speak(message, TextToSpeech.QUEUE_ADD, null, "feedback_${System.currentTimeMillis()}")
+        if (isSpeechFeedbackEnabled) {
+            speak(message, TextToSpeech.QUEUE_ADD)
         }
     }
 
@@ -21590,8 +21590,6 @@ SOFA Score: [X]
      * Always speaks allergies regardless of speech feedback toggle for patient safety
      */
     private fun speakAllergyWarnings(patient: JSONObject) {
-        if (!isTtsReady || textToSpeech == null) return
-
         val allergies = patient.optJSONArray("allergies")
         if (allergies != null && allergies.length() > 0) {
             val count = allergies.length()
@@ -21602,14 +21600,21 @@ SOFA Score: [X]
 
             // Speak up to 5 allergies
             for (i in 0 until minOf(count, 5)) {
-                speechBuilder.append("${allergies.getString(i)}. ")
+                val allergyName = try {
+                    allergies.getString(i)
+                } catch (e: Exception) {
+                    try { allergies.getJSONObject(i).optString("name", "") } catch (e2: Exception) { "" }
+                }
+                if (allergyName.isNotBlank()) {
+                    speechBuilder.append("$allergyName. ")
+                }
             }
             if (count > 5) {
                 speechBuilder.append("And ${count - 5} more.")
             }
 
             // Use QUEUE_ADD so it plays after "Patient loaded" message
-            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "allergy_warning_${System.currentTimeMillis()}")
+            speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD)
             Log.d(TAG, "Spoke allergy warning: $count allergies")
         }
     }
@@ -21619,8 +21624,6 @@ SOFA Score: [X]
      * Always speaks critical labs regardless of speech feedback toggle for patient safety
      */
     private fun speakCriticalLabAlerts(patient: JSONObject) {
-        if (!isTtsReady || textToSpeech == null) return
-
         val criticalLabs = patient.optJSONArray("critical_labs")
         if (criticalLabs != null && criticalLabs.length() > 0) {
             val count = criticalLabs.length()
@@ -21631,29 +21634,33 @@ SOFA Score: [X]
 
             // Speak up to 3 critical labs with values
             for (i in 0 until minOf(count, 3)) {
-                val lab = criticalLabs.getJSONObject(i)
-                val name = lab.optString("name", "Unknown")
-                val value = lab.optString("value", "")
-                val unit = lab.optString("unit", "")
-                val interp = lab.optString("interpretation", "")
+                try {
+                    val lab = criticalLabs.getJSONObject(i)
+                    val name = lab.optString("name", "Unknown")
+                    val value = lab.optString("value", "")
+                    val unit = lab.optString("unit", "")
+                    val interp = lab.optString("interpretation", "")
 
-                // Format interpretation for speech
-                val interpText = when (interp) {
-                    "HH" -> "critically high"
-                    "LL" -> "critically low"
-                    "H" -> "high"
-                    "L" -> "low"
-                    else -> "abnormal"
+                    // Format interpretation for speech
+                    val interpText = when (interp) {
+                        "HH" -> "critically high"
+                        "LL" -> "critically low"
+                        "H" -> "high"
+                        "L" -> "low"
+                        else -> "abnormal"
+                    }
+
+                    speechBuilder.append("$name is $interpText at $value $unit. ")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing critical lab: ${e.message}")
                 }
-
-                speechBuilder.append("$name is $interpText at $value $unit. ")
             }
             if (count > 3) {
                 speechBuilder.append("Plus ${count - 3} more critical values.")
             }
 
             // Use QUEUE_ADD so it plays after allergies if both exist
-            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "critical_lab_alert_${System.currentTimeMillis()}")
+            speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD)
             Log.d(TAG, "Spoke critical lab alert: $count critical labs")
         }
     }
@@ -21663,7 +21670,7 @@ SOFA Score: [X]
      * Alerts clinician to rising or falling lab values
      */
     private fun speakLabTrends(patient: JSONObject) {
-        if (!isTtsReady || textToSpeech == null || !isSpeechFeedbackEnabled) return
+        if (!isSpeechFeedbackEnabled) return
 
         val labs = patient.optJSONArray("labs") ?: return
         if (labs.length() == 0) return
@@ -21671,16 +21678,20 @@ SOFA Score: [X]
         val trendingLabs = mutableListOf<String>()
 
         for (i in 0 until labs.length()) {
-            val lab = labs.getJSONObject(i)
-            val trend = lab.optString("trend", "")
-            val name = lab.optString("name", "")
-            val value = lab.optString("value", "")
-            val previousValue = lab.optString("previous_value", "")
+            try {
+                val lab = labs.getJSONObject(i)
+                val trend = lab.optString("trend", "")
+                val name = lab.optString("name", "")
+                val value = lab.optString("value", "")
+                val previousValue = lab.optString("previous_value", "")
 
-            // Only speak rising or falling trends (skip stable/new)
-            if (trend == "rising" || trend == "falling") {
-                val direction = if (trend == "rising") "rising" else "falling"
-                trendingLabs.add("$name $direction from $previousValue to $value")
+                // Only speak rising or falling trends (skip stable/new)
+                if (trend == "rising" || trend == "falling") {
+                    val direction = if (trend == "rising") "rising" else "falling"
+                    trendingLabs.add("$name $direction from $previousValue to $value")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error parsing lab: ${e.message}")
             }
         }
 
@@ -21700,7 +21711,7 @@ SOFA Score: [X]
             }
 
             // Queue after critical alerts
-            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "lab_trend_alert_${System.currentTimeMillis()}")
+            speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD)
             Log.d(TAG, "Spoke lab trend alert: $count trending labs")
         }
     }
@@ -21710,7 +21721,7 @@ SOFA Score: [X]
      * Alerts clinician to rising or falling vital values
      */
     private fun speakVitalTrends(patient: JSONObject) {
-        if (!isTtsReady || textToSpeech == null || !isSpeechFeedbackEnabled) return
+        if (!isSpeechFeedbackEnabled) return
 
         val vitals = patient.optJSONArray("vitals") ?: return
         if (vitals.length() == 0) return
@@ -21718,16 +21729,20 @@ SOFA Score: [X]
         val trendingVitals = mutableListOf<String>()
 
         for (i in 0 until vitals.length()) {
-            val vital = vitals.getJSONObject(i)
-            val trend = vital.optString("trend", "")
-            val name = vital.optString("name", "")
-            val value = vital.optString("value", "")
-            val previousValue = vital.optString("previous_value", "")
+            try {
+                val vital = vitals.getJSONObject(i)
+                val trend = vital.optString("trend", "")
+                val name = vital.optString("name", "")
+                val value = vital.optString("value", "")
+                val previousValue = vital.optString("previous_value", "")
 
-            // Only speak rising or falling trends (skip stable/new)
-            if (trend == "rising" || trend == "falling") {
-                val direction = if (trend == "rising") "rising" else "falling"
-                trendingVitals.add("$name $direction from $previousValue to $value")
+                // Only speak rising or falling trends (skip stable/new)
+                if (trend == "rising" || trend == "falling") {
+                    val direction = if (trend == "rising") "rising" else "falling"
+                    trendingVitals.add("$name $direction from $previousValue to $value")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error parsing vital: ${e.message}")
             }
         }
 
@@ -21747,7 +21762,7 @@ SOFA Score: [X]
             }
 
             // Queue after other alerts
-            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "vital_trend_alert_${System.currentTimeMillis()}")
+            speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD)
             Log.d(TAG, "Spoke vital trend alert: $count trending vitals")
         }
     }
@@ -21757,8 +21772,6 @@ SOFA Score: [X]
      * Always speaks critical vitals regardless of speech feedback toggle for patient safety
      */
     private fun speakCriticalVitalAlerts(patient: JSONObject) {
-        if (!isTtsReady || textToSpeech == null) return
-
         val criticalVitals = patient.optJSONArray("critical_vitals")
         if (criticalVitals != null && criticalVitals.length() > 0) {
             val count = criticalVitals.length()
@@ -21769,41 +21782,45 @@ SOFA Score: [X]
 
             // Speak up to 3 critical vitals with values
             for (i in 0 until minOf(count, 3)) {
-                val vital = criticalVitals.getJSONObject(i)
-                val name = vital.optString("name", "Unknown")
-                val value = vital.optString("value", "")
-                val unit = vital.optString("unit", "")
-                val interp = vital.optString("interpretation", "")
+                try {
+                    val vital = criticalVitals.getJSONObject(i)
+                    val name = vital.optString("name", "Unknown")
+                    val value = vital.optString("value", "")
+                    val unit = vital.optString("unit", "")
+                    val interp = vital.optString("interpretation", "")
 
-                // Format interpretation for speech
-                val interpText = when (interp) {
-                    "HH" -> "critically high"
-                    "LL" -> "critically low"
-                    "H" -> "high"
-                    "L" -> "low"
-                    else -> "abnormal"
+                    // Format interpretation for speech
+                    val interpText = when (interp) {
+                        "HH" -> "critically high"
+                        "LL" -> "critically low"
+                        "H" -> "high"
+                        "L" -> "low"
+                        else -> "abnormal"
+                    }
+
+                    // Make vital names more speech-friendly
+                    val speechName = when {
+                        name.contains("systolic", ignoreCase = true) -> "blood pressure systolic"
+                        name.contains("diastolic", ignoreCase = true) -> "blood pressure diastolic"
+                        name.contains("heart rate", ignoreCase = true) -> "heart rate"
+                        name.contains("pulse", ignoreCase = true) -> "pulse"
+                        name.contains("respiratory", ignoreCase = true) -> "respiratory rate"
+                        name.contains("oxygen", ignoreCase = true) || name.contains("spo2", ignoreCase = true) -> "oxygen saturation"
+                        name.contains("temp", ignoreCase = true) -> "temperature"
+                        else -> name
+                    }
+
+                    speechBuilder.append("$speechName is $interpText at $value $unit. ")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing critical vital: ${e.message}")
                 }
-
-                // Make vital names more speech-friendly
-                val speechName = when {
-                    name.contains("systolic", ignoreCase = true) -> "blood pressure systolic"
-                    name.contains("diastolic", ignoreCase = true) -> "blood pressure diastolic"
-                    name.contains("heart rate", ignoreCase = true) -> "heart rate"
-                    name.contains("pulse", ignoreCase = true) -> "pulse"
-                    name.contains("respiratory", ignoreCase = true) -> "respiratory rate"
-                    name.contains("oxygen", ignoreCase = true) || name.contains("spo2", ignoreCase = true) -> "oxygen saturation"
-                    name.contains("temp", ignoreCase = true) -> "temperature"
-                    else -> name
-                }
-
-                speechBuilder.append("$speechName is $interpText at $value $unit. ")
             }
             if (count > 3) {
                 speechBuilder.append("Plus ${count - 3} more critical vitals.")
             }
 
             // Use QUEUE_FLUSH to speak vitals FIRST (most urgent safety alert)
-            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_FLUSH, null, "critical_vital_alert_${System.currentTimeMillis()}")
+            speak(speechBuilder.toString(), TextToSpeech.QUEUE_FLUSH)
             Log.d(TAG, "Spoke critical vital alert: $count critical vitals")
         }
     }
@@ -21813,16 +21830,18 @@ SOFA Score: [X]
      * High severity interactions always spoken regardless of speech feedback toggle
      */
     private fun speakMedicationInteractions(patient: JSONObject) {
-        if (!isTtsReady || textToSpeech == null) return
-
         val interactions = patient.optJSONArray("medication_interactions")
         if (interactions != null && interactions.length() > 0) {
             // Filter for high severity interactions
             val highSeverityInteractions = mutableListOf<JSONObject>()
             for (i in 0 until interactions.length()) {
-                val interaction = interactions.getJSONObject(i)
-                if (interaction.optString("severity", "") == "high") {
-                    highSeverityInteractions.add(interaction)
+                try {
+                    val interaction = interactions.getJSONObject(i)
+                    if (interaction.optString("severity", "") == "high") {
+                        highSeverityInteractions.add(interaction)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing interaction: ${e.message}")
                 }
             }
 
@@ -21851,7 +21870,7 @@ SOFA Score: [X]
             }
 
             // Use QUEUE_ADD so it plays after vitals/allergies/labs
-            textToSpeech?.speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD, null, "medication_interaction_alert_${System.currentTimeMillis()}")
+            speak(speechBuilder.toString(), TextToSpeech.QUEUE_ADD)
             Log.d(TAG, "Spoke medication interaction alert: $count high-severity interactions")
         }
     }
