@@ -49,7 +49,31 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MDxVision"
         private const val PERMISSION_REQUEST_CODE = 1001
-        private const val EHR_PROXY_URL = "http://192.168.1.243:8002" // EHR Proxy - Mac IP for Galaxy S24
+
+        // Server URL configuration - set via SharedPreferences or use default
+        // For local dev: Your Mac's IP (check with `ifconfig | grep inet`)
+        // For Vuzix testing: Ensure device is on same WiFi network as Mac
+        // For production: Use cloud URL (e.g., https://api.mdxvision.com)
+        private const val PREF_SERVER_URL = "server_url"
+        private const val DEFAULT_SERVER_URL = "http://192.168.1.243:8002"
+        private var serverUrl: String = DEFAULT_SERVER_URL
+
+        val EHR_PROXY_URL: String
+            get() = serverUrl
+
+        /**
+         * Configure the server URL at runtime
+         * Call this before making API calls
+         */
+        fun setServerUrl(url: String) {
+            serverUrl = url.trimEnd('/')
+            // Also configure AudioStreamingService WebSocket URL
+            val wsUrl = url.replace("http://", "ws://")
+                          .replace("https://", "wss://")
+                          .trimEnd('/') + "/ws/transcribe"
+            AudioStreamingService.setDeviceUrl(wsUrl)
+            Log.d(TAG, "Server URL configured: HTTP=$serverUrl, WS=$wsUrl")
+        }
         // Test patient from Cerner sandbox
         private const val TEST_PATIENT_ID = "12724066"
         // DEBUG: Set to true to skip TOTP authentication for testing
@@ -128,6 +152,11 @@ class MainActivity : AppCompatActivity() {
     // Live transcription via WebSocket (AssemblyAI/Deepgram)
     private var audioStreamingService: AudioStreamingService? = null
     private var isLiveTranscribing = false
+
+    // WebSocket fallback for voice commands (Vuzix/devices without Google Speech)
+    private var useWebSocketForCommands = false
+    private var commandStreamingService: AudioStreamingService? = null
+    private var isCommandListening = false
     private var liveTranscriptText: TextView? = null
     private val liveTranscriptBuffer = StringBuilder()
 
@@ -2602,6 +2631,7 @@ SOFA Score: [X]
         loadSpeechFeedbackSetting()
         loadSessionTimeoutSetting()
         loadLanguagePreference()  // Multi-language support
+        loadServerUrl()  // Configure server URL for API calls and WebSocket
 
         // Initialize device authentication (TOTP + proximity lock)
         initializeDeviceAuth()
@@ -11864,6 +11894,40 @@ SOFA Score: [X]
     }
 
     /**
+     * Load server URL from SharedPreferences and configure API/WebSocket endpoints
+     * For Vuzix: Ensure the server is reachable on the same network
+     */
+    private fun loadServerUrl() {
+        val savedUrl = cachePrefs.getString(PREF_SERVER_URL, null)
+        if (savedUrl != null) {
+            setServerUrl(savedUrl)
+            Log.d(TAG, "Loaded saved server URL: $savedUrl")
+        } else {
+            // Use default and log device info for debugging
+            setServerUrl(DEFAULT_SERVER_URL)
+            Log.d(TAG, "Using default server URL: $DEFAULT_SERVER_URL")
+            Log.d(TAG, "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+
+            // Vuzix-specific guidance
+            if (android.os.Build.MANUFACTURER.contains("Vuzix", ignoreCase = true)) {
+                Log.w(TAG, "Vuzix device detected! Ensure:")
+                Log.w(TAG, "  1. Mac running ehr-proxy is on same WiFi as Vuzix glasses")
+                Log.w(TAG, "  2. Check Mac IP with: ifconfig | grep 'inet ' | grep -v 127.0.0.1")
+                Log.w(TAG, "  3. Update server URL via Settings or use: adb shell")
+            }
+        }
+    }
+
+    /**
+     * Save server URL to SharedPreferences
+     */
+    private fun saveServerUrl(url: String) {
+        cachePrefs.edit().putString(PREF_SERVER_URL, url).apply()
+        setServerUrl(url)
+        Log.d(TAG, "Server URL saved: $url")
+    }
+
+    /**
      * Strip accents from text for fuzzy matching
      * Handles Spanish accents: á→a, é→e, í→i, ó→o, ú→u, ñ→n
      */
@@ -18421,17 +18485,14 @@ SOFA Score: [X]
 
                 val request = okhttp3.Request.Builder()
                     .url("$EHR_PROXY_URL/api/v1/sdoh/screen")
-                    .post(okhttp3.RequestBody.create(
-                        okhttp3.MediaType.parse("application/json"),
-                        requestBody.toString()
-                    ))
+                    .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                     .build()
 
                 withContext(Dispatchers.IO) {
                     httpClient.newCall(request).execute()
                 }.use { response ->
                     if (response.isSuccessful) {
-                        val result = JSONObject(response.body()?.string() ?: "{}")
+                        val result = JSONObject(response.body?.string() ?: "{}")
                         sdohRiskLevel = result.optString("overall_risk", "low")
                         sdohScreeningComplete = true
 
@@ -19068,8 +19129,8 @@ SOFA Score: [X]
         json.put("language", languageCode)
         json.put("interpreter_type", interpreterType)
         json.put("urgency", "routine")
-        if (currentPatientId != null) {
-            json.put("patient_id", currentPatientId)
+        currentPatientData?.optString("id")?.let { patientId ->
+            json.put("patient_id", patientId)
         }
 
         val requestBody = json.toString().toRequestBody("application/json".toMediaType())
@@ -19197,8 +19258,8 @@ SOFA Score: [X]
         val json = JSONObject()
         json.put("language", patientPreferredLanguage)
         json.put("interpreter_type", interpreterType)
-        if (currentPatientId != null) {
-            json.put("patient_id", currentPatientId)
+        currentPatientData?.optString("id")?.let { patientId ->
+            json.put("patient_id", patientId)
         }
 
         val requestBody = json.toString().toRequestBody("application/json".toMediaType())
@@ -19322,9 +19383,10 @@ SOFA Score: [X]
         speakFeedback("Patient language set to $languageName. Interpreter required.")
 
         // Optionally save to server
-        if (currentPatientId != null) {
+        val patientId = currentPatientData?.optString("id")
+        if (patientId != null) {
             val json = JSONObject()
-            json.put("patient_id", currentPatientId)
+            json.put("patient_id", patientId)
             json.put("preferred_language", languageCode)
             json.put("preferred_language_name", languageName)
             json.put("interpreter_required", true)
@@ -21575,8 +21637,79 @@ SOFA Score: [X]
             transcriptText.text = "Just speak naturally"
             startVoiceRecognition()
         } else {
-            Log.e(TAG, "Speech recognition not available")
-            transcriptText.text = "Speech recognition not available"
+            // Fallback to WebSocket transcription for Vuzix/devices without Google Speech
+            Log.w(TAG, "Google Speech not available - using WebSocket fallback")
+            useWebSocketForCommands = true
+            isContinuousListening = true
+            statusText.text = "Connecting..."
+            transcriptText.text = "Using cloud speech recognition"
+            startWebSocketCommandListening()
+        }
+    }
+
+    /**
+     * Start WebSocket-based voice command listening (Vuzix fallback)
+     * Uses AssemblyAI/Deepgram for speech recognition when Google Speech unavailable
+     */
+    private fun startWebSocketCommandListening() {
+        if (isCommandListening) {
+            Log.d(TAG, "Command listening already active")
+            return
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(this, "Microphone permission required", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Create command streaming service
+        commandStreamingService = AudioStreamingService(this) { result ->
+            runOnUiThread {
+                if (result.isFinal && result.text.isNotBlank()) {
+                    Log.d(TAG, "WebSocket command received: ${result.text}")
+                    statusText.text = "Processing..."
+                    transcriptText.text = "\"${result.text}\""
+
+                    // Process as voice command
+                    processTranscript(result.text)
+
+                    // Continue listening after processing
+                    transcriptText.postDelayed({
+                        if (useWebSocketForCommands && isContinuousListening) {
+                            statusText.text = "Listening..."
+                        }
+                    }, 1000)
+                } else if (!result.isFinal && result.text.isNotBlank()) {
+                    // Show partial transcript
+                    transcriptText.text = "\"${result.text}\"..."
+                }
+            }
+        }
+
+        if (commandStreamingService?.startStreaming() == true) {
+            isCommandListening = true
+            statusText.text = "Listening..."
+            Log.d(TAG, "WebSocket command listening started")
+            speakFeedback("Ready for voice commands")
+        } else {
+            Log.e(TAG, "Failed to start WebSocket command listening")
+            statusText.text = "Connection failed"
+            transcriptText.text = "Check network connection"
+            speakFeedback("Voice connection failed. Check network.")
+        }
+    }
+
+    /**
+     * Stop WebSocket command listening
+     */
+    private fun stopWebSocketCommandListening() {
+        if (isCommandListening) {
+            commandStreamingService?.stopStreaming()
+            commandStreamingService = null
+            isCommandListening = false
+            Log.d(TAG, "WebSocket command listening stopped")
         }
     }
 

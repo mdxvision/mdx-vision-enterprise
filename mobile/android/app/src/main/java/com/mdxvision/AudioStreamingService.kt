@@ -43,9 +43,24 @@ class AudioStreamingService(
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         const val BUFFER_SIZE_FACTOR = 2
 
-        // WebSocket URL (10.0.2.2 = host machine from emulator)
+        // WebSocket URLs - configure based on deployment
         const val WS_URL_EMULATOR = "ws://10.0.2.2:8002/ws/transcribe"
-        const val WS_URL_DEVICE = "ws://192.168.1.243:8002/ws/transcribe"  // Mac IP for Galaxy S24
+
+        // For physical devices: Set via SharedPreferences or use cloud URL
+        // Local development: Your Mac's IP on the network
+        // Production: Use cloud endpoint (e.g., wss://api.mdxvision.com/ws/transcribe)
+        private var wsUrlDevice: String = "ws://192.168.1.243:8002/ws/transcribe"
+
+        /**
+         * Configure the WebSocket URL for physical devices
+         * Call this at app startup with the correct server URL
+         */
+        fun setDeviceUrl(url: String) {
+            wsUrlDevice = url
+            Log.d(TAG, "Device WebSocket URL set to: $url")
+        }
+
+        fun getDeviceUrl(): String = wsUrlDevice
     }
 
     data class TranscriptionResult(
@@ -111,7 +126,16 @@ class AudioStreamingService(
         val isEmulator = android.os.Build.FINGERPRINT.contains("generic") ||
                          android.os.Build.MODEL.contains("Emulator") ||
                          android.os.Build.MANUFACTURER.contains("Genymotion")
-        val baseUrl = if (isEmulator) WS_URL_EMULATOR else WS_URL_DEVICE
+        val isVuzix = android.os.Build.MANUFACTURER.contains("Vuzix", ignoreCase = true)
+        val baseUrl = when {
+            isEmulator -> WS_URL_EMULATOR
+            isVuzix -> {
+                Log.d(TAG, "Vuzix device detected: ${android.os.Build.MODEL}")
+                wsUrlDevice
+            }
+            else -> wsUrlDevice
+        }
+        Log.d(TAG, "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, URL: $baseUrl")
         val wsUrl = if (provider != null) {
             "${baseUrl.removeSuffix("/ws/transcribe")}/ws/transcribe/$provider"
         } else {
@@ -125,9 +149,12 @@ class AudioStreamingService(
             .url(wsUrl)
             .build()
 
+        var connectionSuccessful = false
+
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d(TAG, "WebSocket connected")
+                Log.d(TAG, "WebSocket connected to $wsUrl")
+                connectionSuccessful = true
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -135,17 +162,22 @@ class AudioStreamingService(
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e(TAG, "WebSocket error: ${t.message}")
+                Log.e(TAG, "WebSocket connection failed: ${t.message}")
+                Log.e(TAG, "URL attempted: $wsUrl")
+                Log.e(TAG, "Response: ${response?.message}")
                 isStreaming = false
-                onError?.invoke(t.message ?: "Connection failed")
+                connectionSuccessful = false
+                onError?.invoke("Connection failed: ${t.message}. Check network and server URL.")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "WebSocket closed: $reason")
+                Log.d(TAG, "WebSocket closed: code=$code, reason=$reason")
                 isStreaming = false
             }
         })
 
+        // Give the connection a moment to establish
+        // The actual success is indicated by onConnected callback when server responds
         return true
     }
 

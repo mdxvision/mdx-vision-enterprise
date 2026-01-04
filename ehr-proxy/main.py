@@ -7,7 +7,7 @@ Run: python main.py
 Test: curl http://localhost:8002/api/v1/patient/12724066
 """
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 
 # Import transcription service
 from transcription import (
-    create_session, get_session, end_session, set_session_speaker_context,
+    create_session as create_transcription_session, get_session, end_session, set_session_speaker_context,
     TranscriptionSession, TRANSCRIPTION_PROVIDER
 )
 
@@ -10514,9 +10514,9 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
             print(f"📚 Specialty vocabulary requested: {specialty_list}")
 
     try:
-        # Create transcription session with specialties
+        # Create transcription session
         print(f"🎤 Creating session {session_id}...")
-        session = await create_session(session_id, specialties=specialty_list)
+        session = await create_transcription_session(session_id)
         print(f"🎤 Session created, provider connected: {session.is_active}")
 
         # Send connection confirmation
