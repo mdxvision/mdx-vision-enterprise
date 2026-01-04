@@ -7,6 +7,10 @@ Run: python main.py
 Test: curl http://localhost:8002/api/v1/patient/12724066
 """
 
+# Load .env file before any other imports
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
