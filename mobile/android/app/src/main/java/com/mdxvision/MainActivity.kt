@@ -12134,8 +12134,13 @@ SOFA Score: [X]
         if (conditions != null && conditions.length() > 0) {
             speechBuilder.append("Active conditions: ")
             for (i in 0 until minOf(conditions.length(), 3)) {
-                val cond = conditions.getJSONObject(i)
-                val condName = cond.optString("name", "")
+                // Handle both string array and JSONObject array
+                val condName = try {
+                    val cond = conditions.getJSONObject(i)
+                    cond.optString("name", "")
+                } catch (e: Exception) {
+                    conditions.optString(i, "")
+                }
                 if (condName.isNotEmpty()) {
                     speechBuilder.append("$condName. ")
                 }
@@ -23108,8 +23113,8 @@ SOFA Score: [X]
                 // Voice command to scan wristband
                 startBarcodeScanner()
             }
-            lower.contains("show vitals") || lower.contains("vitals") -> {
-                // Show vitals only
+            lower.contains("show vital") || lower.contains("vital") -> {
+                // Show vitals only (matches both "vitals" and "vital")
                 fetchPatientSection("vitals")
             }
             lower.contains("allergies") || lower.contains("allergy") -> {
