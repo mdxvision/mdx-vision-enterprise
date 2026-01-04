@@ -319,7 +319,7 @@ Use `additional_headers` instead of `extra_headers` for newer versions.
 
 See `FEATURES.md` for detailed checklist of patent claim implementations.
 
-## Recent Changes (Dec 2024)
+## Recent Changes (Jan 2025)
 
 1. **Real-time Transcription** - AssemblyAI/Deepgram WebSocket streaming
 2. **Wake Word Detection** - "Hey MDx" hands-free activation
