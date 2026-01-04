@@ -5,9 +5,41 @@
 
 ---
 
-## Active Session: Vuzix Blade 2 Voice Commands & Testing (Jan 4, 2025)
+## Active Session: Vuzix Microphone Sensitivity Fix (Jan 4, 2025)
 
 **Started:** 2025-01-04
+**Focus:** Diagnosing and fixing Vuzix Blade 2 microphone low sensitivity issue
+
+### Session Summary
+- **Diagnosed root cause**: Vuzix Blade 2 microphone outputs audio ~40dB too quiet
+- **Added audio level logging**: RMS, max sample, dB metrics every 2 seconds for diagnostics
+- **Changed audio source**: Use `VOICE_RECOGNITION` instead of `MIC` for Vuzix (enables AGC/noise suppression)
+- **Added 10x software gain boost**: Amplifies Vuzix audio before sending to AssemblyAI
+- **Result**: Voice commands now transcribe successfully on Vuzix Blade 2
+- Verified transcription working with real-time AssemblyAI WebSocket streaming
+
+### Technical Details
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| No transcription | Mic level RMS=2, dB=-84 (silence) | 10x gain boost |
+| Voice commands fail | Audio too quiet for speech recognition | VOICE_RECOGNITION audio source |
+| Ambient mode not triggering | Same as above | Both fixes combined |
+
+### Audio Level Diagnostics Added
+```
+🎤 Audio level: RMS=38, Max=150, dB=-58.7, chunks=491  (with speech)
+🎤 Audio level: RMS=2, Max=8, dB=-84.3, chunks=260    (silence)
+```
+
+### Commits This Session
+| Commit | Description |
+|--------|-------------|
+| c5b47b6 | Fix Vuzix microphone low sensitivity for voice recognition |
+
+---
+
+## Previous Session: Vuzix Blade 2 Voice Commands & Testing (Jan 4, 2025)
+
 **Focus:** Vuzix glasses testing, voice command fixes, ambient mode
 
 ### Session Summary
@@ -24,6 +56,7 @@
 ### Commits This Session
 | Commit | Description |
 |--------|-------------|
+| 32b59bc | Update session log |
 | 166e10c | Add medication to note and fix order command matching |
 | e699db7 | Fix vitals command and Brief me crash |
 | 58d6d93 | Fix Vuzix UX: help command, ambient mode, simplified UI |
@@ -260,7 +293,7 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 - [ ] Veradigm live integration (needs credentials)
 
 ### Hardware
-- [ ] Vuzix Blade 2 physical device testing
+- [x] Vuzix Blade 2 physical device testing (completed Jan 4, 2025 - mic sensitivity fix)
 - [ ] Ray-Ban Meta glasses validation
 - [ ] Magic Leap 2 support
 
@@ -274,14 +307,14 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 | Commit | Date | Description |
 |--------|------|-------------|
+| c5b47b6 | Jan 4, 2025 | Fix Vuzix microphone low sensitivity for voice recognition |
+| 32b59bc | Jan 4, 2025 | Update session log |
 | 166e10c | Jan 4, 2025 | Add medication to note and fix order command matching |
 | e699db7 | Jan 4, 2025 | Fix vitals command and Brief me crash |
 | 58d6d93 | Jan 4, 2025 | Fix Vuzix UX: help command, ambient mode, simplified UI |
 | e1f152e | Jan 3, 2025 | Add dotenv loading for .env file support |
 | bfa418d | Jan 3, 2025 | Fix Vuzix voice recognition with AssemblyAI |
 | 4b9fd5b | Jan 3, 2025 | Add CONVERSATIONS.md and sync all documentation |
-| 53202e6 | Jan 3, 2025 | Update CLAUDE.md date to Jan 2025 |
-| ec54b68 | Jan 3, 2025 | Update documentation with latest feature counts |
 
 ---
 
