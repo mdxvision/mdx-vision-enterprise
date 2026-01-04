@@ -36,6 +36,15 @@
 | Save note allergies display | allergies.optString(i) fails on JSONObjects | Try-catch to extract name field from JSONObject or fall back to string |
 | Save note PMH/conditions | conditions.optString(i) fails on JSONObjects | Same pattern - extract name from JSONObject or string |
 | Plan section | Entity extraction from ambient transcript | Reviewed plan triggers - working as expected |
+| **TTS "Speech not available"** | Vuzix has no local TTS engines (PicoTTS not functioning) | Server-side TTS via gTTS with base64 MP3 streaming |
+
+### Server-Side TTS Solution
+Vuzix Blade 2 has no working TTS engines despite PicoTTS being installed. Solution:
+1. Added `/api/v1/tts/speak` endpoint to EHR proxy using gTTS (Google Text-to-Speech)
+2. Android app falls back to server TTS when `isTtsReady = false`
+3. Server returns base64-encoded MP3 audio
+4. Android plays via MediaPlayer
+5. **Result**: "Brief me" now speaks patient summary on Vuzix!
 
 ### Audio Level Diagnostics Added
 ```
@@ -46,6 +55,7 @@
 ### Commits This Session
 | Commit | Description |
 |--------|-------------|
+| a4e4164 | Add server-side TTS for Vuzix glasses (gTTS fallback) |
 | 40cfd8b | Fix Brief me TTS and add robust JSON array handling |
 | fc18b60 | Fix allergies and conditions display in save note UI |
 | cd75eeb | Fix JSONException crash in conditions array parsing (7 locations) |
