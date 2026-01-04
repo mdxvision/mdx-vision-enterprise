@@ -287,8 +287,17 @@ class AudioStreamingService(
         ) * BUFFER_SIZE_FACTOR
 
         try {
+            // Use VOICE_RECOGNITION source for better speech capture on Vuzix/HMDs
+            // This applies automatic gain control and noise suppression
+            val audioSource = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) {
+                Log.d(TAG, "Using VOICE_RECOGNITION audio source for Vuzix")
+                MediaRecorder.AudioSource.VOICE_RECOGNITION
+            } else {
+                MediaRecorder.AudioSource.MIC
+            }
+
             audioRecord = AudioRecord(
-                MediaRecorder.AudioSource.MIC,
+                audioSource,
                 SAMPLE_RATE,
                 CHANNEL_CONFIG,
                 AUDIO_FORMAT,
@@ -307,16 +316,42 @@ class AudioStreamingService(
             // Start sending audio in background
             recordingJob = scope.launch {
                 val buffer = ShortArray(bufferSize / 2)  // 16-bit samples
+                var chunkCount = 0
+                var lastLevelLog = 0L
 
                 while (isActive && isStreaming) {
                     val readCount = audioRecord?.read(buffer, 0, buffer.size) ?: 0
 
                     if (readCount > 0) {
-                        // Convert shorts to bytes (little-endian PCM)
+                        chunkCount++
+
+                        // Calculate RMS audio level every 2 seconds
+                        val now = System.currentTimeMillis()
+                        if (now - lastLevelLog > 2000) {
+                            var sum = 0.0
+                            var maxSample = 0
+                            for (i in 0 until readCount) {
+                                val sample = kotlin.math.abs(buffer[i].toInt())
+                                sum += sample * sample
+                                if (sample > maxSample) maxSample = sample
+                            }
+                            val rms = kotlin.math.sqrt(sum / readCount).toInt()
+                            val dbLevel = if (rms > 0) 20 * kotlin.math.log10(rms.toDouble() / 32768.0) else -100.0
+                            Log.d(TAG, "🎤 Audio level: RMS=$rms, Max=$maxSample, dB=${String.format("%.1f", dbLevel)}, chunks=$chunkCount")
+                            lastLevelLog = now
+                        }
+
+                        // Apply software gain boost for Vuzix (low mic sensitivity)
+                        // Boost by ~20dB (10x) to bring levels up to usable range
+                        val gainFactor = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) 10 else 1
+
+                        // Convert shorts to bytes (little-endian PCM) with gain
                         val byteBuffer = ByteBuffer.allocate(readCount * 2)
                         byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
                         for (i in 0 until readCount) {
-                            byteBuffer.putShort(buffer[i])
+                            // Apply gain with clipping protection
+                            val amplified = (buffer[i].toInt() * gainFactor).coerceIn(-32768, 32767)
+                            byteBuffer.putShort(amplified.toShort())
                         }
 
                         // Send to WebSocket
