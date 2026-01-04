@@ -11817,9 +11817,17 @@ SOFA Score: [X]
         if (conditions != null && conditions.length() > 0) {
             var activeCount = 0
             for (i in 0 until minOf(conditions.length(), 5)) {
-                val cond = conditions.getJSONObject(i)
-                val condName = cond.optString("name", "")
-                val status = cond.optString("status", "")
+                // Handle both JSONObject and String array formats
+                val condName = try {
+                    val cond = conditions.getJSONObject(i)
+                    cond.optString("name", "")
+                } catch (e: Exception) {
+                    conditions.optString(i, "")
+                }
+                val status = try {
+                    conditions.getJSONObject(i).optString("status", "")
+                } catch (e: Exception) { "" }
+
                 if (condName.isNotEmpty()) {
                     sb.append("  • $condName")
                     if (status.isNotEmpty()) sb.append(" [$status]")
@@ -12300,7 +12308,12 @@ SOFA Score: [X]
         content.append("───────────────────────────────────\n")
         val conditions = patient.optJSONArray("conditions")
         if (conditions != null && conditions.length() > 0) {
-            val primaryCondition = conditions.getJSONObject(0).optString("name", "")
+            // Handle both JSONObject and String array formats
+            val primaryCondition = try {
+                conditions.getJSONObject(0).optString("name", "")
+            } catch (e: Exception) {
+                conditions.optString(0, "")
+            }
             content.append("Primary: $primaryCondition\n")
             if (conditions.length() > 1) {
                 content.append("+ ${conditions.length() - 1} other active problems\n")
@@ -12353,9 +12366,14 @@ SOFA Score: [X]
         if (conditions != null && conditions.length() > 1) {
             content.append("Hx: ")
             for (i in 1 until minOf(conditions.length(), 4)) {
-                val cond = conditions.getJSONObject(i)
+                val condName = try {
+                    val cond = conditions.getJSONObject(i)
+                    cond.optString("name", "")
+                } catch (e: Exception) {
+                    conditions.optString(i, "")
+                }
                 if (i > 1) content.append(", ")
-                content.append(cond.optString("name", ""))
+                content.append(condName)
             }
             content.append("\n")
         }
@@ -12457,7 +12475,11 @@ SOFA Score: [X]
         speech.append("Situation: ")
         val conditions = patient.optJSONArray("conditions")
         if (conditions != null && conditions.length() > 0) {
-            val primary = conditions.getJSONObject(0).optString("name", "")
+            val primary = try {
+                conditions.getJSONObject(0).optString("name", "")
+            } catch (e: Exception) {
+                conditions.optString(0, "")
+            }
             speech.append("Primary problem is $primary. ")
         }
 
@@ -12544,8 +12566,13 @@ SOFA Score: [X]
         val conditions = patient.optJSONArray("conditions")
         if (conditions != null && conditions.length() > 0) {
             for (i in 0 until minOf(conditions.length(), 5)) {
-                val cond = conditions.getJSONObject(i)
-                content.append("• ${cond.optString("name", "")}\n")
+                val condName = try {
+                    val cond = conditions.getJSONObject(i)
+                    cond.optString("name", "")
+                } catch (e: Exception) {
+                    conditions.optString(i, "")
+                }
+                content.append("• $condName\n")
             }
         } else {
             content.append("• See provider notes\n")
@@ -12657,7 +12684,11 @@ SOFA Score: [X]
         // Diagnosis
         val conditions = patient.optJSONArray("conditions")
         if (conditions != null && conditions.length() > 0) {
-            val primary = conditions.getJSONObject(0).optString("name", "")
+            val primary = try {
+                conditions.getJSONObject(0).optString("name", "")
+            } catch (e: Exception) {
+                conditions.optString(0, "")
+            }
             speech.append("You were seen for $primary. ")
         }
 
@@ -13069,7 +13100,11 @@ SOFA Score: [X]
         // Condition-based reminders
         if (conditions != null) {
             for (i in 0 until conditions.length()) {
-                val condition = conditions.getJSONObject(i).optString("name", "").lowercase()
+                val condition = try {
+                    conditions.getJSONObject(i).optString("name", "").lowercase()
+                } catch (e: Exception) {
+                    conditions.optString(i, "").lowercase()
+                }
 
                 if (condition.contains("diabetes") || condition.contains("a1c")) {
                     reminders.add(ClinicalReminder("monitoring", "A1c check due if >3 months", "high", "ADA"))
