@@ -4931,7 +4931,8 @@ SOFA Score: [X]
         val rootView = window.decorView.findViewById<android.view.ViewGroup>(android.R.id.content)
 
         dataOverlay = android.widget.FrameLayout(this).apply {
-            setBackgroundColor(0xEE0A1628.toInt())
+            // Light background for AR glasses visibility
+            setBackgroundColor(0xFFF8FAFC.toInt())
             isClickable = true
 
             val innerLayout = android.widget.LinearLayout(context).apply {
@@ -4952,7 +4953,8 @@ SOFA Score: [X]
             val titleText = TextView(context).apply {
                 text = title
                 textSize = getTitleFontSize()
-                setTextColor(0xFF10B981.toInt())
+                // Dark green title for light background
+                setTextColor(0xFF059669.toInt())
                 layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             titleRow.addView(titleText)
@@ -4961,7 +4963,8 @@ SOFA Score: [X]
             val editIndicator = TextView(context).apply {
                 text = "📝 EDITABLE"
                 textSize = 14f
-                setTextColor(0xFF3B82F6.toInt())
+                // Dark blue for light background
+                setTextColor(0xFF1D4ED8.toInt())
             }
             titleRow.addView(editIndicator)
             innerLayout.addView(titleRow)
@@ -4970,7 +4973,8 @@ SOFA Score: [X]
             val hintText = TextView(context).apply {
                 text = "Tap note to edit before saving"
                 textSize = 12f
-                setTextColor(0xFF94A3B8.toInt())
+                // Dark hint text for light background
+                setTextColor(0xFF475569.toInt())
                 setPadding(0, 0, 0, 8)
             }
             innerLayout.addView(hintText)
@@ -4980,14 +4984,16 @@ SOFA Score: [X]
                 layoutParams = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
                 )
-                setBackgroundColor(0xFF1E293B.toInt())
+                // White background for AR glasses visibility
+                setBackgroundColor(0xFFFFFFFF.toInt())
             }
 
             // EditText for editable note content
             noteEditText = android.widget.EditText(context).apply {
                 setText(content)
                 textSize = getContentFontSize()
-                setTextColor(0xFFF8FAFC.toInt())
+                // Dark text on light background for AR visibility
+                setTextColor(0xFF0F172A.toInt())
                 setHintTextColor(0xFF64748B.toInt())
                 setLineSpacing(4f, 1.2f)
                 setBackgroundColor(0x00000000) // Transparent background
