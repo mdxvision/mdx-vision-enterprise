@@ -11921,13 +11921,40 @@ SOFA Score: [X]
      * Supports multi-language TTS (English, Spanish, Mandarin, Portuguese)
      */
     private fun initTextToSpeech() {
-        textToSpeech = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                updateTtsLanguage()
-            } else {
-                Log.e(TAG, "TTS: Initialization failed")
-                isTtsReady = false
+        try {
+            textToSpeech = TextToSpeech(this) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    Log.d(TAG, "TTS: Initialization succeeded")
+                    updateTtsLanguage()
+                } else {
+                    Log.e(TAG, "TTS: Initialization failed with status $status")
+                    isTtsReady = false
+                    // Try to reinitialize after a delay
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        retryTtsInit()
+                    }, 2000)
+                }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "TTS: Exception during initialization: ${e.message}")
+            isTtsReady = false
+        }
+    }
+
+    private fun retryTtsInit() {
+        Log.d(TAG, "TTS: Retrying initialization...")
+        try {
+            textToSpeech = TextToSpeech(this) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    Log.d(TAG, "TTS: Retry succeeded")
+                    updateTtsLanguage()
+                } else {
+                    Log.e(TAG, "TTS: Retry failed with status $status")
+                    isTtsReady = false
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "TTS: Retry exception: ${e.message}")
         }
     }
 
@@ -11953,9 +11980,16 @@ SOFA Score: [X]
      */
     private fun speak(text: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH) {
         if (isTtsReady && textToSpeech != null) {
-            textToSpeech?.speak(text, queueMode, null, "mdx_tts_${System.currentTimeMillis()}")
+            try {
+                textToSpeech?.speak(text, queueMode, null, "mdx_tts_${System.currentTimeMillis()}")
+            } catch (e: Exception) {
+                Log.e(TAG, "TTS speak error: ${e.message}")
+                showDataOverlay("Speech Output", text)
+            }
         } else {
-            Toast.makeText(this, "Speech not available", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "TTS not ready. isTtsReady=$isTtsReady, textToSpeech=${textToSpeech != null}")
+            // Fall back to showing the text on screen
+            showDataOverlay("Patient Summary", text)
         }
     }
 
@@ -12281,15 +12315,20 @@ SOFA Score: [X]
 
         speechBuilder.append("End of summary.")
 
-        // Speak the summary FIRST (in case visual display has issues)
-        speak(speechBuilder.toString())
-        Log.d(TAG, "Speaking patient summary for $name")
-
-        // Then show on screen (wrapped in try-catch to not interrupt TTS)
-        try {
-            showQuickPatientSummary()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error showing visual summary: ${e.message}")
+        // Speak or show the summary
+        if (isTtsReady && textToSpeech != null) {
+            // TTS is available - speak and show visual summary
+            speak(speechBuilder.toString())
+            Log.d(TAG, "Speaking patient summary for $name")
+            try {
+                showQuickPatientSummary()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error showing visual summary: ${e.message}")
+            }
+        } else {
+            // TTS not available - show spoken text as overlay instead
+            Log.d(TAG, "TTS not available - showing summary as text overlay")
+            showDataOverlay("Patient Summary (TTS Unavailable)", speechBuilder.toString())
         }
     }
 
