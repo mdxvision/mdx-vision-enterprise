@@ -11077,6 +11077,33 @@ SOFA Score: [X]
     }
 
     /**
+     * Add medication directly to note plan section
+     * Voice: "add med aspirin", "add medication ibuprofen 400mg twice daily"
+     */
+    private fun addMedicationToNote(medText: String) {
+        if (medText.isBlank()) {
+            speakFeedback("Please specify a medication. Say add med followed by the medication name and dose.")
+            return
+        }
+
+        // Capitalize first letter
+        val formattedMed = medText.trim().replaceFirstChar { it.uppercase() }
+        val medEntry = "• Rx: $formattedMed"
+
+        // Add to plan section if note is active
+        if (noteEditText != null && editableNoteContent != null) {
+            appendToNoteSection("plan", medEntry)
+            showDataOverlay("MEDICATION ADDED", "Added to Plan:\n$medEntry")
+            speakFeedback("Added $formattedMed to plan.")
+        } else {
+            // Store for later use
+            pendingPlanItems.add(medEntry)
+            showDataOverlay("MEDICATION SAVED", "Saved for next note:\n$medEntry")
+            speakFeedback("Saved $formattedMed. It will be included in your next note.")
+        }
+    }
+
+    /**
      * Get relative time ago string
      */
     private fun getTimeAgo(timestamp: Long): String {
@@ -23455,13 +23482,18 @@ SOFA Score: [X]
                     else -> {} // Do nothing
                 }
             }
+            // Add medication to note: "add med aspirin", "add medication ibuprofen 400mg"
+            lower.contains("add med") || lower.contains("add medication") -> {
+                val medText = lower.substringAfter("add med").replace("ication", "").trim()
+                addMedicationToNote(medText)
+            }
             // Prescribe medication: "prescribe amoxicillin 500mg three times daily for 10 days"
-            lower.startsWith("prescribe ") -> {
+            lower.contains("prescribe ") -> {
                 val medText = lower.substringAfter("prescribe ").trim()
                 processMedicationOrder(medText)
             }
             // Order command - determine type based on content (check order sets first)
-            lower.startsWith("order ") -> {
+            lower.contains("order ") -> {
                 val orderText = lower.substringAfter("order ").trim()
                 val orderSet = findOrderSet(orderText)
                 when {
