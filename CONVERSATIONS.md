@@ -5,25 +5,27 @@
 
 ---
 
-## Active Session: Vuzix Microphone Sensitivity Fix (Jan 4, 2025)
+## Active Session: Vuzix Microphone & Ambient Mode Fix (Jan 4, 2025)
 
 **Started:** 2025-01-04
-**Focus:** Diagnosing and fixing Vuzix Blade 2 microphone low sensitivity issue
+**Focus:** Fixing Vuzix Blade 2 microphone sensitivity, ambient mode, and UI visibility
 
 ### Session Summary
 - **Diagnosed root cause**: Vuzix Blade 2 microphone outputs audio ~40dB too quiet
 - **Added audio level logging**: RMS, max sample, dB metrics every 2 seconds for diagnostics
 - **Changed audio source**: Use `VOICE_RECOGNITION` instead of `MIC` for Vuzix (enables AGC/noise suppression)
 - **Added 10x software gain boost**: Amplifies Vuzix audio before sending to AssemblyAI
-- **Result**: Voice commands now transcribe successfully on Vuzix Blade 2
-- Verified transcription working with real-time AssemblyAI WebSocket streaming
+- **Fixed ambient mode command matching**: Added "starts ambient" pattern (transcription adds 's')
+- **Fixed save note UI**: Changed from dark theme to light theme for AR visibility
+- **Result**: Voice commands, ambient mode, and note UI all working on Vuzix Blade 2
 
 ### Technical Details
 | Issue | Root Cause | Fix |
 |-------|-----------|-----|
 | No transcription | Mic level RMS=2, dB=-84 (silence) | 10x gain boost |
 | Voice commands fail | Audio too quiet for speech recognition | VOICE_RECOGNITION audio source |
-| Ambient mode not triggering | Same as above | Both fixes combined |
+| Ambient mode not matching | Transcription says "starts ambient" not "start ambient" | Added "starts ambient" pattern |
+| Save note UI too dark | Dark background on AR display | Light theme (#F8FAFC background, dark text) |
 
 ### Audio Level Diagnostics Added
 ```
@@ -34,6 +36,9 @@
 ### Commits This Session
 | Commit | Description |
 |--------|-------------|
+| 4c46157 | Fix save note UI for AR glasses visibility |
+| 485cb22 | Fix ambient mode command matching for transcription variations |
+| 6354a53 | Update session log: Vuzix Microphone Sensitivity Fix |
 | c5b47b6 | Fix Vuzix microphone low sensitivity for voice recognition |
 
 ---
@@ -307,14 +312,14 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 | Commit | Date | Description |
 |--------|------|-------------|
+| 4c46157 | Jan 4, 2025 | Fix save note UI for AR glasses visibility |
+| 485cb22 | Jan 4, 2025 | Fix ambient mode command matching for transcription variations |
+| 6354a53 | Jan 4, 2025 | Update session log: Vuzix Microphone Sensitivity Fix |
 | c5b47b6 | Jan 4, 2025 | Fix Vuzix microphone low sensitivity for voice recognition |
 | 32b59bc | Jan 4, 2025 | Update session log |
 | 166e10c | Jan 4, 2025 | Add medication to note and fix order command matching |
 | e699db7 | Jan 4, 2025 | Fix vitals command and Brief me crash |
 | 58d6d93 | Jan 4, 2025 | Fix Vuzix UX: help command, ambient mode, simplified UI |
-| e1f152e | Jan 3, 2025 | Add dotenv loading for .env file support |
-| bfa418d | Jan 3, 2025 | Fix Vuzix voice recognition with AssemblyAI |
-| 4b9fd5b | Jan 3, 2025 | Add CONVERSATIONS.md and sync all documentation |
 
 ---
 
