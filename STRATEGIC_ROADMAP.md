@@ -369,13 +369,13 @@ def validate_medication(med_name, dose, patient_data):
 
 ### Hallucination Reduction TODOs
 
-- [ ] Implement RAG system (see Section 3)
-- [ ] Add citation requirements to note generation
+- [x] Implement RAG system (Feature #88 - ChromaDB + SentenceTransformers)
+- [x] Add citation requirements to note generation (Feature #88 - [1], [2] citations)
 - [ ] Build confidence scoring system
 - [ ] Add "I don't know" capability
 - [ ] Implement validation layer for clinical recommendations
-- [ ] Create feedback loop for clinician corrections
-- [ ] Track and measure hallucination rate
+- [x] Create feedback loop for clinician corrections (Feature #89 - citation feedback)
+- [x] Track and measure hallucination rate (Feature #89 - quality scoring)
 
 ---
 
@@ -612,7 +612,7 @@ Medical AI has historically perpetuated and amplified healthcare disparities:
 
 ## Summary
 
-MDx Vision has a strong technical foundation (89 features). The next phase is about:
+MDx Vision has a strong technical foundation (91 features). The next phase is about:
 
 1. **Compliance**: Get the paperwork and audits in place for enterprise sales
 2. **Differentiation**: Build RAG-based AI that doesn't hallucinate

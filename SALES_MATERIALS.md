@@ -63,7 +63,7 @@
 | File | Description |
 |------|-------------|
 | [MDX_GLASSES_PRD.md](MDX_GLASSES_PRD.md) | Product Requirements Document for proprietary MDX Glasses hardware |
-| [FEATURES.md](FEATURES.md) | Complete feature list (66 features implemented) |
+| [FEATURES.md](FEATURES.md) | Complete feature list (91 features implemented) |
 | [MDX_V2_FEATURES.md](MDX_V2_FEATURES.md) | V2 feature documentation |
 
 ---

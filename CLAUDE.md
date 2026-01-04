@@ -175,6 +175,7 @@ web/src/app/
 | Audit Log | `/dashboard/audit` | HIPAA audit log viewer |
 | Devices | `/dashboard/devices` | AR glasses pairing and management |
 | Analytics | `/dashboard/analytics` | Usage metrics and trends |
+| Knowledge | `/dashboard/knowledge` | RAG updates, schedules, checklists |
 | Settings | `/dashboard/settings` | Configuration options |
 
 ## API Endpoints
