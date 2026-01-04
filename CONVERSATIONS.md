@@ -5,9 +5,33 @@
 
 ---
 
-## Active Session: MDx Vision Enterprise (Jan 2025)
+## Active Session: Vuzix Blade 2 Voice Commands & Testing (Jan 4, 2025)
 
-**Started:** 2025-01-03
+**Started:** 2025-01-04
+**Focus:** Vuzix glasses testing, voice command fixes, ambient mode
+
+### Session Summary
+- Fixed help command matching (uses `contains("help")` instead of exact match)
+- Fixed ambient mode for Vuzix (uses WebSocket fallback, no Google Speech)
+- Simplified Vuzix UI (hidden button grid, voice-first interface)
+- Fixed "Brief me" crash (JSONException when conditions array contains strings)
+- Fixed vitals command (accepts "vital" singular in addition to "vitals")
+- Added "add med [name]" voice command to add medications directly to note
+- Fixed order/prescribe commands (use `contains()` instead of `startsWith()`)
+- Installed ADB via Homebrew for glasses deployment
+- Tested voice recognition on Vuzix Blade 2 with AssemblyAI transcription
+
+### Commits This Session
+| Commit | Description |
+|--------|-------------|
+| 166e10c | Add medication to note and fix order command matching |
+| e699db7 | Fix vitals command and Brief me crash |
+| 58d6d93 | Fix Vuzix UX: help command, ambient mode, simplified UI |
+
+---
+
+## Previous Session: MDx Vision Enterprise (Jan 3, 2025)
+
 **Focus:** Maintenance, documentation sync, continued development
 
 ### Session Summary
@@ -250,14 +274,15 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 | Commit | Date | Description |
 |--------|------|-------------|
+| 166e10c | Jan 4, 2025 | Add medication to note and fix order command matching |
+| e699db7 | Jan 4, 2025 | Fix vitals command and Brief me crash |
+| 58d6d93 | Jan 4, 2025 | Fix Vuzix UX: help command, ambient mode, simplified UI |
+| e1f152e | Jan 3, 2025 | Add dotenv loading for .env file support |
+| bfa418d | Jan 3, 2025 | Fix Vuzix voice recognition with AssemblyAI |
+| 4b9fd5b | Jan 3, 2025 | Add CONVERSATIONS.md and sync all documentation |
 | 53202e6 | Jan 3, 2025 | Update CLAUDE.md date to Jan 2025 |
 | ec54b68 | Jan 3, 2025 | Update documentation with latest feature counts |
-| c02c29f | Dec 31, 2024 | Add Knowledge Updates Dashboard (Feature #91) |
-| 4b8a0f1 | Dec 30, 2024 | Add Scheduled RAG Updates with Review Checklists (Feature #90) |
-| aaead1e | Dec 29, 2024 | Add RAG Knowledge Management (Feature #89) |
-| 4090c85 | Dec 28, 2024 | Add RAG Clinical Knowledge System (Feature #88) |
-| 102e3b6 | Dec 27, 2024 | Add Ray-Ban Meta Companion App (Feature #87) |
 
 ---
 
-*Last updated: 2025-01-03*
+*Last updated: 2025-01-04*
