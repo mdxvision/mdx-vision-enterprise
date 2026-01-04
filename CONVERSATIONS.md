@@ -45,7 +45,7 @@
 ### Commits This Session
 | Commit | Description |
 |--------|-------------|
-| 2ea7da7 | Fix allergies and conditions display in save note UI |
+| fc18b60 | Fix allergies and conditions display in save note UI |
 | cd75eeb | Fix JSONException crash in conditions array parsing (7 locations) |
 | 04a6ff5 | Update session log with ambient mode and UI fixes |
 | 4c46157 | Fix save note UI for AR glasses visibility |
