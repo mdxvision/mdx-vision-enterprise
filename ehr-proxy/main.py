@@ -10992,6 +10992,67 @@ async def get_patient_audit_trail(
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# TEXT-TO-SPEECH API - Server-side TTS for devices without TTS engines
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TTSRequest(BaseModel):
+    text: str
+    language: str = "en"
+
+@app.post("/api/v1/tts/speak")
+async def text_to_speech(request: TTSRequest):
+    """
+    Generate speech audio from text using gTTS.
+    Returns MP3 audio as base64 for playback on client.
+    """
+    try:
+        from gtts import gTTS
+        import io
+
+        # Generate speech
+        tts = gTTS(text=request.text, lang=request.language, slow=False)
+
+        # Save to bytes buffer
+        audio_buffer = io.BytesIO()
+        tts.write_to_fp(audio_buffer)
+        audio_buffer.seek(0)
+
+        # Return as base64
+        audio_base64 = base64.b64encode(audio_buffer.read()).decode('utf-8')
+
+        return {
+            "success": True,
+            "audio_base64": audio_base64,
+            "format": "mp3",
+            "text_length": len(request.text)
+        }
+    except ImportError:
+        # gTTS not installed - try pyttsx3 or return error
+        return {
+            "success": False,
+            "error": "TTS library not available. Install with: pip install gTTS"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+@app.get("/api/v1/tts/status")
+async def tts_status():
+    """Check if server-side TTS is available"""
+    try:
+        from gtts import gTTS
+        return {"available": True, "engine": "gTTS"}
+    except ImportError:
+        try:
+            import pyttsx3
+            return {"available": True, "engine": "pyttsx3"}
+        except ImportError:
+            return {"available": False, "error": "No TTS engine. Install: pip install gTTS"}
+
+
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
     print("📡 Connected to: Cerner Open Sandbox")

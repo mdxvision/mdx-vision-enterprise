@@ -11922,21 +11922,40 @@ SOFA Score: [X]
      */
     private fun initTextToSpeech() {
         try {
-            textToSpeech = TextToSpeech(this) { status ->
+            // Try with specific Pico TTS engine first (available on Vuzix)
+            textToSpeech = TextToSpeech(this, { status ->
                 if (status == TextToSpeech.SUCCESS) {
-                    Log.d(TAG, "TTS: Initialization succeeded")
+                    Log.d(TAG, "TTS: Initialization succeeded with Pico")
                     updateTtsLanguage()
                 } else {
-                    Log.e(TAG, "TTS: Initialization failed with status $status")
+                    Log.e(TAG, "TTS: Pico init failed with status $status, trying default...")
+                    // Try default engine
+                    initDefaultTts()
+                }
+            }, "com.svox.pico")
+        } catch (e: Exception) {
+            Log.e(TAG, "TTS: Exception during Pico init: ${e.message}")
+            initDefaultTts()
+        }
+    }
+
+    private fun initDefaultTts() {
+        try {
+            textToSpeech = TextToSpeech(this) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    Log.d(TAG, "TTS: Default engine succeeded")
+                    updateTtsLanguage()
+                } else {
+                    Log.e(TAG, "TTS: Default init failed with status $status")
                     isTtsReady = false
                     // Try to reinitialize after a delay
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                         retryTtsInit()
-                    }, 2000)
+                    }, 3000)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "TTS: Exception during initialization: ${e.message}")
+            Log.e(TAG, "TTS: Default init exception: ${e.message}")
             isTtsReady = false
         }
     }
@@ -11944,6 +11963,10 @@ SOFA Score: [X]
     private fun retryTtsInit() {
         Log.d(TAG, "TTS: Retrying initialization...")
         try {
+            // List available TTS engines
+            val engines = textToSpeech?.engines
+            Log.d(TAG, "TTS: Available engines: ${engines?.map { it.name }}")
+
             textToSpeech = TextToSpeech(this) { status ->
                 if (status == TextToSpeech.SUCCESS) {
                     Log.d(TAG, "TTS: Retry succeeded")
@@ -11984,12 +12007,80 @@ SOFA Score: [X]
                 textToSpeech?.speak(text, queueMode, null, "mdx_tts_${System.currentTimeMillis()}")
             } catch (e: Exception) {
                 Log.e(TAG, "TTS speak error: ${e.message}")
-                showDataOverlay("Speech Output", text)
+                // Fall back to server-side TTS
+                speakViaServer(text)
             }
         } else {
-            Log.w(TAG, "TTS not ready. isTtsReady=$isTtsReady, textToSpeech=${textToSpeech != null}")
-            // Fall back to showing the text on screen
-            showDataOverlay("Patient Summary", text)
+            Log.w(TAG, "TTS not ready - using server-side TTS")
+            // Fall back to server-side TTS
+            speakViaServer(text)
+        }
+    }
+
+    /**
+     * Use server-side TTS when local TTS is not available (e.g., Vuzix)
+     */
+    private fun speakViaServer(text: String) {
+        Thread {
+            try {
+                val json = JSONObject().apply {
+                    put("text", text)
+                    put("language", "en")
+                }
+                val request = Request.Builder()
+                    .url("$EHR_PROXY_URL/api/v1/tts/speak")
+                    .post(json.toString().toRequestBody("application/json".toMediaType()))
+                    .build()
+
+                httpClient.newCall(request).execute().use { response ->
+                    val body = response.body?.string()
+                    val result = JSONObject(body ?: "{}")
+
+                    if (result.optBoolean("success", false)) {
+                        val audioBase64 = result.optString("audio_base64", "")
+                        if (audioBase64.isNotEmpty()) {
+                            playBase64Audio(audioBase64)
+                            return@use
+                        }
+                    }
+                    // Server TTS failed - show text instead
+                    runOnUiThread {
+                        showDataOverlay("Patient Summary", text)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Server TTS error: ${e.message}")
+                runOnUiThread {
+                    showDataOverlay("Patient Summary", text)
+                }
+            }
+        }.start()
+    }
+
+    /**
+     * Play base64-encoded audio (MP3)
+     */
+    private fun playBase64Audio(base64Audio: String) {
+        try {
+            val audioBytes = android.util.Base64.decode(base64Audio, android.util.Base64.DEFAULT)
+
+            // Save to temp file
+            val tempFile = java.io.File.createTempFile("tts_", ".mp3", cacheDir)
+            tempFile.writeBytes(audioBytes)
+
+            // Play using MediaPlayer
+            val mediaPlayer = android.media.MediaPlayer()
+            mediaPlayer.setDataSource(tempFile.absolutePath)
+            mediaPlayer.setOnCompletionListener {
+                it.release()
+                tempFile.delete()
+            }
+            mediaPlayer.prepare()
+            mediaPlayer.start()
+
+            Log.d(TAG, "Playing server TTS audio (${audioBytes.size} bytes)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error playing audio: ${e.message}")
         }
     }
 
@@ -12315,20 +12406,15 @@ SOFA Score: [X]
 
         speechBuilder.append("End of summary.")
 
-        // Speak or show the summary
-        if (isTtsReady && textToSpeech != null) {
-            // TTS is available - speak and show visual summary
-            speak(speechBuilder.toString())
-            Log.d(TAG, "Speaking patient summary for $name")
-            try {
-                showQuickPatientSummary()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error showing visual summary: ${e.message}")
-            }
-        } else {
-            // TTS not available - show spoken text as overlay instead
-            Log.d(TAG, "TTS not available - showing summary as text overlay")
-            showDataOverlay("Patient Summary (TTS Unavailable)", speechBuilder.toString())
+        // Always try to speak (uses server-side TTS fallback if local TTS unavailable)
+        speak(speechBuilder.toString())
+        Log.d(TAG, "Speaking patient summary for $name")
+
+        // Also show visual summary
+        try {
+            showQuickPatientSummary()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error showing visual summary: ${e.message}")
         }
     }
 
