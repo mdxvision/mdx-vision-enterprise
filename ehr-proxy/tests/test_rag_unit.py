@@ -551,3 +551,566 @@ class TestDocumentQualityMetrics:
         assert doc.helpful_count == 2
         assert doc.not_helpful_count == 1
         assert doc.quality_score == 2/3
+
+
+class TestKnowledgeManagerVersioning:
+    """Tests for KnowledgeManager versioning methods (Feature #89)"""
+
+    @patch("rag.RAGEngine")
+    def test_add_guideline_version(self, mock_rag_engine):
+        """Should add new guideline version"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        mock_engine.add_document.return_value = True
+        mock_rag_engine.return_value = mock_engine
+
+        km = KnowledgeManager(mock_engine)
+
+        success, version_id = km.add_guideline_version(
+            guideline_id="aha-chest-pain",
+            version_number="2024.1",
+            publication_date="2024-01-15",
+            content="Updated chest pain evaluation guidelines...",
+            title="AHA Chest Pain Guidelines",
+            source_name="AHA/ACC"
+        )
+
+        assert success is True
+        assert "aha-chest-pain-v2024.1" == version_id
+
+    @patch("rag.RAGEngine")
+    def test_add_version_supersedes_previous(self, mock_rag_engine):
+        """Should mark previous version as superseded"""
+        from rag import KnowledgeManager, GuidelineVersion, GuidelineStatus
+
+        mock_engine = MagicMock()
+        mock_engine.add_document.return_value = True
+        mock_rag_engine.return_value = mock_engine
+
+        km = KnowledgeManager(mock_engine)
+
+        # Add first version
+        km.versions["aha-chest-pain-v2023.1"] = GuidelineVersion(
+            version_id="aha-chest-pain-v2023.1",
+            guideline_id="aha-chest-pain",
+            version_number="2023.1",
+            publication_date="2023-01-15",
+            effective_date="2023-02-01",
+            status=GuidelineStatus.CURRENT
+        )
+
+        # Add new version that supersedes
+        km.add_guideline_version(
+            guideline_id="aha-chest-pain",
+            version_number="2024.1",
+            publication_date="2024-01-15",
+            content="Updated guidelines",
+            title="AHA Chest Pain",
+            source_name="AHA",
+            supersedes_id="aha-chest-pain-v2023.1"
+        )
+
+        # Old version should be marked superseded
+        old_version = km.versions["aha-chest-pain-v2023.1"]
+        assert old_version.status == GuidelineStatus.SUPERSEDED
+        assert old_version.superseded_by == "aha-chest-pain-v2024.1"
+
+    @patch("rag.RAGEngine")
+    def test_deprecate_guideline(self, mock_rag_engine):
+        """Should deprecate a guideline"""
+        from rag import KnowledgeManager, GuidelineVersion, GuidelineStatus
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        # Add a version
+        km.versions["old-guideline-v1"] = GuidelineVersion(
+            version_id="old-guideline-v1",
+            guideline_id="old-guideline",
+            version_number="1.0",
+            publication_date="2020-01-01",
+            effective_date="2020-02-01",
+            status=GuidelineStatus.CURRENT
+        )
+
+        result = km.deprecate_guideline("old-guideline-v1", "Outdated evidence")
+
+        assert result is True
+        assert km.versions["old-guideline-v1"].status == GuidelineStatus.DEPRECATED
+
+    @patch("rag.RAGEngine")
+    def test_deprecate_nonexistent_guideline(self, mock_rag_engine):
+        """Should return False for nonexistent guideline"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        result = km.deprecate_guideline("nonexistent", "reason")
+
+        assert result is False
+
+    @patch("rag.RAGEngine")
+    def test_get_current_version(self, mock_rag_engine):
+        """Should get current version of guideline"""
+        from rag import KnowledgeManager, GuidelineVersion, GuidelineStatus
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        km.versions["aha-chest-pain-v2023.1"] = GuidelineVersion(
+            version_id="aha-chest-pain-v2023.1",
+            guideline_id="aha-chest-pain",
+            version_number="2023.1",
+            publication_date="2023-01-15",
+            effective_date="2023-02-01",
+            status=GuidelineStatus.SUPERSEDED
+        )
+        km.versions["aha-chest-pain-v2024.1"] = GuidelineVersion(
+            version_id="aha-chest-pain-v2024.1",
+            guideline_id="aha-chest-pain",
+            version_number="2024.1",
+            publication_date="2024-01-15",
+            effective_date="2024-02-01",
+            status=GuidelineStatus.CURRENT
+        )
+
+        current = km.get_current_version("aha-chest-pain")
+
+        assert current == "aha-chest-pain-v2024.1"
+
+    @patch("rag.RAGEngine")
+    def test_get_current_version_none(self, mock_rag_engine):
+        """Should return None if no current version"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        current = km.get_current_version("nonexistent-guideline")
+
+        assert current is None
+
+    @patch("rag.RAGEngine")
+    def test_get_version_history(self, mock_rag_engine):
+        """Should get version history for guideline"""
+        from rag import KnowledgeManager, GuidelineVersion, GuidelineStatus
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        km.versions["aha-chest-pain-v2022.1"] = GuidelineVersion(
+            version_id="aha-chest-pain-v2022.1",
+            guideline_id="aha-chest-pain",
+            version_number="2022.1",
+            publication_date="2022-01-15",
+            effective_date="2022-02-01",
+            status=GuidelineStatus.SUPERSEDED
+        )
+        km.versions["aha-chest-pain-v2023.1"] = GuidelineVersion(
+            version_id="aha-chest-pain-v2023.1",
+            guideline_id="aha-chest-pain",
+            version_number="2023.1",
+            publication_date="2023-01-15",
+            effective_date="2023-02-01",
+            status=GuidelineStatus.SUPERSEDED
+        )
+        km.versions["aha-chest-pain-v2024.1"] = GuidelineVersion(
+            version_id="aha-chest-pain-v2024.1",
+            guideline_id="aha-chest-pain",
+            version_number="2024.1",
+            publication_date="2024-01-15",
+            effective_date="2024-02-01",
+            status=GuidelineStatus.CURRENT
+        )
+
+        history = km.get_version_history("aha-chest-pain")
+
+        assert len(history) == 3
+
+
+class TestKnowledgeManagerFeedback:
+    """Tests for KnowledgeManager feedback methods (Feature #89)"""
+
+    @patch("rag.RAGEngine")
+    def test_record_feedback(self, mock_rag_engine):
+        """Should record citation feedback"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+        km.feedback = []  # Clear any persisted feedback
+
+        feedback_id = km.record_feedback(
+            document_id="aha-chest-2024",
+            query="chest pain evaluation",
+            rating="very_helpful",
+            comment="Excellent guidance",
+            clinician_specialty="cardiology"
+        )
+
+        assert feedback_id is not None
+        assert len(feedback_id) > 0
+        # Check that feedback was added (at least 1)
+        new_feedback = [f for f in km.feedback if f.document_id == "aha-chest-2024"]
+        assert len(new_feedback) >= 1
+        assert new_feedback[-1].rating.value == "very_helpful"
+
+    @patch("rag.RAGEngine")
+    def test_record_multiple_feedback(self, mock_rag_engine):
+        """Should record multiple feedback entries"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+        initial_count = len(km.feedback)
+        km.feedback = []  # Clear any persisted feedback
+
+        km.record_feedback("test-doc-x", "query1", "helpful")
+        km.record_feedback("test-doc-x", "query2", "very_helpful")
+        km.record_feedback("test-doc-x", "query3", "not_helpful")
+
+        # Should have added 3 feedback entries
+        test_feedback = [f for f in km.feedback if f.document_id == "test-doc-x"]
+        assert len(test_feedback) == 3
+
+    @patch("rag.RAGEngine")
+    def test_get_document_feedback_summary(self, mock_rag_engine):
+        """Should get feedback summary for document"""
+        from rag import KnowledgeManager, CitationFeedback, FeedbackRating
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+        km.feedback = []  # Clear any persisted feedback
+
+        # Create fresh feedback entries with proper enum values
+        km.feedback = [
+            CitationFeedback(
+                feedback_id="f1",
+                document_id="test-summary-doc",
+                query="q1",
+                rating=FeedbackRating.VERY_HELPFUL
+            ),
+            CitationFeedback(
+                feedback_id="f2",
+                document_id="test-summary-doc",
+                query="q2",
+                rating=FeedbackRating.HELPFUL
+            ),
+            CitationFeedback(
+                feedback_id="f3",
+                document_id="test-summary-doc",
+                query="q3",
+                rating=FeedbackRating.HELPFUL
+            ),
+            CitationFeedback(
+                feedback_id="f4",
+                document_id="test-summary-doc",
+                query="q4",
+                rating=FeedbackRating.NOT_HELPFUL
+            ),
+        ]
+
+        summary = km.get_document_feedback_summary("test-summary-doc")
+
+        assert summary["document_id"] == "test-summary-doc"
+        assert summary["total_feedback"] == 4
+        assert summary["helpful_percentage"] == 75.0
+        assert summary["quality_score"] == 0.75
+
+    @patch("rag.RAGEngine")
+    def test_feedback_summary_empty(self, mock_rag_engine):
+        """Should handle empty feedback"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        summary = km.get_document_feedback_summary("nonexistent")
+
+        assert summary["total_feedback"] == 0
+        assert summary["helpful_percentage"] == 0
+
+
+class TestKnowledgeManagerCollections:
+    """Tests for KnowledgeManager specialty collection methods"""
+
+    @patch("rag.RAGEngine")
+    def test_create_specialty_collection(self, mock_rag_engine):
+        """Should create specialty collection"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        result = km.create_specialty_collection(
+            specialty="cardiology",
+            description="Cardiology guidelines",
+            document_ids=["doc1", "doc2"],
+            curator="Dr. Smith"
+        )
+
+        assert result is True
+        assert "cardiology" in km.collections
+        assert km.collections["cardiology"].curator == "Dr. Smith"
+
+    @patch("rag.RAGEngine")
+    def test_add_to_collection(self, mock_rag_engine):
+        """Should add document to collection"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        km.create_specialty_collection("cardiology", "Heart stuff")
+        result = km.add_to_collection("cardiology", "new-doc")
+
+        assert result is True
+        assert "new-doc" in km.collections["cardiology"].document_ids
+
+    @patch("rag.RAGEngine")
+    def test_add_to_nonexistent_collection(self, mock_rag_engine):
+        """Should fail for nonexistent collection"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        result = km.add_to_collection("nonexistent", "doc1")
+
+        assert result is False
+
+    @patch("rag.RAGEngine")
+    def test_get_collection_documents(self, mock_rag_engine):
+        """Should get documents in collection"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        km.create_specialty_collection(
+            "pulmonology",
+            "Lung guidelines",
+            document_ids=["copd-2024", "asthma-2023"]
+        )
+
+        docs = km.get_collection_documents("pulmonology")
+
+        assert len(docs) == 2
+        assert "copd-2024" in docs
+
+    @patch("rag.RAGEngine")
+    def test_get_nonexistent_collection_documents(self, mock_rag_engine):
+        """Should return empty for nonexistent collection"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        docs = km.get_collection_documents("nonexistent")
+
+        assert docs == []
+
+    @patch("rag.RAGEngine")
+    def test_list_collections(self, mock_rag_engine):
+        """Should list all collections"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        km.create_specialty_collection("cardiology", "Heart", ["doc1"])
+        km.create_specialty_collection("pulmonology", "Lungs", ["doc2", "doc3"])
+
+        collections = km.list_collections()
+
+        assert len(collections) == 2
+        cardio = next(c for c in collections if c["specialty"] == "cardiology")
+        assert cardio["document_count"] == 1
+
+
+class TestKnowledgeManagerConflicts:
+    """Tests for KnowledgeManager conflict detection"""
+
+    @patch("rag.RAGEngine")
+    def test_resolve_conflict(self, mock_rag_engine):
+        """Should resolve conflict alert"""
+        from rag import KnowledgeManager, ConflictAlert
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        km.conflicts.append(ConflictAlert(
+            alert_id="conflict-001",
+            document_id_1="doc1",
+            document_id_2="doc2",
+            conflict_type="dosing",
+            description="Conflicting doses",
+            severity="high"
+        ))
+
+        result = km.resolve_conflict("conflict-001", "doc1 is more recent")
+
+        assert result is True
+        assert km.conflicts[0].resolved is True
+        assert "more recent" in km.conflicts[0].resolution_notes
+
+    @patch("rag.RAGEngine")
+    def test_resolve_nonexistent_conflict(self, mock_rag_engine):
+        """Should fail for nonexistent conflict"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        result = km.resolve_conflict("nonexistent", "notes")
+
+        assert result is False
+
+    @patch("rag.RAGEngine")
+    def test_get_unresolved_conflicts(self, mock_rag_engine):
+        """Should get unresolved conflicts only"""
+        from rag import KnowledgeManager, ConflictAlert
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+        km.conflicts = []  # Clear any persisted conflicts
+
+        km.conflicts.append(ConflictAlert(
+            alert_id="c1", document_id_1="d1", document_id_2="d2",
+            conflict_type="dosing", description="test1", severity="high",
+            resolved=False
+        ))
+        km.conflicts.append(ConflictAlert(
+            alert_id="c2", document_id_1="d3", document_id_2="d4",
+            conflict_type="rec", description="test2", severity="medium",
+            resolved=True, resolution_notes="Resolved"
+        ))
+        km.conflicts.append(ConflictAlert(
+            alert_id="c3", document_id_1="d5", document_id_2="d6",
+            conflict_type="contra", description="test3", severity="low",
+            resolved=False
+        ))
+
+        unresolved = km.get_unresolved_conflicts()
+
+        assert len(unresolved) == 2
+
+
+class TestPubMedParsing:
+    """Tests for PubMed XML parsing"""
+
+    @patch("rag.RAGEngine")
+    def test_parse_pubmed_xml_basic(self, mock_rag_engine):
+        """Should parse basic PubMed XML"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        xml_text = """
+        <PubmedArticle>
+            <ArticleTitle>Test Article Title</ArticleTitle>
+            <AbstractText>This is the abstract text.</AbstractText>
+            <Title>Test Journal</Title>
+        </PubmedArticle>
+        """
+
+        articles = km._parse_pubmed_xml(xml_text, ["12345678"])
+
+        assert len(articles) == 1
+        assert articles[0].pmid == "12345678"
+        assert "Test Article Title" in articles[0].title
+        assert "abstract text" in articles[0].abstract
+
+    @patch("rag.RAGEngine")
+    def test_parse_pubmed_xml_empty(self, mock_rag_engine):
+        """Should handle empty XML"""
+        from rag import KnowledgeManager
+
+        mock_engine = MagicMock()
+        km = KnowledgeManager(mock_engine)
+
+        articles = km._parse_pubmed_xml("<empty></empty>", ["12345"])
+
+        # Should still create article with unknown title
+        assert len(articles) == 1
+        assert articles[0].title == "Unknown Title"
+
+
+class TestRAGEngineStubs:
+    """Tests for RAGEngine when dependencies not available"""
+
+    def test_rag_engine_init_without_chromadb(self):
+        """Should initialize even without ChromaDB"""
+        from rag import RAGEngine
+
+        engine = RAGEngine(persist_directory="/tmp/test")
+
+        assert engine.persist_directory == "/tmp/test"
+        assert engine.initialized is False
+
+    def test_rag_engine_retrieve_when_not_initialized(self):
+        """Should return empty list when not initialized"""
+        from rag import RAGEngine
+
+        engine = RAGEngine()
+        results = engine.retrieve("test query")
+
+        assert results == []
+
+    def test_rag_engine_add_document_when_not_initialized(self):
+        """Should return False when not initialized"""
+        from rag import RAGEngine, MedicalDocument, SourceType
+
+        engine = RAGEngine()
+        doc = MedicalDocument(
+            id="test",
+            title="Test",
+            content="Content",
+            source_type=SourceType.CLINICAL_GUIDELINE
+        )
+
+        result = engine.add_document(doc)
+
+        assert result is False
+
+
+class TestRAGResponseGeneration:
+    """Tests for RAG prompt generation"""
+
+    def test_generate_augmented_prompt_empty(self):
+        """Should handle empty contexts"""
+        from rag import RAGEngine
+
+        engine = RAGEngine()
+        prompt = engine.generate_augmented_prompt("test query", [])
+
+        assert "test query" in prompt
+
+    def test_generate_augmented_prompt_with_contexts(self):
+        """Should include context in prompt"""
+        from rag import RAGEngine, RetrievedContext, MedicalDocument, SourceType
+
+        engine = RAGEngine()
+
+        doc = MedicalDocument(
+            id="test",
+            title="AHA Guidelines",
+            content="Chest pain evaluation requires...",
+            source_type=SourceType.AHA_GUIDELINE,
+            source_name="AHA"
+        )
+        context = RetrievedContext(
+            document=doc,
+            relevance_score=0.9,
+            matched_chunk="Chest pain evaluation requires..."
+        )
+
+        prompt = engine.generate_augmented_prompt(
+            "How to evaluate chest pain?",
+            [context]
+        )
+
+        assert "AHA" in prompt or "chest pain" in prompt.lower()
