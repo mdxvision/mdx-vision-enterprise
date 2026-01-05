@@ -130,6 +130,135 @@ adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 ```
 
+## Testing
+
+### Test Coverage Overview
+
+| Component | Framework | Test Count | Key Coverage Areas |
+|-----------|-----------|------------|-------------------|
+| Backend (Java) | JUnit 5, Spring Boot Test, Mockito | 4 files | EHR services, sessions, audit logging |
+| EHR Proxy (Python) | pytest, pytest-asyncio | 18+ files | Auth, safety, health equity, RAG |
+| Web Dashboard | Vitest, React Testing Library | 6 files | Login, dashboard, settings, billing |
+| Android App | JUnit 4, Mockito | 3 files | Voice commands, audio, barcode |
+| AI Service | pytest | 3 files | Transcription, notes, drug interactions |
+
+### Running Tests
+
+```bash
+# Backend (Java)
+cd backend
+./mvnw test
+
+# EHR Proxy (Python)
+cd ehr-proxy
+pytest tests/ -v
+
+# Web Dashboard
+cd web
+npm test           # Watch mode
+npm run test:run   # Single run
+npm run test:coverage  # With coverage
+
+# Android
+cd mobile/android
+./gradlew test
+
+# AI Service
+cd ai-service
+pytest tests/ -v
+```
+
+### Test File Locations
+
+```
+backend/src/test/java/com/mdxvision/
+├── fhir/
+│   ├── UnifiedEhrServiceTest.java    # Multi-EHR abstraction
+│   └── CernerFhirServiceTest.java    # Cerner FHIR client
+├── controller/
+│   └── SessionControllerTest.java    # REST endpoints
+└── service/
+    └── AuditServiceTest.java         # HIPAA audit logging
+
+ehr-proxy/tests/
+├── test_auth.py              # Device authentication (Feature #64)
+├── test_voiceprint.py        # Biometric auth (Features #66, #77)
+├── test_clinical_safety.py   # Critical alerts, drug interactions
+├── test_racial_medicine.py   # Health equity (Feature #79)
+├── test_maternal_health.py   # OB monitoring (Feature #82)
+├── test_cultural_care.py     # Religious/cultural preferences
+├── test_sdoh.py              # Social determinants (Feature #84)
+├── test_copilot.py           # AI Clinical Co-pilot (Feature #78)
+├── test_literacy.py          # Health literacy (Feature #85)
+├── test_interpreter.py       # Interpreter integration (Feature #86)
+└── test_rag.py               # RAG knowledge system (Features #88-90)
+
+web/src/__tests__/
+├── setup.ts                  # Test configuration
+├── login.test.tsx            # Authentication
+├── dashboard.test.tsx        # Main dashboard
+├── settings.test.tsx         # Settings + Health Equity
+├── billing.test.tsx          # Billing/coding (Feature #71)
+└── devices.test.tsx          # Device management (Feature #65)
+
+mobile/android/app/src/test/java/com/mdxvision/
+├── MainActivityTest.kt       # Voice commands, wake word
+├── AudioStreamingServiceTest.kt  # Audio processing, Vuzix
+└── BarcodeScannerActivityTest.kt # MRN extraction, validation
+
+ai-service/tests/
+├── conftest.py               # Test fixtures
+├── test_transcription_service.py  # Real-time transcription
+├── test_notes_service.py     # SOAP note generation
+└── test_drug_interaction.py  # Drug interaction checking
+```
+
+### Test Patterns
+
+**Backend Java**: Uses `@MockBean` and `@WebMvcTest` for Spring Boot testing
+```java
+@WebMvcTest(SessionController.class)
+class SessionControllerTest {
+    @MockBean private SessionService sessionService;
+    @Autowired private MockMvc mockMvc;
+}
+```
+
+**EHR Proxy Python**: Uses pytest fixtures and `httpx.AsyncClient`
+```python
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+def test_device_auth(client):
+    response = client.post("/api/v1/auth/device", json={"device_id": "test"})
+    assert response.status_code == 200
+```
+
+**Web Dashboard**: Uses Vitest with React Testing Library
+```tsx
+import { render, screen } from '@testing-library/react'
+import { describe, it, expect } from 'vitest'
+
+describe('Dashboard', () => {
+  it('should render', () => {
+    render(<Dashboard />)
+    expect(screen.getByTestId('dashboard')).toBeInTheDocument()
+  })
+})
+```
+
+**Android Kotlin**: Uses JUnit 4 with nested test classes
+```kotlin
+@RunWith(MockitoJUnitRunner::class)
+class MainActivityTest {
+    class VoiceCommandTests {
+        @Test
+        fun `should recognize LOAD PATIENT command`() { ... }
+    }
+}
+```
+
 ## Key Files
 
 ### Android App
