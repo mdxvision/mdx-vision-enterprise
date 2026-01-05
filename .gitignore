@@ -51,3 +51,10 @@ temp/
 *.pem
 *.key
 secrets/
+
+# Runtime data
+data/
+data/
+
+# Runtime data
+data/
