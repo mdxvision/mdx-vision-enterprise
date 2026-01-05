@@ -116,7 +116,7 @@ class TestInteractionChecking:
         ]
 
         assert interactions[0]["severity"] == "MODERATE"
-        assert "potassium" in interactions[0]["clinicalEffect"].lower()
+        assert "hyperkalemia" in interactions[0]["clinicalEffect"].lower()
 
     def test_no_interactions(self):
         """Should return empty list when no interactions"""
