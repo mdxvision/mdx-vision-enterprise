@@ -40,7 +40,7 @@ from medical_vocabulary import (
 )
 
 # Import HIPAA audit logging
-from audit import audit_logger, AuditAction
+from audit import audit_logger, AuditAction, log_audit_event, log_phi_access
 
 # Import RAG system (Feature #88)
 try:
