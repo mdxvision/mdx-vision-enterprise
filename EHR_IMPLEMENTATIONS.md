@@ -15,7 +15,7 @@
 | **NextGen** | ✅ READY | `fhir.nextgen.com/nge/fhir/r4` | Configured | OAuth2 | Developer program |
 | **Veradigm** | ⏳ PENDING | `fhir.fhirpoint.open.allscripts.com/...` | - | OAuth2 | Needs credentials |
 | **eClinicalWorks** | 📋 TODO | - | - | OAuth2 | FHIR APIs available |
-| **MEDITECH** | 📋 TODO | - | - | OAuth2 | Greenfield Workspace |
+| **MEDITECH** | ✅ READY | `greenfield.meditech.com/fhir/r4` | `MDxVision@269e...` | OAuth2 | Greenfield Workspace |
 | **DrChrono** | 📋 TODO | - | - | OAuth2 | Cloud EHR |
 | **Elation** | 📋 TODO | - | - | OAuth2 | Primary care focused |
 | **ModMed** | 📋 TODO | - | - | OAuth2 | Specialty focused |
@@ -27,17 +27,19 @@
 ### Backend (`ehr-proxy/main.py`)
 
 ```python
-# Environment Variables (lines ~140-160)
+# Environment Variables (lines ~302-332)
 CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "0fab9b20-adc8-4940-bbf6-82034d1d39ab")
 EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "")
 VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "")
 ATHENA_CLIENT_ID = os.getenv("ATHENA_CLIENT_ID", "")
 NEXTGEN_CLIENT_ID = os.getenv("NEXTGEN_CLIENT_ID", "")
+MEDITECH_CLIENT_ID = os.getenv("MEDITECH_CLIENT_ID", "MDxVision@269e2312bf404c8293bcfffca232b729")
 
-# FHIR Base URLs (lines ~165-175)
+# FHIR Base URLs
 CERNER_BASE_URL = "https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d"
 EPIC_BASE_URL = "https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4"
 VERADIGM_BASE_URL = "https://fhir.fhirpoint.open.allscripts.com/fhirroute/open/sandbox/r4"
+MEDITECH_BASE_URL = "https://greenfield.meditech.com/fhir/r4"
 ```
 
 ### Environment File (`.env.example`)
@@ -62,6 +64,11 @@ NEXTGEN_CLIENT_SECRET=
 # Veradigm/Allscripts
 VERADIGM_CLIENT_ID=
 VERADIGM_CLIENT_SECRET=
+
+# MEDITECH (Greenfield Workspace)
+MEDITECH_CLIENT_ID=MDxVision@269e2312bf404c8293bcfffca232b729
+MEDITECH_CLIENT_SECRET=ZCQi_K0MQqqSIGS35j5DNw==
+MEDITECH_BASE_URL=https://greenfield.meditech.com/fhir/r4
 ```
 
 ---
@@ -142,7 +149,7 @@ curl http://localhost:8002/api/v1/patient/{patient_id}?ehr=new_ehr
 - [x] NextGen - Developer program
 - [ ] Veradigm - Awaiting credentials
 - [ ] eClinicalWorks - Need to register
-- [ ] MEDITECH - Need Greenfield access
+- [x] MEDITECH - Greenfield Workspace configured
 - [ ] DrChrono - Need to register
 - [ ] Redox - Consider for multi-EHR
 - [ ] Particle Health - Consider for coverage

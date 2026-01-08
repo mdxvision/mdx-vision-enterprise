@@ -323,6 +323,13 @@ NEXTGEN_CLIENT_ID = os.getenv("NEXTGEN_CLIENT_ID", "")
 NEXTGEN_CLIENT_SECRET = os.getenv("NEXTGEN_CLIENT_SECRET", "")
 NEXTGEN_BASE_URL = os.getenv("NEXTGEN_BASE_URL", "https://fhir.nextgen.com/nge/prod/fhir-api-r4/fhir/r4")
 
+# MEDITECH Configuration (Greenfield Workspace)
+MEDITECH_CLIENT_ID = os.getenv("MEDITECH_CLIENT_ID", "MDxVision@269e2312bf404c8293bcfffca232b729")
+MEDITECH_CLIENT_SECRET = os.getenv("MEDITECH_CLIENT_SECRET", "ZCQi_K0MQqqSIGS35j5DNw==")
+MEDITECH_BASE_URL = os.getenv("MEDITECH_BASE_URL", "https://greenfield.meditech.com/fhir/r4")
+MEDITECH_AUTH_URL = os.getenv("MEDITECH_AUTH_URL", "https://greenfield.meditech.com/oauth2/authorize")
+MEDITECH_TOKEN_URL = os.getenv("MEDITECH_TOKEN_URL", "https://greenfield.meditech.com/oauth2/token")
+
 # HAPI FHIR Configuration (Full CRUD Demo Server)
 HAPI_FHIR_BASE_URL = os.getenv("HAPI_FHIR_BASE_URL", "http://hapi.fhir.org/baseR4")
 HAPI_FHIR_ENABLED = os.getenv("HAPI_FHIR_ENABLED", "true").lower() == "true"
@@ -2529,6 +2536,14 @@ async def get_ehr_status():
             "market": "~10% ambulatory",
             "status": "ready" if NEXTGEN_CLIENT_ID else "pending_credentials"
         },
+        "meditech": {
+            "name": "MEDITECH Expanse",
+            "configured": bool(MEDITECH_CLIENT_ID),
+            "client_id": MEDITECH_CLIENT_ID[:12] + "..." if MEDITECH_CLIENT_ID else None,
+            "base_url": MEDITECH_BASE_URL if MEDITECH_CLIENT_ID else None,
+            "market": "~25% community hospitals",
+            "status": "ready" if MEDITECH_CLIENT_ID else "pending_credentials"
+        },
         "hapi_fhir": {
             "name": "HAPI FHIR (Demo Server)",
             "configured": HAPI_FHIR_ENABLED,
@@ -2542,9 +2557,10 @@ async def get_ehr_status():
     configured_count = sum(1 for e in ehrs.values() if e["configured"] and e.get("market") != "Full CRUD demo")
 
     ambulatory_pct = (15 if ATHENA_CLIENT_ID else 0) + (10 if NEXTGEN_CLIENT_ID else 0)
+    hospital_pct = (35 if CERNER_CLIENT_ID else 0) + (35 if EPIC_CLIENT_ID else 0) + (25 if MEDITECH_CLIENT_ID else 0)
     return {
         "total_configured": configured_count,
-        "total_available": 5,
+        "total_available": 6,
         "ehrs": ehrs,
         "market_coverage": {
             "hospitals": f"~{min(configured_count * 20, 90)}%",
@@ -13326,8 +13342,11 @@ if __name__ == "__main__":
     print(f"   • Veradigm: {'✅ READY' if VERADIGM_CLIENT_ID else '❌ Pending'}")
     print(f"   • athenahealth: {'✅ READY' if ATHENA_CLIENT_ID else '❌ Pending'}")
     print(f"   • NextGen: {'✅ READY' if NEXTGEN_CLIENT_ID else '❌ Pending'}")
-    configured = sum([bool(CERNER_CLIENT_ID), bool(EPIC_CLIENT_ID), bool(VERADIGM_CLIENT_ID), bool(ATHENA_CLIENT_ID), bool(NEXTGEN_CLIENT_ID)])
-    print(f"   → {configured}/5 EHRs configured")
+    print(f"   • MEDITECH: {'✅ READY' if MEDITECH_CLIENT_ID else '❌ Pending'}")
+    if MEDITECH_CLIENT_ID:
+        print(f"     Client ID: {MEDITECH_CLIENT_ID[:12]}...")
+    configured = sum([bool(CERNER_CLIENT_ID), bool(EPIC_CLIENT_ID), bool(VERADIGM_CLIENT_ID), bool(ATHENA_CLIENT_ID), bool(NEXTGEN_CLIENT_ID), bool(MEDITECH_CLIENT_ID)])
+    print(f"   → {configured}/6 EHRs configured")
     print("─" * 50)
     print("🔬 Demo Server (Full CRUD):")
     print(f"   • HAPI FHIR: {'✅ READY' if HAPI_FHIR_ENABLED else '❌ Disabled'}")
