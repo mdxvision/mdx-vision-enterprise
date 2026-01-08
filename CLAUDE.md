@@ -9,6 +9,7 @@ MDx Vision is an AR smart glasses platform for healthcare documentation. It impl
 **Key Features:**
 - Voice-activated patient lookup from EHR
 - Wake word detection ("Hey MDx")
+- Multi-intent voice command chaining (ordered actions)
 - Real-time transcription via AssemblyAI/Deepgram
 - AI-powered SOAP note generation
 - ICD-10 code suggestions from conversation
@@ -356,6 +357,16 @@ curl http://localhost:8002/api/v1/transcription/status
 - **DOB**: 1990-09-15
 
 ## Architecture
+
+### Voice Intent Parsing Flow
+```
+[Speech Transcript]
+    ↓ translateCommand()
+    ↓ parseVoiceIntents()
+[Ordered Intent List]
+    ↓ VoiceIntentExecutor (delays between actions)
+[Patient Search / Data Fetch / TTS]
+```
 
 ### Real-Time Transcription Flow
 ```

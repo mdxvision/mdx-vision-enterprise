@@ -10,6 +10,7 @@ Complete list of voice commands for MDx Vision AR glasses. Updated regularly as 
 |----------|-----------------|--------------|
 | Patient | "find patient Smith" | Search for patient |
 | Data | "show vitals" | Display vital signs |
+| Multi-intent | "open Jane Doe's chart and show vitals and labs" | Run sequential actions |
 | Notes | "start note" | Begin documentation |
 | Orders | "order CBC" | Place lab order |
 | Safety | "verify me" | Voiceprint verification |
@@ -28,6 +29,19 @@ Complete list of voice commands for MDx Vision AR glasses. Updated regularly as 
 | "brief me" / "tell me about patient" | Spoken patient summary | Reads aloud key info |
 | "show history" | View recently viewed patients | Shows last 10 patients |
 | "load [N]" | Load from history | "load 1" for most recent |
+
+---
+
+## Multi-Intent Chaining
+
+You can chain multiple actions in one utterance. The system parses conjunctions
+like "and" or "then" and runs each intent in order, inserting short delays so
+the UI and data stay in sync.
+
+**Examples:**
+- "Open John Doe's chart and show vitals and labs and read it back"
+- "Load patient Jane Smith then show vitals and read summary"
+- "Show labs and speak summary"
 
 ---
 

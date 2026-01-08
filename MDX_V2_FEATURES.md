@@ -601,6 +601,7 @@ Based on MDx v2.0 Brief Technical Description document.
 28. Custom voice commands (user-defined macros)
 29. Medical calculator (BMI, eGFR, CrCl, CHADS₂-VASc, etc.)
 30. SBAR handoff report for shift changes
+31. Multi-intent voice command chaining (ordered actions)
 
 ### Next Priorities
 1. Epic/Veradigm live integration (needs credentials)
