@@ -7,6 +7,7 @@ import org.mockito.Mock
 import org.mockito.Mockito.*
 import org.mockito.junit.MockitoJUnitRunner
 import org.junit.Assert.*
+import kotlinx.coroutines.runBlocking
 
 /**
  * Unit tests for MainActivity
@@ -208,6 +209,54 @@ class MainActivityTest {
                 lower.contains("hey m d x") -> lower.substringAfter("hey m d x").trim()
                 else -> phrase
             }
+        }
+    }
+
+    /**
+     * Multi-intent parsing and execution tests
+     */
+    class VoiceIntentParsingTests {
+
+        @Test
+        fun `should parse multi-intent voice command in order`() {
+            val command = "open John Doe's chart and show last vitals and labs and read it back"
+
+            val intents = parseVoiceIntents(command)
+
+            val expected = listOf(
+                VoiceIntent.LoadPatient("John Doe"),
+                VoiceIntent.ShowVitals,
+                VoiceIntent.ShowLabs,
+                VoiceIntent.SpeakSummary,
+            )
+            assertEquals(expected, intents)
+        }
+
+        @Test
+        fun `should execute intents in sequence`() = runBlocking {
+            val calls = mutableListOf<String>()
+            val executor = VoiceIntentExecutor(
+                loadPatient = { name -> calls.add("load:$name") },
+                showVitals = { calls.add("vitals") },
+                showLabs = { calls.add("labs") },
+                speakSummary = { calls.add("speak") },
+                interIntentDelayMillis = 0,
+                postLoadDelayMillis = 0,
+            )
+
+            executor.execute(
+                listOf(
+                    VoiceIntent.LoadPatient("John Doe"),
+                    VoiceIntent.ShowVitals,
+                    VoiceIntent.ShowLabs,
+                    VoiceIntent.SpeakSummary,
+                )
+            )
+
+            assertEquals(
+                listOf("load:John Doe", "vitals", "labs", "speak"),
+                calls
+            )
         }
     }
 
