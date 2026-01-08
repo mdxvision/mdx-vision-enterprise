@@ -30,9 +30,98 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+
+sealed class VoiceIntent {
+    data class LoadPatient(val name: String) : VoiceIntent()
+    object ShowVitals : VoiceIntent()
+    object ShowLabs : VoiceIntent()
+    object SpeakSummary : VoiceIntent()
+}
+
+data class VoiceIntentExecutor(
+    val loadPatient: (String) -> Unit,
+    val showVitals: () -> Unit,
+    val showLabs: () -> Unit,
+    val speakSummary: () -> Unit,
+    val interIntentDelayMillis: Long = 300L,
+    val postLoadDelayMillis: Long = 1200L,
+) {
+    suspend fun execute(intents: List<VoiceIntent>) {
+        intents.forEachIndexed { index, intent ->
+            executeIntent(intent)
+            if (index < intents.lastIndex) {
+                val delayMillis = if (intent is VoiceIntent.LoadPatient) {
+                    postLoadDelayMillis
+                } else {
+                    interIntentDelayMillis
+                }
+                delay(delayMillis)
+            }
+        }
+    }
+
+    private fun executeIntent(intent: VoiceIntent) {
+        when (intent) {
+            is VoiceIntent.LoadPatient -> loadPatient(intent.name)
+            VoiceIntent.ShowVitals -> showVitals()
+            VoiceIntent.ShowLabs -> showLabs()
+            VoiceIntent.SpeakSummary -> speakSummary()
+        }
+    }
+}
+
+fun parseVoiceIntents(utterance: String): List<VoiceIntent> {
+    val normalized = utterance.replace("’", "'")
+    val delimiterRegex = Regex("\\b(and|then|also|plus|as well as)\\b", RegexOption.IGNORE_CASE)
+    val clauses = delimiterRegex.split(normalized).map { it.trim() }.filter { it.isNotEmpty() }
+    val intents = mutableListOf<VoiceIntent>()
+
+    clauses.forEach { clause ->
+        val clauseLower = clause.lowercase()
+        val clauseIntents = mutableListOf<Pair<Int, VoiceIntent>>()
+
+        val loadRegex = Regex("(open|load|show)\\s+(?:patient\\s+)?(.+?)\\s+(chart|record|file|patient)", RegexOption.IGNORE_CASE)
+        val loadMatch = loadRegex.find(clause)
+        val loadIndex = loadMatch?.range?.first ?: -1
+        val loadName = loadMatch?.groupValues?.getOrNull(2)?.trim()?.removeSuffix("'s")?.removeSuffix("’s")
+        if (loadIndex >= 0 && !loadName.isNullOrBlank()) {
+            clauseIntents.add(loadIndex to VoiceIntent.LoadPatient(loadName.trim()))
+        }
+
+        val vitalsIndex = clauseLower.indexOf("vital")
+        if (vitalsIndex >= 0) {
+            clauseIntents.add(vitalsIndex to VoiceIntent.ShowVitals)
+        }
+
+        val labsIndex = clauseLower.indexOf("lab")
+        if (labsIndex >= 0) {
+            clauseIntents.add(labsIndex to VoiceIntent.ShowLabs)
+        }
+
+        val speakTriggers = listOf(
+            "read it back",
+            "read back",
+            "read it",
+            "read summary",
+            "speak summary",
+            "speak",
+            "brief",
+            "tell me about",
+        )
+        val speakIndex = speakTriggers.map { trigger -> clauseLower.indexOf(trigger) }.filter { it >= 0 }.minOrNull()
+        if (speakIndex != null) {
+            clauseIntents.add(speakIndex to VoiceIntent.SpeakSummary)
+        }
+
+        clauseIntents.sortedBy { it.first }.forEach { intents.add(it.second) }
+    }
+
+    return intents
+}
 
 /**
  * MDx Vision - Main Activity
@@ -218,6 +307,13 @@ class MainActivity : AppCompatActivity() {
     private var voiceprintRecordingIndex: Int = 0
     private var voiceprintAudioSamples: MutableList<String> = mutableListOf()
     private var voiceprintEnrollmentOverlay: android.widget.FrameLayout? = null
+
+    private val voiceIntentExecutor = VoiceIntentExecutor(
+        loadPatient = { name -> searchPatients(name) },
+        showVitals = { fetchPatientSection("vitals") },
+        showLabs = { fetchPatientSection("labs") },
+        speakSummary = { speakPatientSummary() },
+    )
     private var isAwaitingVoiceprintVerify: Boolean = false
     private var voiceprintVerifyCallback: ((Boolean) -> Unit)? = null
 
@@ -22377,6 +22473,14 @@ SOFA Score: [X]
         // Fuzzy match for "patient" - common misrecognitions
         val hasPatient = lower.contains("patient") || lower.contains("patine") ||
                          lower.contains("patience") || lower.contains("patent")
+
+        val parsedIntents = parseVoiceIntents(translatedTranscript)
+        if (parsedIntents.size > 1) {
+            lifecycleScope.launch {
+                voiceIntentExecutor.execute(parsedIntents)
+            }
+            return
+        }
 
         when {
             hasPatient && lower.contains("load") -> {

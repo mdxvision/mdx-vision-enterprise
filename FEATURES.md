@@ -287,6 +287,7 @@
 - [x] Hands-Free Patient Briefing
 - [x] Session Timeout (HIPAA compliance)
 - [x] Encounter Timer
+- [x] Multi-intent voice command chaining (ordered actions)
 - [x] Custom Voice Commands (user-defined macros)
 - [x] Data Encryption at Rest (AES-256-GCM)
 
@@ -321,6 +322,7 @@
 - [x] "Scan wristband"
 - [x] "Patient summary"
 - [x] "Brief me" / "Tell me about patient"
+- [x] Chained commands ("open John Doe's chart and show vitals and labs")
 
 ### Chart Review Commands
 - [x] "Show vitals" / "Mostrar signos vitales"
