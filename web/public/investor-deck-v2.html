@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MDx Vision - Investor Deck</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --primary: #0066CC;
+            --primary-dark: #003366;
+            --accent: #2E7D32;
+            --success: #2E7D32;
+            --warning: #E65100;
+            --danger: #C62828;
+            --dark: #1a1a1a;
+            --darker: #FFFFFF;
+            --light: #1a1a1a;
+            --gray: #666666;
+            --gray-light: #444444;
+            --enterprise-green: #2E7D32;
+            --bg-light: #FFFFFF;
+            --bg-section: #F8F9FA;
+            --border-light: #E0E0E0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Segoe UI', sans-serif;
+            background: #FFFFFF;
+            color: #1a1a1a;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .deck {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 80px 100px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(100px);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #FFFFFF;
+        }
+
+        .slide::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary) 0%, var(--enterprise-green) 100%);
+        }
+
+        .slide-logo {
+            position: absolute;
+            top: 35px;
+            left: 100px;
+            height: 28px;
+            opacity: 1;
+            filter: invert(1) hue-rotate(180deg);
+        }
+
+        .confidential {
+            position: absolute;
+            top: 40px;
+            right: 100px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--gray);
+            opacity: 0.6;
+        }
+
+        .section-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: var(--enterprise-green);
+            margin-bottom: 10px;
+        }
+
+        .slide.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0);
+        }
+
+        .slide.exit {
+            transform: translateX(-100px);
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 300;
+            margin-bottom: 1rem;
+            color: var(--light);
+            letter-spacing: -1px;
+        }
+
+        h1 strong {
+            font-weight: 700;
+        }
+
+        h2 {
+            font-size: 2.75rem;
+            font-weight: 300;
+            margin-bottom: 0.5rem;
+            color: var(--light);
+            letter-spacing: -0.5px;
+        }
+
+        h2 strong {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        h3 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--light);
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        p {
+            font-size: 1.15rem;
+            line-height: 1.8;
+            color: var(--gray-light);
+            max-width: 800px;
+            font-weight: 300;
+        }
+
+        .subtitle {
+            font-size: 1.35rem;
+            color: var(--gray-light);
+            font-weight: 300;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 50px;
+            margin-top: 50px;
+        }
+
+        .stat {
+            text-align: left;
+            padding: 0;
+            background: transparent;
+            border-left: 3px solid var(--enterprise-green);
+            padding-left: 25px;
+        }
+
+        .stat-number {
+            font-size: 4rem;
+            font-weight: 300;
+            color: var(--light);
+            line-height: 1;
+        }
+
+        .stat-number span {
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--gray);
+            margin-top: 12px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 500;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 25px;
+            margin-top: 40px;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .card-grid.three-col {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .card-grid.four-col {
+            grid-template-columns: repeat(4, 1fr);
+        }
+
+        .card {
+            background: #F8F9FA;
+            border: 1px solid #E0E0E0;
+            border-left: 3px solid transparent;
+            border-radius: 4px;
+            padding: 25px 30px;
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            background: #F0F4F8;
+            border-left-color: var(--primary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .card h4 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--light);
+            letter-spacing: 0.5px;
+        }
+
+        .card p {
+            font-size: 0.95rem;
+            color: var(--gray);
+            line-height: 1.6;
+            font-weight: 300;
+        }
+
+        .comparison-table {
+            width: 100%;
+            max-width: 1200px;
+            border-collapse: collapse;
+            margin-top: 40px;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 18px 24px;
+            text-align: left;
+            border-bottom: 1px solid #E0E0E0;
+        }
+
+        .comparison-table th {
+            color: #666666;
+            font-weight: 500;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            background: #F8F9FA;
+        }
+
+        .comparison-table th:last-child {
+            color: var(--primary);
+        }
+
+        .comparison-table td {
+            font-size: 0.95rem;
+            color: #333333;
+            font-weight: 400;
+        }
+
+        .comparison-table tr:hover td {
+            background: #F8F9FA;
+        }
+
+        .check {
+            color: var(--enterprise-green);
+            font-weight: 600;
+        }
+
+        .cross {
+            color: var(--gray);
+            opacity: 0.5;
+        }
+
+        .partial {
+            color: var(--warning);
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 60px;
+            width: 100%;
+            max-width: 1200px;
+            align-items: center;
+        }
+
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 25px;
+            width: 100%;
+            max-width: 900px;
+        }
+
+        .feature-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 14px 0;
+            background: transparent;
+            border-bottom: 1px solid #E0E0E0;
+            border-radius: 0;
+            font-size: 0.95rem;
+            font-weight: 400;
+            color: #333333;
+        }
+
+        .feature-item .check {
+            font-size: 1rem;
+            color: var(--enterprise-green);
+        }
+
+        .quote {
+            font-size: 2rem;
+            font-style: normal;
+            font-weight: 300;
+            color: var(--light);
+            max-width: 900px;
+            text-align: center;
+            line-height: 1.5;
+            margin: 40px 0;
+            position: relative;
+        }
+
+        .quote::before {
+            content: '"';
+            font-size: 6rem;
+            color: var(--primary);
+            opacity: 0.3;
+            position: absolute;
+            top: -40px;
+            left: -40px;
+            font-family: Georgia, serif;
+        }
+
+        .quote-author {
+            font-size: 0.9rem;
+            color: var(--gray);
+            font-style: normal;
+            margin-top: 25px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .highlight-box {
+            background: #F0F7F0;
+            border: 1px solid #C8E6C9;
+            border-left: 4px solid var(--enterprise-green);
+            border-radius: 4px;
+            padding: 30px 35px;
+            margin-top: 40px;
+        }
+
+        .highlight-box h4 {
+            color: #1a1a1a;
+            font-size: 1.1rem;
+            margin-bottom: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .flow {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-top: 50px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .flow-item {
+            background: #F8F9FA;
+            border: 1px solid #E0E0E0;
+            border-top: 2px solid var(--primary);
+            border-radius: 4px;
+            padding: 25px 30px;
+            text-align: center;
+            min-width: 140px;
+        }
+
+        .flow-icon {
+            font-size: 1.5rem;
+            margin-bottom: 12px;
+            opacity: 0.8;
+        }
+
+        .flow-arrow {
+            font-size: 1.2rem;
+            color: var(--gray);
+            opacity: 0.5;
+        }
+
+        .problem-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            margin-top: 50px;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .problem-stat {
+            text-align: left;
+            padding: 0;
+            background: transparent;
+            border-left: 3px solid var(--danger);
+            padding-left: 25px;
+        }
+
+        .problem-stat .stat-number {
+            color: var(--light);
+            font-weight: 300;
+        }
+
+        .cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 18px 40px;
+            background: var(--primary);
+            border-radius: 4px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #FFFFFF;
+            text-decoration: none;
+            margin-top: 40px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .cta:hover {
+            background: var(--enterprise-green);
+            color: #FFFFFF;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 0;
+            font-size: 0.7rem;
+            font-weight: 600;
+            margin: 5px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .badge-primary {
+            background: transparent;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+        }
+
+        .badge-success {
+            background: var(--enterprise-green);
+            color: var(--darker);
+        }
+
+        .badge-warning {
+            background: transparent;
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+
+        /* Navigation */
+        .nav {
+            position: fixed;
+            bottom: 35px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            z-index: 100;
+        }
+
+        .nav-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: #CCCCCC;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .nav-dot.active {
+            background: var(--enterprise-green);
+            width: 24px;
+        }
+
+        .nav-dot:hover {
+            background: var(--primary);
+        }
+
+        .nav-arrows {
+            position: fixed;
+            bottom: 30px;
+            right: 100px;
+            display: flex;
+            gap: 5px;
+            z-index: 100;
+        }
+
+        .nav-arrow {
+            width: 44px;
+            height: 44px;
+            border-radius: 4px;
+            background: #FFFFFF;
+            border: 1px solid #E0E0E0;
+            color: #666666;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .nav-arrow:hover {
+            background: #F8F9FA;
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .slide-counter {
+            position: fixed;
+            bottom: 38px;
+            left: 100px;
+            font-size: 0.85rem;
+            color: var(--gray);
+            z-index: 100;
+            font-weight: 500;
+            letter-spacing: 1px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            h1 { font-size: 3rem; }
+            h2 { font-size: 2.5rem; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+            .card-grid.four-col { grid-template-columns: repeat(2, 1fr); }
+            .problem-stats { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 1024px) {
+            html, body { overflow-y: auto; height: auto; }
+            .slide {
+                position: relative;
+                min-height: 100vh;
+                opacity: 1;
+                visibility: visible;
+                transform: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .slide { padding: 30px 20px; padding-top: 60px; }
+            h1 { font-size: 2rem; line-height: 1.3; }
+            h2 { font-size: 1.5rem; }
+            h3 { font-size: 1rem; }
+            p, li { font-size: 0.9rem; }
+            .two-col { grid-template-columns: 1fr; gap: 20px; }
+            .stat-grid { grid-template-columns: 1fr; }
+            .card-grid { grid-template-columns: 1fr; }
+            .problem-stats { grid-template-columns: 1fr; }
+            .stat-number { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="deck">
+        <!-- Slide 1: Cover -->
+        <div class="slide active" data-slide="1">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx Vision" style="height: 60px; filter: invert(1) hue-rotate(180deg);">
+            <h1 style="margin-top: 30px;">Voice-First AR for<br>Hospital Operations</h1>
+            <p class="subtitle">Hands-free documentation. Eyes on your patients.</p>
+            <p style="margin-top: 40px; font-size: 0.9rem; color: #888888;">US Patent 15/237,980</p>
+        </div>
+
+        <!-- Slide 2: Problem -->
+        <div class="slide" data-slide="2">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">The Challenge</div>
+            <h2>Healthcare <strong>Burnout</strong> Crisis</h2>
+            <p class="quote" style="font-size: 1.3rem; margin: 15px 0 5px 0;">"I spend more time on the computer than with my patients."</p>
+            <p class="quote-author" style="font-size: 0.8rem; margin-top: 5px;">- Every healthcare worker, everywhere</p>
+            <div class="problem-stats" style="margin-top: 30px;">
+                <div class="problem-stat">
+                    <div class="stat-number">62%</div>
+                    <div class="stat-label">Nurses report burnout</div>
+                </div>
+                <div class="problem-stat">
+                    <div class="stat-number">49%</div>
+                    <div class="stat-label">Physicians report burnout</div>
+                </div>
+                <div class="problem-stat">
+                    <div class="stat-number">$4.6B</div>
+                    <div class="stat-label">Lost productivity annually</div>
+                </div>
+                <div class="problem-stat">
+                    <div class="stat-number">22M</div>
+                    <div class="stat-label">US healthcare workers affected</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Solution -->
+        <div class="slide" data-slide="3">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Our Solution</div>
+            <h2>AR-Powered <strong>Clinical Intelligence</strong></h2>
+            <div class="two-col">
+                <div>
+                    <h3>Eyes on Patient. Hands Free. Always.</h3>
+                    <p style="margin-bottom: 30px;">MDx Vision puts patient data in your line of sight while AI documents the encounter in real-time.</p>
+                    <div class="feature-list">
+                        <div class="feature-item"><span class="check">&#10003;</span> Voice-activated EHR access</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Real-time transcription</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> AI-generated SOAP notes</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Critical alerts in HUD</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Voice orders (labs, meds)</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> HIPAA compliant</div>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: center;">
+                    <img src="mdx-glasses-navy-transparent.png" alt="MDx AR Glasses" style="max-width: 500px; width: 100%; filter: drop-shadow(0 20px 40px rgba(0,0,0,0.15));">
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: How It Works -->
+        <div class="slide" data-slide="4">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Technology</div>
+            <h2>How <strong>A.R.I.M.</strong> Works</h2>
+            <p style="text-align: center; margin-bottom: 20px;">Augmented Reality Interpolation Modality - not just display, intelligence.</p>
+            <div class="flow">
+                <div class="flow-item">
+                    <div class="flow-icon"><i data-lucide="glasses" style="width:28px;height:28px;color:var(--primary);"></i></div>
+                    <div>AR Glasses</div>
+                    <div style="font-size: 0.75rem; color: var(--gray); margin-top: 4px;">Vuzix / MDX</div>
+                </div>
+                <div class="flow-arrow"><i data-lucide="chevron-right" style="width:20px;height:20px;"></i></div>
+                <div class="flow-item">
+                    <div class="flow-icon"><i data-lucide="mic" style="width:28px;height:28px;color:var(--primary);"></i></div>
+                    <div>Voice Capture</div>
+                    <div style="font-size: 0.75rem; color: var(--gray); margin-top: 4px;">Wake word "Hey MDx"</div>
+                </div>
+                <div class="flow-arrow"><i data-lucide="chevron-right" style="width:20px;height:20px;"></i></div>
+                <div class="flow-item">
+                    <div class="flow-icon"><i data-lucide="brain" style="width:28px;height:28px;color:var(--primary);"></i></div>
+                    <div>AI Processing</div>
+                    <div style="font-size: 0.75rem; color: var(--gray); margin-top: 4px;">Transcription + NLP</div>
+                </div>
+                <div class="flow-arrow"><i data-lucide="chevron-right" style="width:20px;height:20px;"></i></div>
+                <div class="flow-item">
+                    <div class="flow-icon"><i data-lucide="file-text" style="width:28px;height:28px;color:var(--primary);"></i></div>
+                    <div>SOAP Note</div>
+                    <div style="font-size: 0.75rem; color: var(--gray); margin-top: 4px;">ICD-10/CPT codes</div>
+                </div>
+                <div class="flow-arrow"><i data-lucide="chevron-right" style="width:20px;height:20px;"></i></div>
+                <div class="flow-item">
+                    <div class="flow-icon"><i data-lucide="database" style="width:28px;height:28px;color:var(--enterprise-green);"></i></div>
+                    <div>EHR Push</div>
+                    <div style="font-size: 0.75rem; color: var(--gray); margin-top: 4px;">FHIR R4 write-back</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: Market Opportunity -->
+        <div class="slide" data-slide="5">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Market Opportunity</div>
+            <h2>Massive <strong>TAM</strong></h2>
+            <div class="stat-grid">
+                <div class="stat">
+                    <div class="stat-number">$4.7B</div>
+                    <div class="stat-label">Ambient Clinical Intel (2030)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">$62B</div>
+                    <div class="stat-label">Global EHR Market (2027)</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">22M+</div>
+                    <div class="stat-label">US Healthcare Workers</div>
+                </div>
+            </div>
+            <div class="two-col" style="margin-top: 50px;">
+                <div>
+                    <h3>Why Now?</h3>
+                    <div class="feature-list" style="grid-template-columns: 1fr;">
+                        <div class="feature-item"><span class="check">&#10003;</span> Consumer AR glasses maturing (Meta, Google XR)</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> LLMs enable real-time clinical NLP</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> Burnout crisis demands new solutions</div>
+                        <div class="feature-item"><span class="check">&#10003;</span> FHIR mandates enable EHR interoperability</div>
+                    </div>
+                </div>
+                <div>
+                    <h3>Global Reach</h3>
+                    <div class="feature-list" style="grid-template-columns: 1fr;">
+                        <div class="feature-item"><span style="color: var(--success);">46%</span> Current global EHR coverage</div>
+                        <div class="feature-item"><span style="color: var(--primary);">70%</span> Path to 70% with 3 partnerships</div>
+                        <div class="feature-item"><span style="color: var(--primary);">500+</span> Languages supported today</div>
+                        <div class="feature-item"><span style="color: var(--primary);">2027</span> EU EHDS mandate tailwind</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 6: Business Model -->
+        <div class="slide" data-slide="6">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Revenue</div>
+            <h2>Business <strong>Model</strong></h2>
+            <div class="card-grid three-col" style="max-width: 1100px;">
+                <div class="card" style="border-left-color: var(--primary);">
+                    <h4 style="color: var(--primary);">SaaS Subscription</h4>
+                    <div style="font-size: 2.5rem; font-weight: 300; margin: 15px 0;">$200-400</div>
+                    <div style="font-size: 0.85rem; color: var(--gray); text-transform: uppercase; letter-spacing: 1px;">Per Clinician / Month</div>
+                    <p style="margin-top: 15px; font-size: 0.9rem;">AI documentation, voice commands, EHR integration, analytics dashboard</p>
+                </div>
+                <div class="card" style="border-left-color: var(--enterprise-green);">
+                    <h4 style="color: var(--enterprise-green);">Enterprise License</h4>
+                    <div style="font-size: 2.5rem; font-weight: 300; margin: 15px 0;">$50K-500K</div>
+                    <div style="font-size: 0.85rem; color: var(--gray); text-transform: uppercase; letter-spacing: 1px;">Annual Contract</div>
+                    <p style="margin-top: 15px; font-size: 0.9rem;">Hospital-wide deployment, custom integrations, dedicated support, SLA</p>
+                </div>
+                <div class="card" style="border-left-color: var(--warning);">
+                    <h4 style="color: var(--warning);">Hardware + Software</h4>
+                    <div style="font-size: 2.5rem; font-weight: 300; margin: 15px 0;">$1,500+</div>
+                    <div style="font-size: 0.85rem; color: var(--gray); text-transform: uppercase; letter-spacing: 1px;">MDX Glasses (2026)</div>
+                    <p style="margin-top: 15px; font-size: 0.9rem;">Proprietary AR glasses with integrated MDx software, premium support</p>
+                </div>
+            </div>
+            <div class="highlight-box" style="margin-top: 40px; max-width: 900px;">
+                <h4>Unit Economics</h4>
+                <div style="display: flex; gap: 60px; margin-top: 15px; flex-wrap: wrap;">
+                    <div><span style="font-size: 1.5rem; font-weight: 600; color: var(--primary);">85%+</span><br><span style="font-size: 0.85rem; color: var(--gray);">Gross Margin (Software)</span></div>
+                    <div><span style="font-size: 1.5rem; font-weight: 600; color: var(--primary);">$15K+</span><br><span style="font-size: 0.85rem; color: var(--gray);">LTV per Clinician</span></div>
+                    <div><span style="font-size: 1.5rem; font-weight: 600; color: var(--primary);">12 mo</span><br><span style="font-size: 0.85rem; color: var(--gray);">Payback Period</span></div>
+                    <div><span style="font-size: 1.5rem; font-weight: 600; color: var(--primary);">&lt;5%</span><br><span style="font-size: 0.85rem; color: var(--gray);">Target Churn</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: Traction -->
+        <div class="slide" data-slide="7">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Progress</div>
+            <h2>Traction & <strong>Milestones</strong></h2>
+
+            <div class="stat-grid" style="margin-top: 40px;">
+                <div class="stat">
+                    <div class="stat-number">2016</div>
+                    <div class="stat-label">Company Founded</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number" style="font-size: 2.5rem;">US Patent<br>15/237,980</div>
+                    <div class="stat-label">IP Protected</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">91</div>
+                    <div class="stat-label">Features Built</div>
+                </div>
+            </div>
+
+            <div class="card-grid four-col" style="margin-top: 40px;">
+                <div class="card">
+                    <h4 style="color: #2E7D32;">6 EHR Integrations</h4>
+                    <p>Epic, Cerner, MEDITECH, athenahealth, Veradigm, eClinicalWorks</p>
+                </div>
+                <div class="card">
+                    <h4 style="color: #2E7D32;">500+ Languages</h4>
+                    <p>Real-time transcription and translation live today</p>
+                </div>
+                <div class="card">
+                    <h4 style="color: #2E7D32;">Full FHIR CRUD</h4>
+                    <p>Read/write to any FHIR R4 EHR system</p>
+                </div>
+                <div class="card">
+                    <h4 style="color: #2E7D32;">Production Ready</h4>
+                    <p>Android app, web dashboard, AI pipeline complete</p>
+                </div>
+            </div>
+
+            <div class="highlight-box" style="margin-top: 30px; max-width: 800px;">
+                <h4>What's Next: Pilot Deployments</h4>
+                <p>Product complete. Seeking 5 pilot health systems for clinical validation and QI study publication.</p>
+            </div>
+        </div>
+
+        <!-- Slide 8: Competition -->
+        <div class="slide" data-slide="8">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Competitive Analysis</div>
+            <h2>Competitive <strong>Landscape</strong></h2>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Nuance DAX</th>
+                        <th>Abridge</th>
+                        <th>Suki</th>
+                        <th style="color: var(--accent);">MDx Vision</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Hospital-Wide (All Staff)</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>AR Glasses / HMD</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Hands-Free, Eyes on Patient</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Real-time HUD Display</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Voice Orders (Labs/Meds)</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="partial">&#9679;</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Drug Interaction Alerts</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>FHIR Write-Back (Full CRUD)</td>
+                        <td class="partial">Read only</td>
+                        <td class="partial">Read only</td>
+                        <td class="partial">Limited</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                    <tr>
+                        <td>Voiceprint Biometric Auth</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="cross">&#10007;</td>
+                        <td class="check">&#10003;</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="highlight-box" style="margin-top: 20px; max-width: 1000px;">
+                <h4 style="margin-bottom: 15px;">Competitor Funding Validates Market</h4>
+                <div style="display: flex; gap: 40px; flex-wrap: wrap; justify-content: space-between;">
+                    <div style="text-align: center;"><span style="font-size: 1.5rem; font-weight: 600; color: #0066CC;">$19.7B</span><br><span style="font-size: 0.8rem; color: #666666;">DAX (Microsoft)</span></div>
+                    <div style="text-align: center;"><span style="font-size: 1.5rem; font-weight: 600; color: #0066CC;">$212M</span><br><span style="font-size: 0.8rem; color: #666666;">Abridge</span></div>
+                    <div style="text-align: center;"><span style="font-size: 1.5rem; font-weight: 600; color: #0066CC;">$165M</span><br><span style="font-size: 0.8rem; color: #666666;">Suki</span></div>
+                    <div style="text-align: center;"><span style="font-size: 1.5rem; font-weight: 600; color: #2E7D32;">500+</span><br><span style="font-size: 0.8rem; color: #666666;">MDx Languages</span></div>
+                </div>
+                <p style="margin-top: 15px; text-align: center; font-size: 1.1rem; color: #333333;">All competitors are screen-based. <span style="color: #2E7D32; font-weight: 600;">MDx Vision is the only AR solution.</span></p>
+            </div>
+        </div>
+
+        <!-- Slide 9: Team -->
+        <div class="slide" data-slide="9">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Leadership</div>
+            <h2>Founding <strong>Team</strong></h2>
+            <div class="card-grid three-col" style="max-width: 1000px;">
+                <div class="card" style="text-align: center;">
+                    <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #0066CC, #2E7D32); border-radius: 50%; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: white;">R</div>
+                    <h4>Rafael Rodriguez</h4>
+                    <p style="color: #0066CC; margin-bottom: 8px; font-weight: 600;">CEO & Founder</p>
+                    <p style="font-size: 0.85rem;">Founded 2016. Healthcare tech visionary. Patent holder.</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #0066CC, #2E7D32); border-radius: 50%; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: white;">C</div>
+                    <h4>Carlos Rosa</h4>
+                    <p style="color: #0066CC; margin-bottom: 8px; font-weight: 600;">CTO</p>
+                    <p style="font-size: 0.85rem;">Full-stack architecture. FHIR integration expert.</p>
+                </div>
+                <div class="card" style="text-align: center;">
+                    <div style="width: 100px; height: 100px; background: linear-gradient(135deg, #0066CC, #2E7D32); border-radius: 50%; margin: 0 auto 15px; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; color: white;">E</div>
+                    <h4>Edgar Zorrilla</h4>
+                    <p style="color: #0066CC; margin-bottom: 8px; font-weight: 600;">Design Director</p>
+                    <p style="font-size: 0.85rem;">Enterprise UX. AR interface design.</p>
+                </div>
+            </div>
+            <div class="highlight-box" style="margin-top: 30px; max-width: 900px;">
+                <h4>Advisory Board</h4>
+                <div style="display: flex; gap: 30px; margin-top: 15px; flex-wrap: wrap; justify-content: center;">
+                    <div style="text-align: center;"><strong>Eboné Carrington</strong><br><span style="color: var(--gray); font-size: 0.85rem;">Healthcare Strategy</span></div>
+                    <div style="text-align: center;"><strong>Kathryn Bass, MD</strong><br><span style="color: var(--gray); font-size: 0.85rem;">Clinical Advisor</span></div>
+                    <div style="text-align: center;"><strong>Bekim Mustafaj</strong><br><span style="color: var(--gray); font-size: 0.85rem;">International Markets</span></div>
+                    <div style="text-align: center;"><strong>Mohammad Ghazizadeh</strong><br><span style="color: var(--gray); font-size: 0.85rem;">Technology</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 10: Financials -->
+        <div class="slide" data-slide="10">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Projections</div>
+            <h2>Financial <strong>Outlook</strong></h2>
+
+            <div class="two-col" style="margin-top: 40px;">
+                <div>
+                    <h3>Revenue Projections</h3>
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                        <thead>
+                            <tr style="border-bottom: 2px solid var(--primary);">
+                                <th style="text-align: left; padding: 12px 0; font-weight: 600; color: var(--gray); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px;">Year</th>
+                                <th style="text-align: right; padding: 12px 0; font-weight: 600; color: var(--gray); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px;">ARR</th>
+                                <th style="text-align: right; padding: 12px 0; font-weight: 600; color: var(--gray); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1px;">Clinicians</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr style="border-bottom: 1px solid #E0E0E0;">
+                                <td style="padding: 12px 0; font-weight: 500;">2026</td>
+                                <td style="padding: 12px 0; text-align: right; color: var(--primary); font-weight: 600;">$600K</td>
+                                <td style="padding: 12px 0; text-align: right;">150</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #E0E0E0;">
+                                <td style="padding: 12px 0; font-weight: 500;">2027</td>
+                                <td style="padding: 12px 0; text-align: right; color: var(--primary); font-weight: 600;">$2.4M</td>
+                                <td style="padding: 12px 0; text-align: right;">600</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #E0E0E0;">
+                                <td style="padding: 12px 0; font-weight: 500;">2028</td>
+                                <td style="padding: 12px 0; text-align: right; color: var(--primary); font-weight: 600;">$8M</td>
+                                <td style="padding: 12px 0; text-align: right;">2,000</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 12px 0; font-weight: 500;">2029</td>
+                                <td style="padding: 12px 0; text-align: right; color: var(--enterprise-green); font-weight: 700; font-size: 1.2rem;">$20M</td>
+                                <td style="padding: 12px 0; text-align: right;">5,000</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <h3>Key Assumptions</h3>
+                    <div class="feature-list" style="grid-template-columns: 1fr; margin-top: 20px;">
+                        <div class="feature-item"><span style="color: var(--primary);">$333</span> Average monthly per clinician</div>
+                        <div class="feature-item"><span style="color: var(--primary);">5</span> Pilot health systems in 2026</div>
+                        <div class="feature-item"><span style="color: var(--primary);">30</span> Clinicians per pilot average</div>
+                        <div class="feature-item"><span style="color: var(--primary);">3x</span> Annual growth (conservative)</div>
+                        <div class="feature-item"><span style="color: var(--primary);">85%</span> Gross margin target</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="highlight-box" style="margin-top: 30px; max-width: 900px;">
+                <h4>Path to Profitability</h4>
+                <p>Break-even at ~$5M ARR with current cost structure. Series A ($15-20M) at proof of product-market fit to accelerate growth.</p>
+            </div>
+        </div>
+
+        <!-- Slide 11: The Ask -->
+        <div class="slide" data-slide="11">
+            <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx" class="slide-logo">
+            <div class="confidential">Confidential</div>
+            <div class="section-label">Investment Opportunity</div>
+            <h2>The <strong>Ask</strong></h2>
+            <div class="stat-grid">
+                <div class="stat" style="border-left-color: var(--primary);">
+                    <div class="stat-number">$3.5M</div>
+                    <div class="stat-label">Seed Round</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">18</div>
+                    <div class="stat-label">Months Runway</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">5</div>
+                    <div class="stat-label">Pilot Health Systems</div>
+                </div>
+            </div>
+            <div class="two-col" style="margin-top: 50px;">
+                <div>
+                    <h3>Use of Funds</h3>
+                    <div class="feature-list" style="grid-template-columns: 1fr;">
+                        <div class="feature-item"><span style="color: var(--accent);">40%</span> Engineering (Epic, languages, Android XR)</div>
+                        <div class="feature-item"><span style="color: var(--accent);">25%</span> Clinical Pilots & Validation</div>
+                        <div class="feature-item"><span style="color: var(--accent);">20%</span> Sales & Marketing</div>
+                        <div class="feature-item"><span style="color: var(--accent);">15%</span> Operations & Compliance</div>
+                    </div>
+                </div>
+                <div>
+                    <h3>Target Milestones</h3>
+                    <div class="feature-list" style="grid-template-columns: 1fr;">
+                        <div class="feature-item"><span style="color: var(--warning);">&#9679;</span> Epic App Orchard certification</div>
+                        <div class="feature-item"><span style="color: var(--warning);">&#9679;</span> 5 pilot health systems deployed</div>
+                        <div class="feature-item"><span style="color: var(--warning);">&#9679;</span> Published QI study data</div>
+                        <div class="feature-item"><span style="color: var(--warning);">&#9679;</span> Series A ready</div>
+                    </div>
+                </div>
+            </div>
+            <a href="mailto:invest@mdxvision.com" class="cta">Let's Talk &#10132;</a>
+        </div>
+
+        <!-- Slide 12: Thank You -->
+        <div class="slide" data-slide="12">
+            <div class="logo" style="margin-bottom: 40px;">
+                <img src="https://mdxvision.github.io/mdx-vision-v2/logos/mdx-logo-white.png" alt="MDx Vision" style="height: 100px; width: auto; filter: invert(1) hue-rotate(180deg);">
+            </div>
+            <h2 style="margin-bottom: 20px;">Thank You</h2>
+            <p class="subtitle" style="margin-bottom: 40px;">The future of clinical documentation is hands-free.</p>
+            <div style="display: flex; gap: 30px; margin-top: 30px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: var(--gray); margin-bottom: 5px;">Email</div>
+                    <div style="color: var(--light);">hello@mdxvision.com</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: var(--gray); margin-bottom: 5px;">Website</div>
+                    <div style="color: var(--light);">mdxvision.com</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9rem; color: var(--gray); margin-bottom: 5px;">Patent</div>
+                    <div style="color: var(--light);">US 15/237,980</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav" id="nav"></div>
+    <div class="nav-arrows">
+        <button class="nav-arrow" onclick="prevSlide()">&#8592;</button>
+        <button class="nav-arrow" onclick="nextSlide()">&#8594;</button>
+    </div>
+    <div class="slide-counter"><span id="currentSlide">1</span> / <span id="totalSlides">12</span></div>
+
+    <script>
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        let currentSlide = 1;
+
+        // Build nav dots
+        const nav = document.getElementById('nav');
+        for (let i = 1; i <= totalSlides; i++) {
+            const dot = document.createElement('div');
+            dot.className = 'nav-dot' + (i === 1 ? ' active' : '');
+            dot.onclick = () => goToSlide(i);
+            nav.appendChild(dot);
+        }
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                const slideNum = index + 1;
+                slide.classList.remove('active', 'exit');
+                if (slideNum === currentSlide) {
+                    slide.classList.add('active');
+                } else if (slideNum < currentSlide) {
+                    slide.classList.add('exit');
+                }
+            });
+
+            document.querySelectorAll('.nav-dot').forEach((dot, index) => {
+                dot.classList.toggle('active', index + 1 === currentSlide);
+            });
+
+            document.getElementById('currentSlide').textContent = currentSlide;
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides) {
+                currentSlide++;
+                updateSlide();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 1) {
+                currentSlide--;
+                updateSlide();
+            }
+        }
+
+        function goToSlide(n) {
+            currentSlide = n;
+            updateSlide();
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                prevSlide();
+            } else if (e.key === 'Home') {
+                e.preventDefault();
+                goToSlide(1);
+            } else if (e.key === 'End') {
+                e.preventDefault();
+                goToSlide(totalSlides);
+            }
+        });
+
+        // Touch/swipe support
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        });
+
+        document.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        });
+
+        function handleSwipe() {
+            const diff = touchStartX - touchEndX;
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) {
+                    nextSlide();
+                } else {
+                    prevSlide();
+                }
+            }
+        }
+
+        // Initialize
+        document.getElementById('totalSlides').textContent = totalSlides;
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+    </script>
+</body>
+</html>
