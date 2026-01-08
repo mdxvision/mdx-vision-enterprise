@@ -865,6 +865,60 @@
 
 ---
 
+## Jarvis-Like AI Features (Wave 1)
+
+- [x] **Pre-Visit Prep Alert (Feature #92)**
+  - [x] Proactive AI briefing on patient load
+  - [x] Care gap detection (A1c targets, screenings due)
+  - [x] Critical/abnormal value alerts
+  - [x] Lab trend analysis (worsening values)
+  - [x] High-risk allergy reminders
+  - [x] Polypharmacy warnings
+  - [x] Age/gender-based screening reminders
+  - [x] TTS-friendly spoken summary
+  - [x] HUD-formatted display summary
+  - [x] Actionable voice commands ("say 'order a1c'")
+  - [x] API endpoint: GET /api/v1/patient/{id}/prep
+  - [x] HIPAA audit logging
+  - [x] Android integration: auto-fetch on patient load
+  - [x] Voice commands: "prep me", "patient prep", "heads up", "what should I know"
+  - [x] Critical alerts bypass speech toggle (safety-first)
+
+- [x] **Lab Result Context (Feature #93)** - Already implemented as Feature #34 (Lab Trends)
+- [x] **Chief Complaint Workflows (Feature #94)**
+  - [x] 12 chief complaint mappings (chest pain, SOB, abdominal pain, fever, headache, AMS, syncope, back pain, DKA, respiratory distress, UTI, cough)
+  - [x] Each complaint maps to order sets, protocols, and considerations
+  - [x] Keyword detection from patient conditions and ambient text
+  - [x] TTS-friendly spoken suggestions with voice commands
+  - [x] API endpoints: GET /api/v1/patient/{id}/workflow, POST /api/v1/workflow/suggest
+  - [x] Android integration with voice commands
+  - [x] Voice commands: "suggest workup", "what workup", "workflow", "workup for [complaint]"
+  - [x] HIPAA audit logging
+- [x] **Multi-Turn Clinical Reasoning (Feature #95)** - Complete
+  - [x] Teaching mode endpoint (/api/v1/copilot/teach)
+  - [x] Second opinion/challenge endpoint (/api/v1/copilot/challenge)
+  - [x] Clarify mode endpoint (/api/v1/copilot/reason with mode=clarify)
+  - [x] Android voice commands ("explain why", "teach me", "second opinion", "what am I missing", "clarify")
+  - [x] Android functions (sendCopilotTeachingMode, sendCopilotSecondOpinion, sendCopilotClarifyMode)
+  - [x] Conversation history maintained for context
+  - [x] TTS spoken responses with follow-up prompts
+- [x] **Indirect Commands (Feature #96)** - Complete
+  - [x] Natural language parsing API endpoint (POST /api/v1/commands/parse)
+  - [x] 25+ lab items mapped (potassium, sodium, creatinine, hemoglobin, glucose, a1c, troponin, etc.)
+  - [x] 9 vital items mapped (blood pressure, heart rate, temperature, SpO2, etc.)
+  - [x] Category keywords (meds, allergies, conditions, procedures, immunizations, care plans, notes)
+  - [x] Temporal parsing (last, latest, recent, trend, history)
+  - [x] LOINC code mapping for labs
+  - [x] Alias support (k->potassium, bp->blood pressure, hgb->hemoglobin)
+  - [x] Confidence scoring (high/medium/low)
+  - [x] Android voice command integration
+  - [x] Filtered display with matching item highlighted
+  - [x] TTS spoken results
+  - [x] Command suggestions API (GET /api/v1/commands/suggestions)
+  - [x] HIPAA audit logging
+
+---
+
 ## Test Coverage
 
 | Test File | Tests | Status |

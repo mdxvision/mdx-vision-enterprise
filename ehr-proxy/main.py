@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Requ
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from enum import Enum
 import uvicorn
 import os
@@ -299,8 +299,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cerner Open Sandbox (no auth required)
-CERNER_BASE_URL = "https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d"
+# EHR Configuration (from environment)
+CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "")
+CERNER_APPLICATION_ID = os.getenv("CERNER_APPLICATION_ID", "")
+CERNER_BASE_URL = os.getenv("CERNER_BASE_URL", "https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d")
+
+# Epic Configuration
+EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "")
+EPIC_BASE_URL = os.getenv("EPIC_BASE_URL", "https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4")
+
+# Veradigm Configuration
+VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "")
+VERADIGM_CLIENT_SECRET = os.getenv("VERADIGM_CLIENT_SECRET", "")
+VERADIGM_BASE_URL = os.getenv("VERADIGM_BASE_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/open/sandbox/r4")
+
+# athenahealth Configuration
+ATHENA_CLIENT_ID = os.getenv("ATHENA_CLIENT_ID", "")
+ATHENA_CLIENT_SECRET = os.getenv("ATHENA_CLIENT_SECRET", "")
+ATHENA_BASE_URL = os.getenv("ATHENA_BASE_URL", "https://api.platform.athenahealth.com/fhir/r4")
+
+# NextGen Configuration
+NEXTGEN_CLIENT_ID = os.getenv("NEXTGEN_CLIENT_ID", "")
+NEXTGEN_CLIENT_SECRET = os.getenv("NEXTGEN_CLIENT_SECRET", "")
+NEXTGEN_BASE_URL = os.getenv("NEXTGEN_BASE_URL", "https://fhir.nextgen.com/nge/prod/fhir-api-r4/fhir/r4")
+
+# HAPI FHIR Configuration (Full CRUD Demo Server)
+HAPI_FHIR_BASE_URL = os.getenv("HAPI_FHIR_BASE_URL", "http://hapi.fhir.org/baseR4")
+HAPI_FHIR_ENABLED = os.getenv("HAPI_FHIR_ENABLED", "true").lower() == "true"
+
 FHIR_HEADERS = {"Accept": "application/fhir+json"}
 
 # Simple ping endpoint for Samsung network testing
@@ -2459,6 +2485,105 @@ async def root():
     return {"service": "MDx Vision EHR Proxy", "status": "running", "ehr": "Cerner"}
 
 
+@app.get("/api/v1/ehr/status")
+async def get_ehr_status():
+    """Get status of all configured EHR integrations"""
+    ehrs = {
+        "cerner": {
+            "name": "Cerner/Oracle Health",
+            "configured": bool(CERNER_CLIENT_ID),
+            "client_id": CERNER_CLIENT_ID[:8] + "..." if CERNER_CLIENT_ID else None,
+            "base_url": CERNER_BASE_URL,
+            "market": "~25% hospitals",
+            "status": "ready" if CERNER_CLIENT_ID else "open_sandbox"
+        },
+        "epic": {
+            "name": "Epic",
+            "configured": bool(EPIC_CLIENT_ID),
+            "client_id": EPIC_CLIENT_ID[:8] + "..." if EPIC_CLIENT_ID else None,
+            "base_url": EPIC_BASE_URL if EPIC_CLIENT_ID else None,
+            "market": "~35% hospitals",
+            "status": "ready" if EPIC_CLIENT_ID else "pending_credentials"
+        },
+        "veradigm": {
+            "name": "Veradigm/Allscripts",
+            "configured": bool(VERADIGM_CLIENT_ID),
+            "client_id": VERADIGM_CLIENT_ID[:8] + "..." if VERADIGM_CLIENT_ID else None,
+            "base_url": VERADIGM_BASE_URL if VERADIGM_CLIENT_ID else None,
+            "market": "~15% hospitals",
+            "status": "ready" if VERADIGM_CLIENT_ID else "pending_credentials"
+        },
+        "athenahealth": {
+            "name": "athenahealth",
+            "configured": bool(ATHENA_CLIENT_ID),
+            "client_id": ATHENA_CLIENT_ID[:8] + "..." if ATHENA_CLIENT_ID else None,
+            "base_url": ATHENA_BASE_URL if ATHENA_CLIENT_ID else None,
+            "market": "~15% ambulatory",
+            "status": "ready" if ATHENA_CLIENT_ID else "pending_credentials"
+        },
+        "nextgen": {
+            "name": "NextGen Healthcare",
+            "configured": bool(NEXTGEN_CLIENT_ID),
+            "client_id": NEXTGEN_CLIENT_ID[:8] + "..." if NEXTGEN_CLIENT_ID else None,
+            "base_url": NEXTGEN_BASE_URL if NEXTGEN_CLIENT_ID else None,
+            "market": "~10% ambulatory",
+            "status": "ready" if NEXTGEN_CLIENT_ID else "pending_credentials"
+        },
+        "hapi_fhir": {
+            "name": "HAPI FHIR (Demo Server)",
+            "configured": HAPI_FHIR_ENABLED,
+            "base_url": HAPI_FHIR_BASE_URL,
+            "market": "Full CRUD demo",
+            "status": "ready" if HAPI_FHIR_ENABLED else "disabled",
+            "crud": "CREATE, READ, UPDATE, DELETE all supported"
+        }
+    }
+
+    configured_count = sum(1 for e in ehrs.values() if e["configured"] and e.get("market") != "Full CRUD demo")
+
+    ambulatory_pct = (15 if ATHENA_CLIENT_ID else 0) + (10 if NEXTGEN_CLIENT_ID else 0)
+    return {
+        "total_configured": configured_count,
+        "total_available": 5,
+        "ehrs": ehrs,
+        "market_coverage": {
+            "hospitals": f"~{min(configured_count * 20, 90)}%",
+            "ambulatory": f"~{ambulatory_pct}%",
+            "note": "Epic + Cerner + Veradigm = ~75% hospital, athena + NextGen = ~25% ambulatory"
+        }
+    }
+
+
+@app.get("/api/v1/patient/search", response_model=List[SearchResult])
+async def search_patients(name: str, request: Request):
+    """Search patients by name - for voice command 'Find patient...'"""
+    bundle = await fetch_fhir(f"Patient?name={name}&_count=10")
+
+    results = []
+    for entry in bundle.get("entry", []):
+        patient = entry.get("resource", {})
+        results.append(SearchResult(
+            patient_id=patient.get("id", ""),
+            name=extract_patient_name(patient),
+            date_of_birth=patient.get("birthDate", "Unknown"),
+            gender=patient.get("gender", "unknown")
+        ))
+
+    # HIPAA Audit: Log patient search
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.SEARCH_PATIENT,
+        patient_id="search",
+        endpoint="/api/v1/patient/search",
+        status="success",
+        details=f"query={name}, results={len(results)}",
+        ip_address=ip_address,
+        user_agent=request.headers.get("User-Agent", "")
+    )
+
+    return results
+
+
 @app.get("/api/v1/patient/{patient_id}", response_model=PatientSummary)
 async def get_patient(patient_id: str, request: Request):
     """Get patient summary by ID - optimized for AR glasses"""
@@ -2756,36 +2881,6 @@ async def get_vital_history(patient_id: str, request: Request, count: int = 100)
         "vital_types": len(history),
         "history": history
     }
-
-
-@app.get("/api/v1/patient/search", response_model=List[SearchResult])
-async def search_patients(name: str, request: Request):
-    """Search patients by name - for voice command 'Find patient...'"""
-    bundle = await fetch_fhir(f"Patient?name={name}&_count=10")
-
-    results = []
-    for entry in bundle.get("entry", []):
-        patient = entry.get("resource", {})
-        results.append(SearchResult(
-            patient_id=patient.get("id", ""),
-            name=extract_patient_name(patient),
-            date_of_birth=patient.get("birthDate", "Unknown"),
-            gender=patient.get("gender", "unknown")
-        ))
-
-    # HIPAA Audit: Log patient search
-    ip_address = request.client.host if request.client else None
-    audit_logger.log_phi_access(
-        action=AuditAction.SEARCH_PATIENT,
-        patient_id="search",
-        endpoint="/api/v1/patient/search",
-        status="success",
-        details=f"query={name}, results={len(results)}",
-        ip_address=ip_address,
-        user_agent=request.headers.get("User-Agent", "")
-    )
-
-    return results
 
 
 @app.get("/api/v1/patient/mrn/{mrn}", response_model=PatientSummary)
@@ -4765,6 +4860,1345 @@ async def copilot_chat(request: CopilotRequest, req: Request):
             details={"error": str(e)[:100]}
         )
         raise HTTPException(status_code=500, detail=f"Co-pilot error: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MULTI-TURN CLINICAL REASONING (Feature #95 - Jarvis Wave 1)
+# Enhanced Co-pilot for back-and-forth dialogue with teaching and second opinion modes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Teaching mode prompt - explains reasoning
+TEACHING_MODE_PROMPT = """You are a clinical educator helping a physician understand clinical reasoning.
+Your response will be spoken via TTS, so be clear and structured.
+
+RESPONSE FORMAT:
+1. KEY CONCEPT (1 sentence)
+2. REASONING STEPS (2-3 bullets, 15 words each max)
+3. CLINICAL PEARL (1 actionable insight)
+4. Optional: Follow-up question to deepen understanding
+
+RULES:
+- Use plain language, avoid jargon when possible
+- Connect reasoning to patient specifics when available
+- Cite guidelines or evidence when relevant
+- Keep total response under 100 words for TTS
+
+Current patient context:
+{patient_context}
+
+Previous question context:
+{previous_context}
+"""
+
+# Second opinion mode prompt - challenges thinking
+SECOND_OPINION_PROMPT = """You are a clinical consultant providing a second opinion.
+Your role is to constructively challenge the working diagnosis and suggest alternatives.
+
+RESPONSE FORMAT:
+1. ALTERNATIVE CONSIDERATIONS (2-3 alternatives with brief rationale)
+2. WHAT COULD WE BE MISSING? (1-2 red flags to rule out)
+3. SUGGESTED NEXT STEP (1 concrete action)
+
+RULES:
+- Be constructive, not dismissive
+- Prioritize by clinical urgency
+- Focus on don't-miss diagnoses
+- Keep total response under 80 words for TTS
+
+Current patient context:
+{patient_context}
+
+Working diagnosis/thinking:
+{working_diagnosis}
+"""
+
+# Clarifying question prompt - AI asks for more info
+CLARIFICATION_PROMPT = """Based on the clinical scenario, identify what additional information would help narrow the differential or guide management.
+
+Ask 1-2 SPECIFIC clarifying questions that:
+- Would change clinical decision-making
+- Can be answered quickly (yes/no, brief exam finding, specific history)
+- Prioritize high-yield information
+
+Current patient context:
+{patient_context}
+
+Current clinical question:
+{clinical_question}
+"""
+
+
+class ReasoningMode(str, Enum):
+    """Available reasoning modes"""
+    STANDARD = "standard"
+    TEACHING = "teaching"
+    SECOND_OPINION = "second_opinion"
+    CLARIFY = "clarify"
+
+
+class MultiTurnRequest(BaseModel):
+    """Request for multi-turn clinical reasoning"""
+    message: str
+    mode: ReasoningMode = ReasoningMode.STANDARD
+    patient_context: Optional[dict] = None
+    conversation_history: List[CopilotMessage] = []
+    working_diagnosis: Optional[str] = None  # For second opinion mode
+
+
+class MultiTurnResponse(BaseModel):
+    """Response for multi-turn clinical reasoning"""
+    response: str
+    mode: str
+    clarifying_questions: List[str] = []
+    alternative_diagnoses: List[str] = []
+    reasoning_steps: List[str] = []
+    suggested_actions: List[CopilotAction] = []
+    follow_up_prompts: List[str] = []
+    timestamp: str
+
+
+async def generate_multiturn_response(request: MultiTurnRequest) -> MultiTurnResponse:
+    """
+    Generate multi-turn clinical reasoning response.
+    Supports different reasoning modes for enhanced dialogue.
+    """
+    if not CLAUDE_API_KEY:
+        return MultiTurnResponse(
+            response="Multi-turn reasoning requires Claude API configuration.",
+            mode=request.mode.value,
+            timestamp=datetime.now().isoformat()
+        )
+
+    # Build patient context summary
+    patient_summary = "No patient currently loaded."
+    if request.patient_context:
+        ctx = request.patient_context
+        parts = []
+        if ctx.get("name"):
+            parts.append(f"Patient: {ctx.get('name')}")
+        if ctx.get("age"):
+            parts.append(f"Age: {ctx.get('age')}")
+        if ctx.get("gender"):
+            parts.append(f"Gender: {ctx.get('gender')}")
+        if ctx.get("chief_complaint"):
+            parts.append(f"CC: {ctx.get('chief_complaint')}")
+        if ctx.get("conditions"):
+            conditions = ctx.get("conditions", [])
+            if conditions:
+                parts.append(f"Conditions: {', '.join(conditions[:5])}")
+        if ctx.get("medications"):
+            meds = ctx.get("medications", [])
+            if meds:
+                parts.append(f"Meds: {', '.join(meds[:5])}")
+        patient_summary = "; ".join(parts) if parts else "No patient details available."
+
+    # Build previous context from history
+    previous_context = ""
+    if request.conversation_history:
+        recent = request.conversation_history[-4:]
+        previous_context = " | ".join([f"{m.role}: {m.content[:100]}" for m in recent])
+
+    # Select system prompt based on mode
+    if request.mode == ReasoningMode.TEACHING:
+        system_prompt = TEACHING_MODE_PROMPT.format(
+            patient_context=patient_summary,
+            previous_context=previous_context or "No previous context"
+        )
+    elif request.mode == ReasoningMode.SECOND_OPINION:
+        system_prompt = SECOND_OPINION_PROMPT.format(
+            patient_context=patient_summary,
+            working_diagnosis=request.working_diagnosis or request.message
+        )
+    elif request.mode == ReasoningMode.CLARIFY:
+        system_prompt = CLARIFICATION_PROMPT.format(
+            patient_context=patient_summary,
+            clinical_question=request.message
+        )
+    else:
+        # Standard mode uses the existing copilot prompt
+        system_prompt = COPILOT_SYSTEM_PROMPT.format(patient_context=patient_summary)
+
+    # Build messages
+    messages = []
+    for msg in request.conversation_history[-6:]:
+        messages.append({"role": msg.role, "content": msg.content})
+    messages.append({"role": "user", "content": request.message})
+
+    # Call Claude
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": CLAUDE_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 600,
+                    "system": system_prompt,
+                    "messages": messages
+                }
+            )
+
+            if response.status_code != 200:
+                return MultiTurnResponse(
+                    response="Reasoning temporarily unavailable. Please try again.",
+                    mode=request.mode.value,
+                    timestamp=datetime.now().isoformat()
+                )
+
+            result = response.json()
+            response_text = result.get("content", [{}])[0].get("text", "No response generated.")
+
+            # Parse response based on mode
+            clarifying_questions = []
+            alternative_diagnoses = []
+            reasoning_steps = []
+            follow_up_prompts = []
+            actions = []
+
+            response_lower = response_text.lower()
+
+            # Extract clarifying questions (lines ending with ?)
+            import re
+            questions = re.findall(r'[^.!?]*\?', response_text)
+            clarifying_questions = [q.strip() for q in questions[:3] if len(q.strip()) > 10]
+
+            # Extract alternatives for second opinion mode
+            if request.mode == ReasoningMode.SECOND_OPINION:
+                # Look for numbered alternatives or bullet points
+                alt_patterns = re.findall(r'(?:^|\n)\s*(?:\d+\.|[-•])\s*([A-Z][^.!?\n]+)', response_text)
+                alternative_diagnoses = alt_patterns[:5]
+
+            # Extract reasoning steps for teaching mode
+            if request.mode == ReasoningMode.TEACHING:
+                step_patterns = re.findall(r'(?:^|\n)\s*(?:\d+\.|[-•])\s*(.+?)(?=\n|$)', response_text)
+                reasoning_steps = [s.strip() for s in step_patterns[:5] if len(s.strip()) > 5]
+
+            # Generate follow-up prompts based on mode
+            if request.mode == ReasoningMode.TEACHING:
+                follow_up_prompts = ["Tell me more", "Why is that important?", "What if patient had fever?"]
+            elif request.mode == ReasoningMode.SECOND_OPINION:
+                follow_up_prompts = ["What tests would differentiate?", "What's the most urgent to rule out?"]
+            elif request.mode == ReasoningMode.CLARIFY:
+                follow_up_prompts = ["Continue with workup", "What's most likely?"]
+            else:
+                follow_up_prompts = ["Tell me more", "What else?", "Explain your reasoning"]
+
+            # Detect actionable suggestions
+            if "order" in response_lower or "check" in response_lower:
+                if "troponin" in response_lower:
+                    actions.append(CopilotAction(action_type="order", label="Order troponin", command="order troponin"))
+                if "ekg" in response_lower or "ecg" in response_lower:
+                    actions.append(CopilotAction(action_type="order", label="Order EKG", command="order EKG"))
+                if "ct" in response_lower:
+                    actions.append(CopilotAction(action_type="order", label="Order CT", command="order CT"))
+
+            return MultiTurnResponse(
+                response=response_text,
+                mode=request.mode.value,
+                clarifying_questions=clarifying_questions,
+                alternative_diagnoses=alternative_diagnoses,
+                reasoning_steps=reasoning_steps,
+                suggested_actions=actions[:3],
+                follow_up_prompts=follow_up_prompts[:3],
+                timestamp=datetime.now().isoformat()
+            )
+
+        except Exception as e:
+            return MultiTurnResponse(
+                response=f"Reasoning error: {str(e)[:50]}. Try again.",
+                mode=request.mode.value,
+                timestamp=datetime.now().isoformat()
+            )
+
+
+@app.post("/api/v1/copilot/reason", response_model=MultiTurnResponse)
+async def copilot_multiturn_reason(request: MultiTurnRequest, req: Request):
+    """
+    Multi-Turn Clinical Reasoning endpoint (Feature #95 - Jarvis Wave 1)
+
+    Enhanced co-pilot with different reasoning modes:
+    - standard: Normal clinical decision support
+    - teaching: Explains clinical reasoning with steps
+    - second_opinion: Challenges thinking, suggests alternatives
+    - clarify: AI asks clarifying questions
+
+    Example:
+        POST /api/v1/copilot/reason
+        {
+            "message": "Why do you think this is PE?",
+            "mode": "teaching",
+            "patient_context": {"age": 55, "conditions": ["DVT"]}
+        }
+    """
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="COPILOT_MULTITURN",
+        status="processing",
+        details={"mode": request.mode.value, "message_length": len(request.message)}
+    )
+
+    try:
+        response = await generate_multiturn_response(request)
+
+        audit_logger._log_event(
+            event_type="AI",
+            action="COPILOT_MULTITURN",
+            status="success",
+            details={"mode": request.mode.value, "response_length": len(response.response)}
+        )
+
+        return response
+
+    except Exception as e:
+        audit_logger._log_event(
+            event_type="AI",
+            action="COPILOT_MULTITURN",
+            status="failure",
+            details={"error": str(e)[:100]}
+        )
+        raise HTTPException(status_code=500, detail=f"Reasoning error: {str(e)}")
+
+
+@app.post("/api/v1/copilot/teach")
+async def copilot_teach(request: CopilotRequest, req: Request):
+    """
+    Teaching Mode shortcut - Explain clinical reasoning (Feature #95)
+
+    Example: "Explain why you suggested PE workup"
+    """
+    multi_request = MultiTurnRequest(
+        message=request.message,
+        mode=ReasoningMode.TEACHING,
+        patient_context=request.patient_context,
+        conversation_history=request.conversation_history
+    )
+    return await copilot_multiturn_reason(multi_request, req)
+
+
+@app.post("/api/v1/copilot/challenge")
+async def copilot_challenge(request: CopilotRequest, req: Request):
+    """
+    Second Opinion Mode shortcut - Challenge diagnosis (Feature #95)
+
+    Example: "I think it's pneumonia, what else could it be?"
+    """
+    multi_request = MultiTurnRequest(
+        message=request.message,
+        mode=ReasoningMode.SECOND_OPINION,
+        patient_context=request.patient_context,
+        conversation_history=request.conversation_history,
+        working_diagnosis=request.message
+    )
+    return await copilot_multiturn_reason(multi_request, req)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JARVIS-LIKE AI FEATURES - INDIRECT COMMANDS (Feature #96)
+# Natural language parsing to translate conversational commands into actions
+# Examples: "check that potassium" -> show_labs, "what's his blood pressure" -> show_vitals
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class IndirectCommandResult(BaseModel):
+    """Result of parsing an indirect command"""
+    action: str  # The action to execute: show_labs, show_vitals, show_meds, show_allergies, etc.
+    parameters: Dict[str, Any] = {}  # Parameters for the action (e.g., specific lab name)
+    spoken_confirmation: str  # TTS-friendly response
+    confidence: str  # "high", "medium", "low"
+    original_input: str  # The original natural language input
+    parsed_entities: List[str] = []  # Entities extracted from input
+
+# Mapping of natural language patterns to actions and specific items
+INDIRECT_COMMAND_PATTERNS = {
+    # Labs - specific values
+    "labs": {
+        "action": "show_labs",
+        "keywords": ["lab", "labs", "laboratory", "bloodwork", "blood work", "test", "tests", "results", "blood test"],
+        "specific_items": {
+            "potassium": {"loinc": "2823-3", "aliases": ["k", "k+", "potassium level", "serum potassium"]},
+            "sodium": {"loinc": "2951-2", "aliases": ["na", "na+", "sodium level", "serum sodium"]},
+            "creatinine": {"loinc": "2160-0", "aliases": ["creat", "kidney function", "renal function"]},
+            "hemoglobin": {"loinc": "718-7", "aliases": ["hgb", "hb", "hemoglobin level"]},
+            "hematocrit": {"loinc": "4544-3", "aliases": ["hct"]},
+            "glucose": {"loinc": "2345-7", "aliases": ["blood sugar", "sugar level", "blood glucose", "fasting glucose"]},
+            "a1c": {"loinc": "4548-4", "aliases": ["hemoglobin a1c", "hba1c", "glycated hemoglobin"]},
+            "bun": {"loinc": "3094-0", "aliases": ["blood urea nitrogen", "urea"]},
+            "wbc": {"loinc": "6690-2", "aliases": ["white blood cells", "white count", "leukocytes"]},
+            "platelets": {"loinc": "777-3", "aliases": ["plt", "platelet count"]},
+            "troponin": {"loinc": "6598-7", "aliases": ["trop", "cardiac troponin", "heart enzyme"]},
+            "bnp": {"loinc": "30934-4", "aliases": ["brain natriuretic peptide", "nt-probnp", "pro-bnp"]},
+            "inr": {"loinc": "6301-6", "aliases": ["international normalized ratio", "coagulation"]},
+            "ptt": {"loinc": "3173-2", "aliases": ["partial thromboplastin time"]},
+            "tsh": {"loinc": "3016-3", "aliases": ["thyroid", "thyroid stimulating hormone"]},
+            "magnesium": {"loinc": "19123-9", "aliases": ["mg", "mag level"]},
+            "calcium": {"loinc": "17861-6", "aliases": ["ca", "calcium level", "serum calcium"]},
+            "phosphorus": {"loinc": "2777-1", "aliases": ["phos", "phosphate"]},
+            "albumin": {"loinc": "1751-7", "aliases": ["alb"]},
+            "bilirubin": {"loinc": "1975-2", "aliases": ["bili", "total bilirubin"]},
+            "ast": {"loinc": "1920-8", "aliases": ["sgot", "aspartate aminotransferase"]},
+            "alt": {"loinc": "1742-6", "aliases": ["sgpt", "alanine aminotransferase"]},
+            "lipid panel": {"loinc": "24331-1", "aliases": ["cholesterol", "lipids", "triglycerides", "ldl", "hdl"]},
+            "cbc": {"loinc": "58410-2", "aliases": ["complete blood count", "blood count"]},
+            "cmp": {"loinc": "24323-8", "aliases": ["comprehensive metabolic panel", "metabolic panel"]},
+            "bmp": {"loinc": "24320-4", "aliases": ["basic metabolic panel", "basic metabolic"]},
+        }
+    },
+    # Vitals - specific values
+    "vitals": {
+        "action": "show_vitals",
+        "keywords": ["vital", "vitals", "vital signs"],
+        "specific_items": {
+            "blood pressure": {"code": "85354-9", "aliases": ["bp", "pressure", "systolic", "diastolic"]},
+            "heart rate": {"code": "8867-4", "aliases": ["pulse", "hr", "heart beat", "bpm"]},
+            "temperature": {"code": "8310-5", "aliases": ["temp", "fever"]},
+            "respiratory rate": {"code": "9279-1", "aliases": ["rr", "breathing rate", "respirations"]},
+            "oxygen saturation": {"code": "59408-5", "aliases": ["spo2", "o2 sat", "sat", "oxygen", "pulse ox"]},
+            "weight": {"code": "29463-7", "aliases": ["wt", "how much weigh", "body weight"]},
+            "height": {"code": "8302-2", "aliases": ["ht", "how tall"]},
+            "bmi": {"code": "39156-5", "aliases": ["body mass index"]},
+            "pain": {"code": "72514-3", "aliases": ["pain level", "pain score"]},
+        }
+    },
+    # Medications
+    "medications": {
+        "action": "show_meds",
+        "keywords": ["med", "meds", "medication", "medications", "medicine", "medicines", "drug", "drugs", "prescription", "prescriptions", "rx"],
+        "specific_items": {}  # Can be extended with specific medication queries
+    },
+    # Allergies
+    "allergies": {
+        "action": "show_allergies",
+        "keywords": ["allergy", "allergies", "allergic", "allergy list", "drug allergy", "drug allergies"],
+        "specific_items": {}
+    },
+    # Conditions
+    "conditions": {
+        "action": "show_conditions",
+        "keywords": ["condition", "conditions", "diagnosis", "diagnoses", "problem", "problems", "problem list", "medical history"],
+        "specific_items": {}
+    },
+    # Procedures
+    "procedures": {
+        "action": "show_procedures",
+        "keywords": ["procedure", "procedures", "surgery", "surgeries", "operation", "operations"],
+        "specific_items": {}
+    },
+    # Patient info
+    "patient": {
+        "action": "show_patient",
+        "keywords": ["patient", "patient info", "demographics", "who is", "patient summary", "summary"],
+        "specific_items": {}
+    },
+    # Care plans
+    "care_plans": {
+        "action": "show_care_plans",
+        "keywords": ["care plan", "care plans", "treatment plan", "plan of care"],
+        "specific_items": {}
+    },
+    # Notes
+    "notes": {
+        "action": "show_notes",
+        "keywords": ["note", "notes", "clinical notes", "documentation", "chart notes", "progress notes"],
+        "specific_items": {}
+    },
+    # Immunizations
+    "immunizations": {
+        "action": "show_immunizations",
+        "keywords": ["immunization", "immunizations", "vaccine", "vaccines", "vaccination", "shots"],
+        "specific_items": {}
+    },
+}
+
+# Question words that indicate a query
+QUESTION_WORDS = ["what", "what's", "whats", "how", "show", "check", "look", "pull", "get", "find", "see", "view", "display", "tell", "give"]
+
+# Temporal indicators
+TEMPORAL_WORDS = {
+    "last": "most_recent",
+    "latest": "most_recent",
+    "recent": "most_recent",
+    "previous": "previous",
+    "history": "all",
+    "all": "all",
+    "trend": "trend",
+    "over time": "trend",
+}
+
+def parse_indirect_command(text: str) -> IndirectCommandResult:
+    """
+    Parse natural language input and extract the intended action.
+
+    Examples:
+    - "check that potassium" -> show_labs with parameter potassium
+    - "what's his blood pressure" -> show_vitals with parameter blood pressure
+    - "show me the meds" -> show_meds
+    - "pull up labs" -> show_labs
+    - "what was the last hemoglobin" -> show_labs with parameter hemoglobin, temporal=most_recent
+    """
+    original = text
+    lower = text.lower().strip()
+
+    # Remove common filler words
+    filler_words = ["please", "can you", "could you", "would you", "his", "her", "their", "the", "that", "those", "this", "me", "up", "a", "an"]
+    for filler in filler_words:
+        lower = lower.replace(f" {filler} ", " ")
+    lower = " ".join(lower.split())  # Normalize whitespace
+
+    parsed_entities = []
+    action = "unknown"
+    parameters = {}
+    confidence = "low"
+    specific_item = None
+    temporal = None
+
+    # Check for temporal indicators
+    for word, temporal_type in TEMPORAL_WORDS.items():
+        if word in lower:
+            temporal = temporal_type
+            parameters["temporal"] = temporal
+            parsed_entities.append(f"temporal:{temporal}")
+
+    # First, try to find specific items (more specific = higher confidence)
+    for category, config in INDIRECT_COMMAND_PATTERNS.items():
+        specific_items = config.get("specific_items", {})
+        for item_name, item_config in specific_items.items():
+            # Check the item name and its aliases
+            all_names = [item_name] + item_config.get("aliases", [])
+            for name in all_names:
+                if name.lower() in lower:
+                    action = config["action"]
+                    specific_item = item_name
+                    parameters["specific_item"] = item_name
+                    if "loinc" in item_config:
+                        parameters["loinc_code"] = item_config["loinc"]
+                    if "code" in item_config:
+                        parameters["code"] = item_config["code"]
+                    parsed_entities.append(f"item:{item_name}")
+                    confidence = "high"
+                    break
+            if specific_item:
+                break
+        if specific_item:
+            break
+
+    # If no specific item, check for category keywords
+    if not specific_item:
+        for category, config in INDIRECT_COMMAND_PATTERNS.items():
+            keywords = config.get("keywords", [])
+            for keyword in keywords:
+                if keyword in lower:
+                    action = config["action"]
+                    parsed_entities.append(f"category:{category}")
+                    confidence = "medium"
+                    break
+            if action != "unknown":
+                break
+
+    # Check for question words at the start (boosts confidence)
+    for qword in QUESTION_WORDS:
+        if lower.startswith(qword):
+            if confidence == "medium":
+                confidence = "high"
+            elif confidence == "low":
+                confidence = "medium"
+            parsed_entities.append(f"question_word:{qword}")
+            break
+
+    # Generate spoken confirmation
+    if action == "unknown":
+        spoken_confirmation = "I'm not sure what you're asking for. Try 'show labs' or 'check vitals'."
+    elif specific_item:
+        action_name = action.replace("show_", "").replace("_", " ")
+        spoken_confirmation = f"Showing {specific_item} from {action_name}."
+    else:
+        action_name = action.replace("show_", "").replace("_", " ")
+        spoken_confirmation = f"Showing {action_name}."
+
+    return IndirectCommandResult(
+        action=action,
+        parameters=parameters,
+        spoken_confirmation=spoken_confirmation,
+        confidence=confidence,
+        original_input=original,
+        parsed_entities=parsed_entities
+    )
+
+
+@app.post("/api/v1/commands/parse")
+async def parse_natural_command(request: Request, text: str = None, body: dict = None):
+    """
+    Parse natural language into actionable commands (Feature #96)
+
+    Examples:
+    - "check that potassium" -> {"action": "show_labs", "parameters": {"specific_item": "potassium"}}
+    - "what's his blood pressure" -> {"action": "show_vitals", "parameters": {"specific_item": "blood pressure"}}
+    - "show me the meds" -> {"action": "show_meds"}
+    - "what was the last hemoglobin" -> {"action": "show_labs", "parameters": {"specific_item": "hemoglobin", "temporal": "most_recent"}}
+    """
+    # Get text from query param or body
+    if text is None and body is not None:
+        text = body.get("text", "")
+    if text is None:
+        text = ""
+
+    # Parse the command
+    result = parse_indirect_command(text)
+
+    # Log for HIPAA audit (no PHI in input text ideally)
+    audit_logger._log_event(
+        event_type="indirect_command",
+        action="parse",
+        patient_id=None,
+        details={
+            "original_input": text[:100],  # Truncate for safety
+            "parsed_action": result.action,
+            "confidence": result.confidence
+        }
+    )
+
+    return result
+
+
+@app.get("/api/v1/commands/suggestions")
+async def get_command_suggestions():
+    """
+    Get list of supported indirect command examples for help display.
+    """
+    return {
+        "categories": [
+            {
+                "name": "Labs",
+                "examples": [
+                    "check the potassium",
+                    "what's the hemoglobin",
+                    "show me the a1c",
+                    "what was the last creatinine",
+                    "pull up the cbc",
+                    "labs please"
+                ]
+            },
+            {
+                "name": "Vitals",
+                "examples": [
+                    "what's the blood pressure",
+                    "check the temp",
+                    "show me the heart rate",
+                    "what's the o2 sat",
+                    "vitals please"
+                ]
+            },
+            {
+                "name": "Medications",
+                "examples": [
+                    "what meds is he on",
+                    "show medications",
+                    "check the prescriptions"
+                ]
+            },
+            {
+                "name": "Allergies",
+                "examples": [
+                    "any allergies",
+                    "what are the allergies",
+                    "check for drug allergies"
+                ]
+            },
+            {
+                "name": "Clinical",
+                "examples": [
+                    "show the problems",
+                    "what conditions",
+                    "pull up the notes",
+                    "show care plans"
+                ]
+            }
+        ],
+        "tips": [
+            "Use natural language - you don't need exact commands",
+            "Mention specific values like 'potassium' or 'blood pressure'",
+            "Add 'last' or 'recent' for most recent values",
+            "Say 'trend' to see values over time"
+        ]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JARVIS-LIKE AI FEATURES - PRE-VISIT PREP ALERT (Feature #92)
+# Proactive AI that summarizes care gaps, trends, and important items on patient load
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PrepAlertItem(BaseModel):
+    """Individual prep alert item"""
+    category: str  # "care_gap", "trend", "critical", "follow_up", "reminder"
+    priority: str  # "high", "medium", "low"
+    title: str
+    detail: str
+    action: Optional[str] = None  # Voice command to act on this
+    icon: Optional[str] = None  # Emoji for display
+
+class PreVisitPrepResponse(BaseModel):
+    """Pre-visit preparation intelligence"""
+    patient_id: str
+    patient_name: str
+    spoken_summary: str  # TTS-friendly conversational summary
+    display_summary: str  # Formatted for HUD/screen display
+    alerts: List[PrepAlertItem]
+    quick_actions: List[str]  # Suggested voice commands
+    timestamp: str
+
+# Care gap rules based on age, gender, and conditions
+CARE_GAP_RULES = {
+    "colonoscopy": {"min_age": 45, "max_age": 75, "interval_years": 10, "gender": None},
+    "mammogram": {"min_age": 40, "max_age": 74, "interval_years": 2, "gender": "female"},
+    "pap_smear": {"min_age": 21, "max_age": 65, "interval_years": 3, "gender": "female"},
+    "dexa_scan": {"min_age": 65, "max_age": 999, "interval_years": 2, "gender": "female"},
+    "a1c": {"conditions": ["diabetes", "prediabetes"], "interval_months": 3},
+    "lipid_panel": {"min_age": 40, "interval_years": 5, "conditions": ["diabetes", "hypertension", "hyperlipidemia"]},
+    "annual_wellness": {"interval_years": 1},
+    "flu_shot": {"interval_months": 12},
+    "pneumonia_vaccine": {"min_age": 65, "interval_years": 5},
+}
+
+def calculate_age(dob_str: str) -> int:
+    """Calculate age from DOB string"""
+    try:
+        dob = datetime.strptime(dob_str[:10], "%Y-%m-%d")
+        today = datetime.now()
+        return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    except:
+        return 0
+
+def analyze_patient_for_prep(patient_data: dict) -> List[PrepAlertItem]:
+    """Analyze patient data and generate prep alerts"""
+    alerts = []
+
+    # Extract data
+    vitals = patient_data.get("vitals", [])
+    labs = patient_data.get("labs", [])
+    conditions = patient_data.get("conditions", [])
+    medications = patient_data.get("medications", [])
+    allergies = patient_data.get("allergies", [])
+    dob = patient_data.get("dob", "")
+    gender = patient_data.get("gender", "").lower()
+    age = calculate_age(dob)
+
+    condition_names = [c.get("name", "").lower() if isinstance(c, dict) else str(c).lower() for c in conditions]
+
+    # 1. Check for critical values (highest priority)
+    critical_vitals = [v for v in vitals if isinstance(v, dict) and v.get("is_critical")]
+    for vital in critical_vitals[:2]:
+        alerts.append(PrepAlertItem(
+            category="critical",
+            priority="high",
+            title=f"Critical {vital.get('name', 'vital')}",
+            detail=f"{vital.get('value', '')} {vital.get('unit', '')} - {vital.get('interpretation', '')}",
+            action="show vitals",
+            icon="🚨"
+        ))
+
+    critical_labs = [l for l in labs if isinstance(l, dict) and l.get("is_critical")]
+    for lab in critical_labs[:2]:
+        alerts.append(PrepAlertItem(
+            category="critical",
+            priority="high",
+            title=f"Critical {lab.get('name', 'lab')}",
+            detail=f"{lab.get('value', '')} {lab.get('unit', '')}",
+            action="show labs",
+            icon="🚨"
+        ))
+
+    # 2. Check for abnormal trends (compare recent to previous)
+    if len(labs) >= 2:
+        # Group labs by name and check trends
+        lab_by_name = {}
+        for lab in labs:
+            if isinstance(lab, dict):
+                name = lab.get("name", "")
+                if name not in lab_by_name:
+                    lab_by_name[name] = []
+                lab_by_name[name].append(lab)
+
+        for name, values in lab_by_name.items():
+            if len(values) >= 2 and values[0].get("is_abnormal"):
+                # Check if worsening
+                try:
+                    current = float(str(values[0].get("value", "0")).split()[0])
+                    previous = float(str(values[1].get("value", "0")).split()[0])
+                    if current > previous * 1.2:  # >20% increase
+                        alerts.append(PrepAlertItem(
+                            category="trend",
+                            priority="medium",
+                            title=f"{name} trending up",
+                            detail=f"↗️ {values[1].get('value', '')} → {values[0].get('value', '')}",
+                            action="show labs",
+                            icon="📈"
+                        ))
+                except:
+                    pass
+
+    # 3. Care gaps based on age/gender/conditions
+    # Diabetes care gaps
+    if any("diabet" in c for c in condition_names):
+        a1c_labs = [l for l in labs if isinstance(l, dict) and "a1c" in l.get("name", "").lower()]
+        if a1c_labs:
+            last_a1c = a1c_labs[0]
+            try:
+                a1c_value = float(str(last_a1c.get("value", "0")).replace("%", ""))
+                if a1c_value >= 8.0:
+                    alerts.append(PrepAlertItem(
+                        category="care_gap",
+                        priority="medium",
+                        title="A1c above target",
+                        detail=f"Last A1c: {a1c_value}% - ADA target <7%",
+                        action="order a1c",
+                        icon="🎯"
+                    ))
+            except:
+                pass
+        else:
+            alerts.append(PrepAlertItem(
+                category="care_gap",
+                priority="medium",
+                title="A1c may be due",
+                detail="Diabetic patient - consider checking A1c",
+                action="order a1c",
+                icon="🔬"
+            ))
+
+    # Hypertension care
+    if any("hypertens" in c for c in condition_names):
+        bp_vitals = [v for v in vitals if isinstance(v, dict) and "blood pressure" in v.get("name", "").lower()]
+        if bp_vitals:
+            last_bp = bp_vitals[0].get("value", "")
+            if "/" in last_bp:
+                try:
+                    systolic = int(last_bp.split("/")[0])
+                    if systolic >= 140:
+                        alerts.append(PrepAlertItem(
+                            category="care_gap",
+                            priority="medium",
+                            title="BP above target",
+                            detail=f"Last BP: {last_bp} - Target <140/90",
+                            action="show vitals",
+                            icon="💓"
+                        ))
+                except:
+                    pass
+
+    # Age-based screenings
+    if age >= 45 and gender in ["male", "female"]:
+        alerts.append(PrepAlertItem(
+            category="reminder",
+            priority="low",
+            title="Screening reminder",
+            detail=f"Age {age} - verify colonoscopy status",
+            action=None,
+            icon="📋"
+        ))
+
+    if age >= 40 and gender == "female":
+        alerts.append(PrepAlertItem(
+            category="reminder",
+            priority="low",
+            title="Mammogram reminder",
+            detail="Verify mammogram screening is current",
+            action=None,
+            icon="📋"
+        ))
+
+    # 4. Allergy reminders for high-risk allergies
+    high_risk_allergies = ["penicillin", "sulfa", "nsaid", "aspirin", "contrast", "latex"]
+    for allergy in allergies:
+        allergy_name = allergy.get("substance", "") if isinstance(allergy, dict) else str(allergy)
+        if any(risk in allergy_name.lower() for risk in high_risk_allergies):
+            alerts.append(PrepAlertItem(
+                category="reminder",
+                priority="high",
+                title=f"Allergy: {allergy_name}",
+                detail="High-risk allergy - verify before prescribing",
+                action="show allergies",
+                icon="⚠️"
+            ))
+            break  # Only show one allergy reminder
+
+    # 5. Medication count check
+    if len(medications) >= 10:
+        alerts.append(PrepAlertItem(
+            category="reminder",
+            priority="low",
+            title="Polypharmacy",
+            detail=f"Patient on {len(medications)} medications - consider reconciliation",
+            action="med reconciliation",
+            icon="💊"
+        ))
+
+    # Sort by priority
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    alerts.sort(key=lambda x: priority_order.get(x.priority, 3))
+
+    return alerts[:8]  # Limit to 8 most important
+
+def generate_spoken_prep(patient_name: str, alerts: List[PrepAlertItem]) -> str:
+    """Generate TTS-friendly spoken summary"""
+    if not alerts:
+        return f"Patient {patient_name} loaded. No urgent items to review."
+
+    parts = [f"Heads up on {patient_name}:"]
+
+    # Group by priority
+    high_priority = [a for a in alerts if a.priority == "high"]
+    medium_priority = [a for a in alerts if a.priority == "medium"]
+
+    if high_priority:
+        for alert in high_priority[:2]:
+            parts.append(f"{alert.title}. {alert.detail}.")
+
+    if medium_priority:
+        for alert in medium_priority[:2]:
+            parts.append(f"{alert.title}.")
+
+    # Add action prompt
+    if any(a.action for a in alerts):
+        actionable = [a for a in alerts if a.action]
+        if actionable:
+            parts.append(f"Say '{actionable[0].action}' for details.")
+
+    return " ".join(parts)
+
+def generate_display_prep(alerts: List[PrepAlertItem]) -> str:
+    """Generate formatted display summary"""
+    if not alerts:
+        return "✓ No urgent items"
+
+    lines = []
+    for alert in alerts[:5]:
+        icon = alert.icon or "•"
+        lines.append(f"{icon} {alert.title}: {alert.detail}")
+
+    return "\n".join(lines)
+
+@app.get("/api/v1/patient/{patient_id}/prep", response_model=PreVisitPrepResponse)
+async def get_pre_visit_prep(patient_id: str, request: Request):
+    """
+    Pre-Visit Prep Alert (Feature #92 - Jarvis Wave 1)
+
+    Returns proactive AI-generated briefing when loading a patient:
+    - Care gaps (screenings due, A1c targets)
+    - Critical/abnormal value alerts
+    - Trend analysis (worsening labs)
+    - Medication/allergy reminders
+    - Actionable voice commands
+
+    Returns both:
+    - spoken_summary: TTS-friendly for voice output
+    - display_summary: Formatted for HUD/screen
+    - alerts: Structured list for UI rendering
+    - quick_actions: Suggested voice commands
+
+    Example:
+        GET /api/v1/patient/12724066/prep
+
+    Response:
+        {
+            "spoken_summary": "Heads up on John Smith: A1c above target at 8.2%. BP elevated at 148/92. Say 'order a1c' for labs.",
+            "display_summary": "🎯 A1c above target: 8.2%\n💓 BP elevated: 148/92",
+            "alerts": [...],
+            "quick_actions": ["order a1c", "show vitals", "med reconciliation"]
+        }
+    """
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
+            raise HTTPException(status_code=404, detail="Patient not found")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+
+    # Extract basic info
+    name = extract_patient_name(patient_data)
+    dob = patient_data.get("birthDate", "")
+    gender = patient_data.get("gender", "")
+
+    # Fetch clinical data
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=20&_sort=-date")
+    vitals = extract_vitals(vitals_bundle)
+
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=30&_sort=-date")
+    labs = extract_labs(lab_bundle)
+
+    allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}&_count=10")
+    allergies = extract_allergies(allergy_bundle)
+
+    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=20")
+    medications = extract_medications(med_bundle)
+
+    try:
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10")
+        conditions = extract_conditions(cond_bundle)
+    except:
+        conditions = []
+
+    # Package data for analysis (handle both Pydantic objects and plain strings)
+    def to_dict(item):
+        if isinstance(item, str):
+            return {"name": item}
+        elif hasattr(item, 'model_dump'):
+            return item.model_dump()
+        elif hasattr(item, '__dict__'):
+            return item.__dict__
+        else:
+            return {"name": str(item)}
+
+    patient_analysis_data = {
+        "dob": dob,
+        "gender": gender,
+        "vitals": [to_dict(v) for v in vitals],
+        "labs": [to_dict(l) for l in labs],
+        "conditions": [to_dict(c) for c in conditions],
+        "medications": [to_dict(m) for m in medications],
+        "allergies": [to_dict(a) for a in allergies],
+    }
+
+    # Analyze and generate alerts
+    alerts = analyze_patient_for_prep(patient_analysis_data)
+
+    # Generate summaries
+    spoken_summary = generate_spoken_prep(name, alerts)
+    display_summary = generate_display_prep(alerts)
+
+    # Extract quick actions from alerts
+    quick_actions = list(set(a.action for a in alerts if a.action))[:5]
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="PRE_VISIT_PREP",
+        patient_id=patient_id,
+        status="success",
+        details={"alerts_count": len(alerts), "has_critical": any(a.priority == "high" for a in alerts)}
+    )
+
+    return PreVisitPrepResponse(
+        patient_id=patient_id,
+        patient_name=name,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        alerts=alerts,
+        quick_actions=quick_actions,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHIEF COMPLAINT WORKFLOWS (Feature #94 - Jarvis Wave 1)
+# Detects chief complaint and suggests relevant workups/orders
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Chief complaint to order set mapping
+CHIEF_COMPLAINT_WORKFLOWS = {
+    "chest pain": {
+        "order_set": "chest_pain",
+        "order_set_name": "Chest Pain Workup",
+        "orders": ["EKG", "Troponin", "CBC", "BMP", "Chest X-ray"],
+        "protocols": ["ACS rule-out protocol", "HEART score calculation"],
+        "considerations": ["Consider cardiology consult if positive troponin", "Aspirin if no contraindications"],
+        "keywords": ["chest pain", "chest pressure", "chest tightness", "substernal", "angina", "mi", "heart attack"]
+    },
+    "shortness of breath": {
+        "order_set": "chf",
+        "order_set_name": "CHF/Dyspnea Workup",
+        "orders": ["CBC", "BMP", "BNP", "Troponin", "Chest X-ray", "ABG"],
+        "protocols": ["Heart failure assessment", "COPD assessment"],
+        "considerations": ["Consider BiPAP if respiratory distress", "Check O2 saturation"],
+        "keywords": ["shortness of breath", "dyspnea", "sob", "breathing difficulty", "can't breathe", "winded"]
+    },
+    "abdominal pain": {
+        "order_set": "abdominal_pain",
+        "order_set_name": "Abdominal Pain Workup",
+        "orders": ["CBC", "CMP", "Lipase", "UA", "CT Abdomen"],
+        "protocols": ["Acute abdomen assessment", "Appendicitis score"],
+        "considerations": ["NPO if surgical concern", "Consider GI consult"],
+        "keywords": ["abdominal pain", "belly pain", "stomach pain", "abd pain", "nausea", "vomiting"]
+    },
+    "fever": {
+        "order_set": "sepsis",
+        "order_set_name": "Sepsis/Fever Workup",
+        "orders": ["CBC", "CMP", "Blood cultures x2", "UA", "Urine culture", "Chest X-ray"],
+        "protocols": ["Sepsis screening", "qSOFA calculation"],
+        "considerations": ["Start antibiotics within 1 hour if septic", "Fluid resuscitation"],
+        "keywords": ["fever", "febrile", "chills", "rigors", "temperature", "infection"]
+    },
+    "headache": {
+        "order_set": "stroke",
+        "order_set_name": "Headache/Stroke Workup",
+        "orders": ["CT Head", "CBC", "BMP"],
+        "protocols": ["NIHSS if stroke concern", "Subarachnoid hemorrhage screening"],
+        "considerations": ["LP if SAH concern with negative CT", "Consider neurology consult"],
+        "keywords": ["headache", "head pain", "migraine", "worst headache", "thunderclap"]
+    },
+    "altered mental status": {
+        "order_set": "sepsis",
+        "order_set_name": "AMS Workup",
+        "orders": ["CBC", "CMP", "UA", "Ammonia", "Blood glucose", "CT Head", "Drug screen"],
+        "protocols": ["Delirium assessment", "Stroke assessment"],
+        "considerations": ["Check glucose immediately", "Consider stroke code if focal deficits"],
+        "keywords": ["altered mental status", "confusion", "ams", "disoriented", "lethargic", "unresponsive"]
+    },
+    "syncope": {
+        "order_set": "chest_pain",
+        "order_set_name": "Syncope Workup",
+        "orders": ["EKG", "CBC", "BMP", "Troponin", "Orthostatic vitals"],
+        "protocols": ["San Francisco Syncope Rule", "Cardiac monitoring"],
+        "considerations": ["Consider telemetry admission", "Echo if cardiac concern"],
+        "keywords": ["syncope", "passed out", "fainted", "loss of consciousness", "blackout"]
+    },
+    "back pain": {
+        "order_set": "admission",
+        "order_set_name": "Back Pain Workup",
+        "orders": ["CBC", "BMP", "UA", "MRI spine if red flags"],
+        "protocols": ["Cauda equina screening", "Red flag assessment"],
+        "considerations": ["Check for urinary retention", "Neuro exam for weakness"],
+        "keywords": ["back pain", "lower back pain", "spine pain", "sciatica", "leg weakness"]
+    },
+    "diabetic emergency": {
+        "order_set": "dka",
+        "order_set_name": "DKA Protocol",
+        "orders": ["BMP", "CBC", "UA", "ABG", "Serum ketones", "HbA1c"],
+        "protocols": ["DKA/HHS protocol", "Insulin drip protocol"],
+        "considerations": ["IV fluids first", "Monitor potassium closely"],
+        "keywords": ["dka", "diabetic ketoacidosis", "high blood sugar", "hyperglycemia", "diabetic emergency"]
+    },
+    "respiratory distress": {
+        "order_set": "copd",
+        "order_set_name": "Respiratory Distress Workup",
+        "orders": ["ABG", "CBC", "BMP", "Chest X-ray", "BNP"],
+        "protocols": ["BiPAP assessment", "Intubation criteria"],
+        "considerations": ["Immediate respiratory therapy", "Consider ICU if severe"],
+        "keywords": ["respiratory distress", "wheezing", "asthma", "copd exacerbation", "respiratory failure"]
+    },
+    "urinary symptoms": {
+        "order_set": "uti",
+        "order_set_name": "UTI Workup",
+        "orders": ["UA", "Urine culture", "CBC", "BMP"],
+        "protocols": ["UTI treatment guidelines", "Pyelonephritis assessment"],
+        "considerations": ["Consider CT if complicated", "IV antibiotics if systemic symptoms"],
+        "keywords": ["dysuria", "uti", "urinary tract infection", "burning urination", "urinary frequency"]
+    },
+    "cough": {
+        "order_set": "pneumonia",
+        "order_set_name": "Pneumonia/Cough Workup",
+        "orders": ["Chest X-ray", "CBC", "BMP", "Blood cultures if febrile"],
+        "protocols": ["CURB-65 score", "Pneumonia severity index"],
+        "considerations": ["Consider influenza testing", "COVID testing if indicated"],
+        "keywords": ["cough", "pneumonia", "productive cough", "hemoptysis", "lung infection"]
+    }
+}
+
+
+class WorkflowSuggestion(BaseModel):
+    """Individual workflow suggestion"""
+    chief_complaint: str
+    order_set_id: str
+    order_set_name: str
+    suggested_orders: List[str]
+    protocols: List[str]
+    considerations: List[str]
+    confidence: str  # "high", "medium", "low"
+    voice_command: str  # How to order this
+
+
+class ChiefComplaintWorkflowResponse(BaseModel):
+    """Response for chief complaint workflow detection"""
+    patient_id: str
+    detected_complaints: List[str]
+    suggestions: List[WorkflowSuggestion]
+    spoken_summary: str
+    display_summary: str
+    timestamp: str
+
+
+def detect_chief_complaints(patient_data: dict, ambient_text: Optional[str] = None) -> List[tuple]:
+    """
+    Detect chief complaints from patient data and/or ambient conversation.
+    Returns list of (complaint, confidence, source) tuples.
+    """
+    detected = []
+
+    # Check patient's conditions
+    conditions = patient_data.get("conditions", [])
+    for cond in conditions:
+        cond_name = cond.get("name", "").lower() if isinstance(cond, dict) else str(cond).lower()
+        for complaint, workflow in CHIEF_COMPLAINT_WORKFLOWS.items():
+            for keyword in workflow["keywords"]:
+                if keyword in cond_name:
+                    detected.append((complaint, "high", "condition"))
+                    break
+
+    # Check reason for visit if available
+    reason = patient_data.get("reason_for_visit", "").lower()
+    if reason:
+        for complaint, workflow in CHIEF_COMPLAINT_WORKFLOWS.items():
+            for keyword in workflow["keywords"]:
+                if keyword in reason:
+                    detected.append((complaint, "high", "reason_for_visit"))
+                    break
+
+    # Check ambient text if provided
+    if ambient_text:
+        ambient_lower = ambient_text.lower()
+        for complaint, workflow in CHIEF_COMPLAINT_WORKFLOWS.items():
+            for keyword in workflow["keywords"]:
+                if keyword in ambient_lower:
+                    detected.append((complaint, "medium", "ambient"))
+                    break
+
+    # Remove duplicates, prioritizing high confidence
+    seen = set()
+    unique_detected = []
+    for item in detected:
+        if item[0] not in seen:
+            seen.add(item[0])
+            unique_detected.append(item)
+
+    return unique_detected
+
+
+def generate_workflow_suggestions(complaints: List[tuple]) -> List[WorkflowSuggestion]:
+    """Generate workflow suggestions for detected chief complaints"""
+    suggestions = []
+
+    for complaint, confidence, source in complaints:
+        workflow = CHIEF_COMPLAINT_WORKFLOWS.get(complaint)
+        if workflow:
+            suggestions.append(WorkflowSuggestion(
+                chief_complaint=complaint,
+                order_set_id=workflow["order_set"],
+                order_set_name=workflow["order_set_name"],
+                suggested_orders=workflow["orders"],
+                protocols=workflow["protocols"],
+                considerations=workflow["considerations"],
+                confidence=confidence,
+                voice_command=f"order {workflow['order_set']} workup"
+            ))
+
+    return suggestions
+
+
+@app.get("/api/v1/patient/{patient_id}/workflow", response_model=ChiefComplaintWorkflowResponse)
+async def get_chief_complaint_workflow(
+    patient_id: str,
+    request: Request,
+    ambient_text: Optional[str] = None
+):
+    """
+    Chief Complaint Workflow Detection (Feature #94 - Jarvis Wave 1)
+
+    Detects chief complaint and suggests relevant workups/orders.
+    Can use patient data and/or ambient conversation text.
+    """
+    # Fetch patient data
+    patient_url = f"Patient/{patient_id}"
+    patient_data = await fetch_fhir(patient_url)
+
+    name = extract_patient_name(patient_data)
+
+    # Fetch conditions for context
+    try:
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10")
+        conditions = extract_conditions(cond_bundle)
+    except:
+        conditions = []
+
+    # Package data for detection
+    analysis_data = {
+        "conditions": [c.model_dump() if hasattr(c, 'model_dump') else {"name": str(c)} for c in conditions],
+        "reason_for_visit": patient_data.get("reason_for_visit", ""),
+    }
+
+    # Detect chief complaints
+    detected = detect_chief_complaints(analysis_data, ambient_text)
+
+    # Generate suggestions
+    suggestions = generate_workflow_suggestions(detected)
+
+    # Generate summaries
+    if suggestions:
+        # Spoken summary (TTS-friendly)
+        complaint_names = [s.chief_complaint for s in suggestions[:2]]
+        spoken_parts = []
+        for s in suggestions[:2]:
+            spoken_parts.append(f"For {s.chief_complaint}, consider {s.order_set_name}. Say '{s.voice_command}' to order.")
+        spoken_summary = " ".join(spoken_parts)
+
+        # Display summary
+        display_lines = []
+        for s in suggestions:
+            display_lines.append(f"📋 {s.chief_complaint.title()}")
+            display_lines.append(f"   → {s.order_set_name}")
+            display_lines.append(f"   Orders: {', '.join(s.suggested_orders[:4])}")
+            display_lines.append(f"   Voice: \"{s.voice_command}\"")
+        display_summary = "\n".join(display_lines)
+    else:
+        spoken_summary = "No specific chief complaint detected. Say 'list order sets' to see available workups."
+        display_summary = "No chief complaint detected.\nSay 'list order sets' for options."
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="CHIEF_COMPLAINT_WORKFLOW",
+        patient_id=patient_id,
+        status="success",
+        details={
+            "detected_complaints": [d[0] for d in detected],
+            "suggestions_count": len(suggestions),
+            "ambient_text_provided": ambient_text is not None
+        }
+    )
+
+    return ChiefComplaintWorkflowResponse(
+        patient_id=patient_id,
+        detected_complaints=[d[0] for d in detected],
+        suggestions=suggestions,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.post("/api/v1/workflow/suggest")
+async def suggest_workflow_from_text(
+    request: Request,
+    text: str = None
+):
+    """
+    Suggest workflow based on free text (ambient conversation or manual input).
+    Does not require patient context.
+    """
+    if not text:
+        body = await request.json()
+        text = body.get("text", "")
+
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided")
+
+    # Detect from text
+    detected = detect_chief_complaints({}, text)
+    suggestions = generate_workflow_suggestions(detected)
+
+    if suggestions:
+        spoken = f"Based on the conversation, consider {suggestions[0].order_set_name}. Say '{suggestions[0].voice_command}'."
+    else:
+        spoken = "No specific workup detected from conversation."
+
+    return {
+        "detected_complaints": [d[0] for d in detected],
+        "suggestions": [s.model_dump() for s in suggestions],
+        "spoken_summary": spoken
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -11055,7 +12489,24 @@ async def tts_status():
 
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
-    print("📡 Connected to: Cerner Open Sandbox")
+    print("═" * 50)
+    print("📡 EHR Integrations:")
+    print(f"   • Cerner/Oracle: {'✅ READY' if CERNER_CLIENT_ID else '⚠️  Open sandbox'}")
+    if CERNER_CLIENT_ID:
+        print(f"     Client ID: {CERNER_CLIENT_ID[:8]}...")
+    print(f"   • Epic: {'✅ READY' if EPIC_CLIENT_ID else '❌ Pending'}")
+    print(f"   • Veradigm: {'✅ READY' if VERADIGM_CLIENT_ID else '❌ Pending'}")
+    print(f"   • athenahealth: {'✅ READY' if ATHENA_CLIENT_ID else '❌ Pending'}")
+    print(f"   • NextGen: {'✅ READY' if NEXTGEN_CLIENT_ID else '❌ Pending'}")
+    configured = sum([bool(CERNER_CLIENT_ID), bool(EPIC_CLIENT_ID), bool(VERADIGM_CLIENT_ID), bool(ATHENA_CLIENT_ID), bool(NEXTGEN_CLIENT_ID)])
+    print(f"   → {configured}/5 EHRs configured")
+    print("─" * 50)
+    print("🔬 Demo Server (Full CRUD):")
+    print(f"   • HAPI FHIR: {'✅ READY' if HAPI_FHIR_ENABLED else '❌ Disabled'}")
+    if HAPI_FHIR_ENABLED:
+        print(f"     URL: {HAPI_FHIR_BASE_URL}")
+        print("     ↳ CREATE, READ, UPDATE, DELETE supported")
+    print("═" * 50)
     print("🔗 API: http://localhost:8002")
     print("📱 Android emulator: http://10.0.2.2:8002")
     print(f"🎤 Transcription: {TRANSCRIPTION_PROVIDER} (ws://localhost:8002/ws/transcribe)")

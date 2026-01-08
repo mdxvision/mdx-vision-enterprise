@@ -14754,6 +14754,7 @@ SOFA Score: [X]
                             speakLabTrends(patient)
                             speakVitalTrends(patient)
                             notifyHudPatientUpdate()  // Update Vuzix HUD
+                            fetchPreVisitPrep(patientId)  // Jarvis: Proactive AI briefing (Feature #92)
                         } catch (e: Exception) {
                             showDataOverlay("Parse Error", body)
                             speakFeedback("Error loading patient")
@@ -14826,6 +14827,591 @@ SOFA Score: [X]
         val model = android.os.Build.MODEL.lowercase()
         return manufacturer.contains("vuzix") || model.contains("blade")
     }
+
+    // ============ Pre-Visit Prep Alert (Feature #92 - Jarvis Wave 1) ============
+
+    /**
+     * Fetch proactive AI briefing when loading a patient
+     * Returns care gaps, critical values, and suggested actions
+     * Speaks the summary via TTS for hands-free operation
+     */
+    private fun fetchPreVisitPrep(patientId: String) {
+        Log.d(TAG, "Fetching pre-visit prep for patient: $patientId")
+
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/patient/$patientId/prep")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 30000
+                conn.readTimeout = 60000
+                conn.setRequestProperty("Accept", "application/json")
+
+                val responseCode = conn.responseCode
+                val body = if (responseCode == 200) {
+                    conn.inputStream.bufferedReader().use { it.readText() }
+                } else {
+                    null
+                }
+                conn.disconnect()
+
+                if (responseCode == 200 && body != null) {
+                    runOnUiThread {
+                        try {
+                            val prep = JSONObject(body)
+                            displayPreVisitPrep(prep)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing pre-visit prep: ${e.message}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching pre-visit prep: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Display and speak the pre-visit prep alert
+     */
+    private fun displayPreVisitPrep(prep: JSONObject) {
+        val spokenSummary = prep.optString("spoken_summary", "")
+        val displaySummary = prep.optString("display_summary", "")
+        val alerts = prep.optJSONArray("alerts")
+        val quickActions = prep.optJSONArray("quick_actions")
+
+        // Log for debugging
+        Log.d(TAG, "Pre-visit prep: $displaySummary")
+        Log.d(TAG, "Alerts count: ${alerts?.length() ?: 0}")
+
+        // Check if there are any high-priority alerts
+        var hasCritical = false
+        if (alerts != null) {
+            for (i in 0 until alerts.length()) {
+                val alert = alerts.getJSONObject(i)
+                if (alert.optString("priority") == "high") {
+                    hasCritical = true
+                    break
+                }
+            }
+        }
+
+        // Speak the summary via TTS (proactive Jarvis-like behavior)
+        // Critical alerts are spoken immediately (bypasses speech feedback toggle)
+        if (spokenSummary.isNotEmpty()) {
+            if (hasCritical) {
+                // Critical alerts always spoken
+                textToSpeech?.speak(spokenSummary, TextToSpeech.QUEUE_ADD, null, "prep_alert")
+            } else if (isSpeechFeedbackEnabled) {
+                // Non-critical only if speech feedback enabled
+                textToSpeech?.speak(spokenSummary, TextToSpeech.QUEUE_ADD, null, "prep_alert")
+            }
+        }
+
+        // Update HUD with prep summary if available
+        if (displaySummary.isNotEmpty() && isVuzixDevice()) {
+            val intent = Intent(VuzixHudService.ACTION_UPDATE_PATIENT).apply {
+                putExtra("prep_summary", displaySummary)
+            }
+            LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        }
+
+        // Show quick actions in a toast for now (could be overlay later)
+        if (quickActions != null && quickActions.length() > 0) {
+            val actions = mutableListOf<String>()
+            for (i in 0 until quickActions.length()) {
+                actions.add(quickActions.getString(i))
+            }
+            Log.d(TAG, "Quick actions: ${actions.joinToString(", ")}")
+        }
+    }
+
+    // ============ Chief Complaint Workflows (Feature #94 - Jarvis Wave 1) ============
+
+    /**
+     * Detect chief complaint from patient conditions or ambient text
+     * and suggest relevant workups/orders
+     */
+    private fun fetchChiefComplaintWorkflow(patientId: String, ambientText: String? = null) {
+        Log.d(TAG, "Fetching chief complaint workflow for patient: $patientId")
+
+        Thread {
+            try {
+                var urlStr = "$EHR_PROXY_URL/api/v1/patient/$patientId/workflow"
+                if (!ambientText.isNullOrEmpty()) {
+                    urlStr += "?ambient_text=${java.net.URLEncoder.encode(ambientText, "UTF-8")}"
+                }
+
+                val url = java.net.URL(urlStr)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 30000
+                conn.readTimeout = 60000
+                conn.setRequestProperty("Accept", "application/json")
+
+                val responseCode = conn.responseCode
+                val body = if (responseCode == 200) {
+                    conn.inputStream.bufferedReader().use { it.readText() }
+                } else {
+                    null
+                }
+                conn.disconnect()
+
+                if (responseCode == 200 && body != null) {
+                    runOnUiThread {
+                        try {
+                            val workflow = JSONObject(body)
+                            displayChiefComplaintWorkflow(workflow)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing workflow: ${e.message}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching workflow: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Suggest workflow based on ambient text (no patient context required)
+     */
+    private fun suggestWorkflowFromText(text: String) {
+        Log.d(TAG, "Suggesting workflow from text: ${text.take(50)}...")
+
+        Thread {
+            try {
+                val url = java.net.URL("$EHR_PROXY_URL/api/v1/workflow/suggest")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.connectTimeout = 15000
+                conn.readTimeout = 30000
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Accept", "application/json")
+                conn.doOutput = true
+
+                val payload = JSONObject().apply {
+                    put("text", text)
+                }
+                conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+
+                val responseCode = conn.responseCode
+                val body = if (responseCode == 200) {
+                    conn.inputStream.bufferedReader().use { it.readText() }
+                } else {
+                    null
+                }
+                conn.disconnect()
+
+                if (responseCode == 200 && body != null) {
+                    runOnUiThread {
+                        try {
+                            val result = JSONObject(body)
+                            val spokenSummary = result.optString("spoken_summary", "")
+                            if (spokenSummary.isNotEmpty()) {
+                                // Speak the suggestion
+                                textToSpeech?.speak(spokenSummary, TextToSpeech.QUEUE_ADD, null, "workflow_suggest")
+                            }
+
+                            // Show suggestions if any
+                            val suggestions = result.optJSONArray("suggestions")
+                            if (suggestions != null && suggestions.length() > 0) {
+                                displayWorkflowSuggestions(suggestions)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing workflow suggestion: ${e.message}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error suggesting workflow: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Display chief complaint workflow suggestions
+     */
+    private fun displayChiefComplaintWorkflow(workflow: JSONObject) {
+        val spokenSummary = workflow.optString("spoken_summary", "")
+        val displaySummary = workflow.optString("display_summary", "")
+        val suggestions = workflow.optJSONArray("suggestions")
+        val detectedComplaints = workflow.optJSONArray("detected_complaints")
+
+        // Log for debugging
+        val complaintsStr = detectedComplaints?.let { arr ->
+            (0 until arr.length()).map { arr.getString(it) }.joinToString(", ")
+        } ?: "none"
+        Log.d(TAG, "Chief complaint workflow: detected=$complaintsStr")
+
+        // Speak the summary if there are suggestions
+        if (suggestions != null && suggestions.length() > 0 && spokenSummary.isNotEmpty()) {
+            textToSpeech?.speak(spokenSummary, TextToSpeech.QUEUE_ADD, null, "workflow_alert")
+        }
+
+        // Show overlay with suggestions
+        if (displaySummary.isNotEmpty()) {
+            showDataOverlay("📋 SUGGESTED WORKUPS", displaySummary)
+        }
+    }
+
+    /**
+     * Display workflow suggestions from array
+     */
+    private fun displayWorkflowSuggestions(suggestions: JSONArray) {
+        val sb = StringBuilder()
+        sb.append("📋 SUGGESTED WORKUPS\n")
+        sb.append("${"─".repeat(30)}\n\n")
+
+        for (i in 0 until minOf(suggestions.length(), 3)) {
+            val s = suggestions.getJSONObject(i)
+            val complaint = s.optString("chief_complaint", "")
+            val orderSetName = s.optString("order_set_name", "")
+            val voiceCommand = s.optString("voice_command", "")
+            val orders = s.optJSONArray("suggested_orders")
+
+            sb.append("🔹 ${complaint.replaceFirstChar { it.uppercase() }}\n")
+            sb.append("   → $orderSetName\n")
+            if (orders != null && orders.length() > 0) {
+                val orderList = (0 until minOf(orders.length(), 4)).map { orders.getString(it) }
+                sb.append("   Orders: ${orderList.joinToString(", ")}\n")
+            }
+            sb.append("   Voice: \"$voiceCommand\"\n\n")
+        }
+
+        showDataOverlay("SUGGESTED WORKUPS", sb.toString())
+    }
+
+    // ============ Indirect Commands (Feature #96 - Jarvis Wave 1) ============
+
+    /**
+     * Parse natural language and execute the inferred action.
+     * Examples: "check that potassium" -> show labs with potassium filter
+     *           "what's his blood pressure" -> show vitals with BP filter
+     */
+    private fun parseAndExecuteIndirectCommand(text: String) {
+        if (text.isBlank()) {
+            speakFeedback("Please tell me what you'd like to see.")
+            return
+        }
+
+        // Send to backend for parsing
+        val url = "$EHR_PROXY_URL/api/v1/commands/parse?text=${java.net.URLEncoder.encode(text, "UTF-8")}"
+        val request = Request.Builder()
+            .url(url)
+            .header("X-Device-ID", deviceId)
+            .post("".toRequestBody("application/json".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Indirect command parse failed", e)
+                    speakFeedback("Sorry, couldn't understand that command.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val json = JSONObject(body)
+                            runOnUiThread { executeIndirectCommand(json) }
+                        }
+                    } else {
+                        runOnUiThread {
+                            speakFeedback("Couldn't parse that command.")
+                        }
+                    }
+                }
+            }
+        })
+
+        Log.d(TAG, "Indirect command sent for parsing: $text")
+    }
+
+    /**
+     * Execute the parsed indirect command by calling the appropriate action.
+     */
+    private fun executeIndirectCommand(result: JSONObject) {
+        val action = result.optString("action", "unknown")
+        val parameters = result.optJSONObject("parameters") ?: JSONObject()
+        val spokenConfirmation = result.optString("spoken_confirmation", "")
+        val confidence = result.optString("confidence", "low")
+        val specificItem = parameters.optString("specific_item", "")
+
+        Log.d(TAG, "Executing indirect command: action=$action, item=$specificItem, confidence=$confidence")
+
+        // Speak the confirmation
+        if (spokenConfirmation.isNotBlank()) {
+            speakFeedback(spokenConfirmation)
+        }
+
+        // Check if patient is loaded for patient-specific actions
+        val patientId = currentPatientData?.optString("id") ?: currentPatientData?.optString("patient_id")
+        val needsPatient = action in listOf("show_labs", "show_vitals", "show_meds", "show_allergies",
+            "show_conditions", "show_procedures", "show_care_plans", "show_notes", "show_immunizations")
+
+        if (needsPatient && (patientId.isNullOrEmpty())) {
+            speakFeedback("No patient loaded. Load a patient first.")
+            return
+        }
+
+        // Execute based on action
+        when (action) {
+            "show_labs" -> {
+                // If there's a specific lab, try to highlight it
+                if (specificItem.isNotEmpty()) {
+                    fetchLabsWithFilter(patientId!!, specificItem)
+                } else {
+                    fetchPatientSection("labs")
+                }
+            }
+            "show_vitals" -> {
+                if (specificItem.isNotEmpty()) {
+                    fetchVitalsWithFilter(patientId!!, specificItem)
+                } else {
+                    fetchPatientSection("vitals")
+                }
+            }
+            "show_meds" -> {
+                fetchPatientSection("medications")
+            }
+            "show_allergies" -> {
+                fetchPatientSection("allergies")
+            }
+            "show_conditions" -> {
+                fetchPatientSection("conditions")
+            }
+            "show_procedures" -> {
+                fetchPatientSection("procedures")
+            }
+            "show_patient" -> {
+                if (currentPatientData != null) {
+                    showQuickPatientSummary()
+                } else {
+                    speakFeedback("No patient loaded.")
+                }
+            }
+            "show_care_plans" -> {
+                fetchPatientSection("care_plans")
+            }
+            "show_notes" -> {
+                fetchPatientSection("clinical_notes")
+            }
+            "show_immunizations" -> {
+                fetchPatientSection("immunizations")
+            }
+            "unknown" -> {
+                speakFeedback("I couldn't understand that. Try 'show labs' or 'check vitals'.")
+            }
+            else -> {
+                speakFeedback("Action '$action' is not yet supported.")
+            }
+        }
+    }
+
+    /**
+     * Fetch labs and filter/highlight a specific item.
+     */
+    private fun fetchLabsWithFilter(patientId: String, filterItem: String) {
+        val url = "$EHR_PROXY_URL/api/v1/patient/$patientId/labs"
+        val request = Request.Builder()
+            .url(url)
+            .header("X-Device-ID", deviceId)
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Labs fetch failed", e)
+                    speakFeedback("Couldn't fetch labs.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val data = JSONObject(body)
+                            runOnUiThread { displayFilteredLabs(data, filterItem) }
+                        }
+                    } else {
+                        runOnUiThread {
+                            speakFeedback("Error fetching labs.")
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Display labs with a specific item highlighted.
+     */
+    private fun displayFilteredLabs(data: JSONObject, filterItem: String) {
+        val labs = data.optJSONArray("labs") ?: JSONArray()
+        val filterLower = filterItem.lowercase()
+
+        val sb = StringBuilder()
+        sb.append("🔬 LABS")
+        if (filterItem.isNotEmpty()) {
+            sb.append(" - Filtered: ${filterItem.replaceFirstChar { it.uppercase() }}")
+        }
+        sb.append("\n${"─".repeat(30)}\n\n")
+
+        var foundMatch = false
+        var matchedValue = ""
+        var matchedDate = ""
+
+        // First pass: find and highlight matching items
+        for (i in 0 until labs.length()) {
+            val lab = labs.getJSONObject(i)
+            val name = lab.optString("name", lab.optString("display", "Unknown"))
+            val value = lab.optString("value", "")
+            val unit = lab.optString("unit", "")
+            val date = lab.optString("date", "")
+
+            val nameLower = name.lowercase()
+            val isMatch = filterLower in nameLower ||
+                    INDIRECT_LAB_ALIASES.any { (alias, canonical) ->
+                        alias == filterLower && canonical.lowercase() in nameLower
+                    }
+
+            if (isMatch) {
+                foundMatch = true
+                matchedValue = "$value $unit".trim()
+                matchedDate = date.take(10)
+                sb.append("⭐ $name: $value $unit\n")
+                sb.append("   Date: $date\n\n")
+
+                // Speak the result
+                val spokenResult = "$name is $value $unit, from $matchedDate"
+                speakFeedback(spokenResult)
+            } else {
+                // Show other labs in dimmer format (just first 5)
+                if (i < 5 && !foundMatch) {
+                    sb.append("• $name: $value $unit\n")
+                }
+            }
+        }
+
+        if (!foundMatch) {
+            sb.append("\n⚠️ No results found for '$filterItem'\n")
+            speakFeedback("No results found for $filterItem")
+        }
+
+        showDataOverlay("LAB RESULTS", sb.toString())
+    }
+
+    /**
+     * Fetch vitals and filter/highlight a specific item.
+     */
+    private fun fetchVitalsWithFilter(patientId: String, filterItem: String) {
+        val url = "$EHR_PROXY_URL/api/v1/patient/$patientId/vitals"
+        val request = Request.Builder()
+            .url(url)
+            .header("X-Device-ID", deviceId)
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Vitals fetch failed", e)
+                    speakFeedback("Couldn't fetch vitals.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val data = JSONObject(body)
+                            runOnUiThread { displayFilteredVitals(data, filterItem) }
+                        }
+                    } else {
+                        runOnUiThread {
+                            speakFeedback("Error fetching vitals.")
+                        }
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Display vitals with a specific item highlighted.
+     */
+    private fun displayFilteredVitals(data: JSONObject, filterItem: String) {
+        val vitals = data.optJSONArray("vitals") ?: JSONArray()
+        val filterLower = filterItem.lowercase()
+
+        val sb = StringBuilder()
+        sb.append("❤️ VITALS")
+        if (filterItem.isNotEmpty()) {
+            sb.append(" - Filtered: ${filterItem.replaceFirstChar { it.uppercase() }}")
+        }
+        sb.append("\n${"─".repeat(30)}\n\n")
+
+        var foundMatch = false
+
+        for (i in 0 until vitals.length()) {
+            val vital = vitals.getJSONObject(i)
+            val name = vital.optString("name", vital.optString("display", "Unknown"))
+            val value = vital.optString("value", "")
+            val unit = vital.optString("unit", "")
+            val date = vital.optString("date", "")
+
+            val nameLower = name.lowercase()
+            val isMatch = filterLower in nameLower ||
+                    INDIRECT_VITAL_ALIASES.any { (alias, canonical) ->
+                        alias == filterLower && canonical.lowercase() in nameLower
+                    }
+
+            if (isMatch) {
+                foundMatch = true
+                sb.append("⭐ $name: $value $unit\n")
+                sb.append("   Date: $date\n\n")
+
+                // Speak the result
+                val spokenResult = "$name is $value $unit"
+                speakFeedback(spokenResult)
+            } else if (i < 5 && !foundMatch) {
+                sb.append("• $name: $value $unit\n")
+            }
+        }
+
+        if (!foundMatch) {
+            sb.append("\n⚠️ No results found for '$filterItem'\n")
+            speakFeedback("No results found for $filterItem")
+        }
+
+        showDataOverlay("VITAL SIGNS", sb.toString())
+    }
+
+    // Alias mappings for indirect commands
+    private val INDIRECT_LAB_ALIASES = mapOf(
+        "k" to "potassium", "k+" to "potassium",
+        "na" to "sodium", "na+" to "sodium",
+        "creat" to "creatinine",
+        "hgb" to "hemoglobin", "hb" to "hemoglobin",
+        "hct" to "hematocrit",
+        "trop" to "troponin",
+        "plt" to "platelets"
+    )
+
+    private val INDIRECT_VITAL_ALIASES = mapOf(
+        "bp" to "blood pressure", "pressure" to "blood pressure",
+        "hr" to "heart rate", "pulse" to "heart rate",
+        "temp" to "temperature",
+        "rr" to "respiratory rate",
+        "spo2" to "oxygen saturation", "o2 sat" to "oxygen saturation", "sat" to "oxygen saturation",
+        "wt" to "weight",
+        "ht" to "height"
+    )
 
     // ============ Vuzix HUD Methods (Feature #73) ============
 
@@ -16872,6 +17458,285 @@ SOFA Score: [X]
         isCopilotActive = false
         speakFeedback("Copilot conversation cleared.")
         Log.d(TAG, "Copilot history cleared")
+    }
+
+    // ============ Multi-Turn Clinical Reasoning (Feature #95 - Jarvis Wave 1) ============
+
+    /**
+     * Send question to copilot in teaching mode.
+     * Provides clinical education-style explanations with reasoning steps.
+     */
+    private fun sendCopilotTeachingMode(question: String) {
+        if (question.isBlank()) {
+            speakFeedback("Please ask what you'd like explained.")
+            return
+        }
+
+        lastCopilotQuestion = question
+        speakFeedback("Let me explain...")
+
+        // Build patient context if available
+        val patientContext = buildPatientContextJson()
+
+        // Build conversation history
+        val historyArray = org.json.JSONArray()
+        copilotConversationHistory.takeLast(6).forEach { (role, content) ->
+            historyArray.put(JSONObject().apply {
+                put("role", role)
+                put("content", content)
+            })
+        }
+
+        // Build request for teaching mode
+        val requestBody = JSONObject().apply {
+            put("message", question)
+            if (patientContext != null) put("patient_context", patientContext)
+            put("conversation_history", historyArray)
+        }
+
+        // POST to teach endpoint
+        val url = "$EHR_PROXY_URL/api/v1/copilot/teach"
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("X-Device-ID", deviceId)
+            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Teaching mode request failed", e)
+                    speakFeedback("Sorry, couldn't get the explanation. Try again.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val json = JSONObject(body)
+                            runOnUiThread { handleMultiTurnResponse(json, "teaching") }
+                        }
+                    } else {
+                        runOnUiThread {
+                            speakFeedback("Teaching mode unavailable. Try again.")
+                        }
+                    }
+                }
+            }
+        })
+
+        Log.d(TAG, "Teaching mode question sent: $question")
+    }
+
+    /**
+     * Send question to copilot for a second opinion / challenge.
+     * Provides alternative diagnoses and considerations.
+     */
+    private fun sendCopilotSecondOpinion(question: String) {
+        if (question.isBlank()) {
+            speakFeedback("Please describe what you'd like a second opinion on.")
+            return
+        }
+
+        lastCopilotQuestion = question
+        speakFeedback("Getting second opinion...")
+
+        // Build patient context if available
+        val patientContext = buildPatientContextJson()
+
+        // Build conversation history
+        val historyArray = org.json.JSONArray()
+        copilotConversationHistory.takeLast(6).forEach { (role, content) ->
+            historyArray.put(JSONObject().apply {
+                put("role", role)
+                put("content", content)
+            })
+        }
+
+        // Build request for challenge mode
+        val requestBody = JSONObject().apply {
+            put("message", question)
+            if (patientContext != null) put("patient_context", patientContext)
+            put("conversation_history", historyArray)
+        }
+
+        // POST to challenge endpoint
+        val url = "$EHR_PROXY_URL/api/v1/copilot/challenge"
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("X-Device-ID", deviceId)
+            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Second opinion request failed", e)
+                    speakFeedback("Sorry, couldn't get second opinion. Try again.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val json = JSONObject(body)
+                            runOnUiThread { handleMultiTurnResponse(json, "second_opinion") }
+                        }
+                    } else {
+                        runOnUiThread {
+                            speakFeedback("Second opinion unavailable. Try again.")
+                        }
+                    }
+                }
+            }
+        })
+
+        Log.d(TAG, "Second opinion question sent: $question")
+    }
+
+    /**
+     * Ask copilot for clarifying questions.
+     * Returns questions to help refine the clinical picture.
+     */
+    private fun sendCopilotClarifyMode(question: String) {
+        speakFeedback("Considering what to ask...")
+
+        // Build patient context if available
+        val patientContext = buildPatientContextJson()
+
+        // Build conversation history
+        val historyArray = org.json.JSONArray()
+        copilotConversationHistory.takeLast(6).forEach { (role, content) ->
+            historyArray.put(JSONObject().apply {
+                put("role", role)
+                put("content", content)
+            })
+        }
+
+        // Build request for clarify mode
+        val requestBody = JSONObject().apply {
+            put("message", question.ifBlank { "What additional information would help clarify this case?" })
+            put("mode", "clarify")
+            if (patientContext != null) put("patient_context", patientContext)
+            put("conversation_history", historyArray)
+        }
+
+        // POST to reason endpoint with clarify mode
+        val url = "$EHR_PROXY_URL/api/v1/copilot/reason"
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("X-Device-ID", deviceId)
+            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Clarify mode request failed", e)
+                    speakFeedback("Sorry, couldn't get clarifying questions. Try again.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val json = JSONObject(body)
+                            runOnUiThread { handleMultiTurnResponse(json, "clarify") }
+                        }
+                    } else {
+                        runOnUiThread {
+                            speakFeedback("Clarify mode unavailable. Try again.")
+                        }
+                    }
+                }
+            }
+        })
+
+        Log.d(TAG, "Clarify mode question sent: $question")
+    }
+
+    /**
+     * Build patient context JSON for multi-turn reasoning requests.
+     */
+    private fun buildPatientContextJson(): JSONObject? {
+        return if (currentPatientData != null) {
+            JSONObject().apply {
+                put("name", currentPatientData?.optString("name", "Unknown"))
+                put("age", currentPatientData?.optString("age", ""))
+                put("gender", currentPatientData?.optString("gender", ""))
+                put("chief_complaint", extractedEntities.chiefComplaints.firstOrNull() ?: "")
+                put("conditions", currentPatientData?.optJSONArray("conditions")?.let { arr ->
+                    (0 until arr.length()).map { arr.getJSONObject(it).optString("display", "") }.take(5).joinToString(", ")
+                } ?: "")
+                put("medications", currentPatientData?.optJSONArray("medications")?.let { arr ->
+                    (0 until arr.length()).map { arr.getJSONObject(it).optString("display", "") }.take(5).joinToString(", ")
+                } ?: "")
+                put("allergies", currentPatientData?.optJSONArray("allergies")?.let { arr ->
+                    (0 until arr.length()).map { arr.getJSONObject(it).optString("display", "") }.take(5).joinToString(", ")
+                } ?: "")
+            }
+        } else null
+    }
+
+    /**
+     * Handle response from multi-turn reasoning endpoints.
+     */
+    private fun handleMultiTurnResponse(response: JSONObject, mode: String) {
+        val responseText = response.optString("response", "")
+        val reasoning = response.optString("reasoning", "")
+        val alternativesArray = response.optJSONArray("alternatives")
+        val questionsArray = response.optJSONArray("clarifying_questions")
+
+        if (responseText.isBlank()) {
+            speakFeedback("No response received.")
+            return
+        }
+
+        // Add to conversation history
+        copilotConversationHistory.add(Pair("user", lastCopilotQuestion))
+        copilotConversationHistory.add(Pair("assistant", responseText))
+
+        // Trim history to last 10 exchanges
+        while (copilotConversationHistory.size > 20) {
+            copilotConversationHistory.removeAt(0)
+        }
+
+        // Speak the main response
+        speakFeedback(responseText)
+
+        // For teaching mode, offer to explain reasoning
+        if (mode == "teaching" && reasoning.isNotBlank()) {
+            android.os.Handler(mainLooper).postDelayed({
+                speakFeedback("Say 'tell me more' for the full reasoning.")
+            }, 4000)
+        }
+
+        // For second opinion, mention alternatives if present
+        if (mode == "second_opinion" && alternativesArray != null && alternativesArray.length() > 0) {
+            val altCount = alternativesArray.length()
+            android.os.Handler(mainLooper).postDelayed({
+                speakFeedback("$altCount alternative diagnoses to consider. Say 'tell me more' for details.")
+            }, 4000)
+        }
+
+        // For clarify mode, speak the questions
+        if (mode == "clarify" && questionsArray != null && questionsArray.length() > 0) {
+            val questions = (0 until questionsArray.length()).map { questionsArray.getString(it) }
+            android.os.Handler(mainLooper).postDelayed({
+                speakFeedback("Questions to consider: ${questions.take(3).joinToString(". ")}")
+            }, 4000)
+        }
+
+        Log.d(TAG, "Multi-turn response handled (mode=$mode): ${responseText.take(100)}...")
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -22827,6 +23692,26 @@ SOFA Score: [X]
                 // Clear copilot history
                 clearCopilotHistory()
             }
+            // Multi-Turn Clinical Reasoning (Feature #95 - Jarvis Wave 1)
+            lower.contains("explain why") || lower.contains("why do you think") ||
+            lower.contains("teach me") || lower.contains("explain reasoning") -> {
+                // Teaching mode - explain clinical reasoning
+                val question = transcript.trim()
+                sendCopilotTeachingMode(question)
+            }
+            lower.contains("second opinion") || lower.contains("what else could it be") ||
+            lower.contains("challenge") || lower.contains("other possibilities") ||
+            lower.contains("what am i missing") -> {
+                // Second opinion mode - challenge thinking
+                val question = transcript.trim()
+                sendCopilotSecondOpinion(question)
+            }
+            lower.contains("what questions") || lower.contains("clarify") ||
+            lower.contains("what should i ask") -> {
+                // Clarify mode - AI asks clarifying questions
+                val question = lastCopilotQuestion.ifEmpty { "What additional information would help?" }
+                sendCopilotClarifyMode(question)
+            }
             // ═══ IMAGE ANALYSIS COMMANDS (Feature #70) ═══
             lower.contains("take photo") || lower.contains("capture image") ||
             lower.contains("take picture") || lower.contains("take image") -> {
@@ -23548,6 +24433,53 @@ SOFA Score: [X]
             lower.contains("show summary") || lower.contains("overview") -> {
                 // Show visual summary (no TTS)
                 showQuickPatientSummary()
+            }
+            // Pre-Visit Prep Alert (Feature #92 - Jarvis Wave 1)
+            lower.contains("prep me") || lower.contains("patient prep") || lower.contains("pre-visit prep") ||
+            lower.contains("pre visit prep") || lower.contains("heads up") || lower.contains("what should i know") -> {
+                // Proactive AI briefing with care gaps, critical values, and suggested actions
+                val patientId = currentPatientData?.optString("id") ?: currentPatientData?.optString("patient_id")
+                if (patientId != null && patientId.isNotEmpty()) {
+                    fetchPreVisitPrep(patientId)
+                } else {
+                    speakFeedback("No patient loaded")
+                }
+            }
+            // Chief Complaint Workflows (Feature #94 - Jarvis Wave 1)
+            lower.contains("suggest workup") || lower.contains("what workup") || lower.contains("which workup") ||
+            lower.contains("recommended workup") || lower.contains("workflow") || lower.contains("work up") -> {
+                // Detect chief complaint and suggest relevant workups
+                val patientId = currentPatientData?.optString("id") ?: currentPatientData?.optString("patient_id")
+                if (patientId != null && patientId.isNotEmpty()) {
+                    fetchChiefComplaintWorkflow(patientId, null)
+                } else {
+                    speakFeedback("No patient loaded. Load a patient to get workflow suggestions.")
+                }
+            }
+            lower.contains("workup for") || lower.contains("orders for") -> {
+                // Suggest workup based on free text after "workup for" or "orders for"
+                val afterFor = lower.substringAfter("for").trim()
+                if (afterFor.isNotEmpty()) {
+                    suggestWorkflowFromText(afterFor)
+                } else {
+                    speakFeedback("Say 'workup for' followed by the chief complaint, like 'workup for chest pain'")
+                }
+            }
+            // Indirect Commands (Feature #96 - Jarvis Wave 1)
+            // Natural language queries like "check that potassium", "what's his blood pressure"
+            (lower.startsWith("check") || lower.startsWith("what") || lower.startsWith("pull") ||
+             lower.startsWith("get") || lower.startsWith("find") || lower.startsWith("look")) &&
+            (lower.contains("potassium") || lower.contains("sodium") || lower.contains("creatinine") ||
+             lower.contains("hemoglobin") || lower.contains("hgb") || lower.contains("glucose") ||
+             lower.contains("a1c") || lower.contains("troponin") || lower.contains("bnp") ||
+             lower.contains("blood pressure") || lower.contains("bp") || lower.contains("pulse") ||
+             lower.contains("heart rate") || lower.contains("temp") || lower.contains("o2 sat") ||
+             lower.contains("spo2") || lower.contains("cbc") || lower.contains("bmp") ||
+             lower.contains("calcium") || lower.contains("magnesium") || lower.contains("inr") ||
+             lower.contains("wbc") || lower.contains("platelets") || lower.contains("cholesterol") ||
+             lower.contains("lipid") || lower.contains("thyroid") || lower.contains("tsh")) -> {
+                // Parse natural language and execute inferred action
+                parseAndExecuteIndirectCommand(transcript)
             }
             // SBAR Handoff report commands
             lower.contains("handoff report") || lower.contains("hand off report") || lower.contains("sbar report") ||
