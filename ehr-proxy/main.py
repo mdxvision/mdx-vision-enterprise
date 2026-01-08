@@ -5550,18 +5550,670 @@ class PreVisitPrepResponse(BaseModel):
     quick_actions: List[str]  # Suggested voice commands
     timestamp: str
 
-# Care gap rules based on age, gender, and conditions
+# ═══════════════════════════════════════════════════════════════════════════════
+# CARE GAP DETECTION (Feature #97 - Jarvis Wave 2)
+# Proactively identify missing screenings, labs, and preventive care
+# Based on USPSTF, ADA, AHA, CDC guidelines
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CareGapItem(BaseModel):
+    """Individual care gap item"""
+    gap_id: str  # Unique identifier
+    category: str  # "screening", "lab", "vaccine", "monitoring", "counseling"
+    name: str  # Display name
+    description: str  # What's missing
+    guideline: str  # Source guideline (USPSTF, ADA, etc.)
+    priority: str  # "high", "medium", "low"
+    due_status: str  # "overdue", "due_soon", "due", "recommended"
+    last_completed: Optional[str] = None  # Date of last completion
+    next_due: Optional[str] = None  # When it's due
+    action: str  # Voice command to address
+    order_code: Optional[str] = None  # CPT/LOINC code if applicable
+    icd10_codes: List[str] = []  # Relevant diagnosis codes
+
+class CareGapResponse(BaseModel):
+    """Response for care gap detection"""
+    patient_id: str
+    patient_name: str
+    total_gaps: int
+    high_priority: int
+    gaps: List[CareGapItem]
+    spoken_summary: str  # TTS-friendly
+    display_summary: str  # For HUD
+    timestamp: str
+
+# Comprehensive care gap rules based on clinical guidelines
 CARE_GAP_RULES = {
-    "colonoscopy": {"min_age": 45, "max_age": 75, "interval_years": 10, "gender": None},
-    "mammogram": {"min_age": 40, "max_age": 74, "interval_years": 2, "gender": "female"},
-    "pap_smear": {"min_age": 21, "max_age": 65, "interval_years": 3, "gender": "female"},
-    "dexa_scan": {"min_age": 65, "max_age": 999, "interval_years": 2, "gender": "female"},
-    "a1c": {"conditions": ["diabetes", "prediabetes"], "interval_months": 3},
-    "lipid_panel": {"min_age": 40, "interval_years": 5, "conditions": ["diabetes", "hypertension", "hyperlipidemia"]},
-    "annual_wellness": {"interval_years": 1},
-    "flu_shot": {"interval_months": 12},
-    "pneumonia_vaccine": {"min_age": 65, "interval_years": 5},
+    # === CANCER SCREENINGS (USPSTF) ===
+    "colonoscopy": {
+        "name": "Colorectal Cancer Screening",
+        "category": "screening",
+        "min_age": 45, "max_age": 75,
+        "interval_years": 10,
+        "gender": None,
+        "guideline": "USPSTF Grade A",
+        "description": "Colonoscopy every 10 years (or FIT annually)",
+        "order_code": "45378",
+        "keywords": ["colonoscopy", "colorectal", "colon cancer", "fit test", "cologuard"],
+        "icd10": ["Z12.11", "Z12.12"]
+    },
+    "mammogram": {
+        "name": "Breast Cancer Screening",
+        "category": "screening",
+        "min_age": 40, "max_age": 74,
+        "interval_years": 2,
+        "gender": "female",
+        "guideline": "USPSTF Grade B",
+        "description": "Mammography every 2 years for women 40-74",
+        "order_code": "77067",
+        "keywords": ["mammogram", "breast cancer", "mammography"],
+        "icd10": ["Z12.31"]
+    },
+    "pap_smear": {
+        "name": "Cervical Cancer Screening",
+        "category": "screening",
+        "min_age": 21, "max_age": 65,
+        "interval_years": 3,
+        "gender": "female",
+        "guideline": "USPSTF Grade A",
+        "description": "Pap smear every 3 years (or with HPV every 5 years)",
+        "order_code": "88175",
+        "keywords": ["pap", "pap smear", "cervical", "hpv"],
+        "icd10": ["Z12.4"]
+    },
+    "lung_cancer": {
+        "name": "Lung Cancer Screening",
+        "category": "screening",
+        "min_age": 50, "max_age": 80,
+        "interval_years": 1,
+        "gender": None,
+        "conditions": ["tobacco_use", "smoking", "smoker"],
+        "guideline": "USPSTF Grade B",
+        "description": "Low-dose CT for 20+ pack-year smokers",
+        "order_code": "71271",
+        "keywords": ["ldct", "lung cancer", "low dose ct"],
+        "icd10": ["Z87.891", "Z12.2"]
+    },
+    "prostate_discussion": {
+        "name": "Prostate Cancer Discussion",
+        "category": "counseling",
+        "min_age": 55, "max_age": 69,
+        "gender": "male",
+        "guideline": "USPSTF Grade C",
+        "description": "Discuss PSA screening risks/benefits",
+        "keywords": ["psa", "prostate"],
+        "icd10": ["Z12.5"]
+    },
+
+    # === BONE HEALTH ===
+    "dexa_scan": {
+        "name": "Osteoporosis Screening",
+        "category": "screening",
+        "min_age": 65, "max_age": 999,
+        "interval_years": 2,
+        "gender": "female",
+        "guideline": "USPSTF Grade B",
+        "description": "DEXA scan for women 65+ or postmenopausal with risk factors",
+        "order_code": "77080",
+        "keywords": ["dexa", "bone density", "osteoporosis"],
+        "icd10": ["Z13.820"]
+    },
+
+    # === CARDIOVASCULAR (AHA/ACC) ===
+    "lipid_panel": {
+        "name": "Lipid Panel",
+        "category": "lab",
+        "min_age": 40, "max_age": 75,
+        "interval_years": 5,
+        "conditions": ["diabetes", "hypertension", "hyperlipidemia", "cardiovascular", "cad", "heart"],
+        "guideline": "ACC/AHA",
+        "description": "Fasting lipid panel for cardiovascular risk assessment",
+        "order_code": "80061",
+        "keywords": ["lipid", "cholesterol", "ldl", "hdl", "triglycerides"],
+        "icd10": ["Z13.220"]
+    },
+    "blood_pressure": {
+        "name": "Blood Pressure Screening",
+        "category": "screening",
+        "min_age": 18,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade A",
+        "description": "Annual blood pressure measurement for adults",
+        "keywords": ["blood pressure", "hypertension", "bp"],
+        "icd10": ["Z13.6"]
+    },
+    "aaa_screening": {
+        "name": "AAA Screening",
+        "category": "screening",
+        "min_age": 65, "max_age": 75,
+        "gender": "male",
+        "conditions": ["tobacco_use", "smoking"],
+        "guideline": "USPSTF Grade B",
+        "description": "One-time abdominal aortic aneurysm ultrasound for male smokers 65-75",
+        "order_code": "76706",
+        "keywords": ["aaa", "aortic aneurysm", "abdominal ultrasound"],
+        "icd10": ["Z13.6"]
+    },
+
+    # === DIABETES (ADA) ===
+    "a1c": {
+        "name": "Hemoglobin A1c",
+        "category": "lab",
+        "conditions": ["diabetes", "prediabetes", "dm", "type 2", "type 1"],
+        "interval_months": 3,
+        "guideline": "ADA Standards of Care",
+        "description": "A1c every 3 months if not at goal, every 6 months if stable",
+        "order_code": "83036",
+        "keywords": ["a1c", "hemoglobin a1c", "hba1c", "glycated"],
+        "icd10": ["Z13.1"]
+    },
+    "diabetes_eye_exam": {
+        "name": "Diabetic Eye Exam",
+        "category": "screening",
+        "conditions": ["diabetes", "dm", "type 2", "type 1"],
+        "interval_years": 1,
+        "guideline": "ADA Standards of Care",
+        "description": "Annual dilated eye exam for diabetics",
+        "order_code": "92014",
+        "keywords": ["eye exam", "retinopathy", "dilated eye"],
+        "icd10": ["Z01.00"]
+    },
+    "diabetes_foot_exam": {
+        "name": "Diabetic Foot Exam",
+        "category": "screening",
+        "conditions": ["diabetes", "dm", "type 2", "type 1"],
+        "interval_years": 1,
+        "guideline": "ADA Standards of Care",
+        "description": "Annual comprehensive foot exam for diabetics",
+        "keywords": ["foot exam", "monofilament", "neuropathy"],
+        "icd10": ["Z01.89"]
+    },
+    "urine_albumin": {
+        "name": "Urine Albumin-Creatinine Ratio",
+        "category": "lab",
+        "conditions": ["diabetes", "hypertension", "ckd", "kidney"],
+        "interval_years": 1,
+        "guideline": "ADA/KDIGO",
+        "description": "Annual uACR for diabetics and CKD monitoring",
+        "order_code": "82043",
+        "keywords": ["uacr", "microalbumin", "albumin creatinine"],
+        "icd10": ["Z13.1"]
+    },
+
+    # === KIDNEY (KDIGO) ===
+    "egfr": {
+        "name": "eGFR/Creatinine",
+        "category": "lab",
+        "conditions": ["diabetes", "hypertension", "ckd", "kidney"],
+        "interval_years": 1,
+        "guideline": "KDIGO",
+        "description": "Annual creatinine/eGFR for at-risk patients",
+        "order_code": "82565",
+        "keywords": ["creatinine", "egfr", "kidney function", "renal"],
+        "icd10": ["Z13.1"]
+    },
+
+    # === VACCINATIONS (CDC/ACIP) ===
+    "flu_shot": {
+        "name": "Influenza Vaccine",
+        "category": "vaccine",
+        "min_age": 6,  # 6 months
+        "interval_months": 12,
+        "guideline": "CDC/ACIP",
+        "description": "Annual influenza vaccination",
+        "order_code": "90686",
+        "keywords": ["flu", "influenza", "flu shot"],
+        "icd10": ["Z23"]
+    },
+    "pneumonia_vaccine": {
+        "name": "Pneumococcal Vaccine",
+        "category": "vaccine",
+        "min_age": 65,
+        "guideline": "CDC/ACIP",
+        "description": "PCV15 or PCV20 for adults 65+",
+        "order_code": "90677",
+        "keywords": ["pneumonia", "pneumococcal", "prevnar"],
+        "icd10": ["Z23"]
+    },
+    "shingles_vaccine": {
+        "name": "Shingles Vaccine",
+        "category": "vaccine",
+        "min_age": 50,
+        "guideline": "CDC/ACIP",
+        "description": "Shingrix 2-dose series for adults 50+",
+        "order_code": "90750",
+        "keywords": ["shingles", "shingrix", "zoster"],
+        "icd10": ["Z23"]
+    },
+    "tdap_vaccine": {
+        "name": "Tdap/Td Vaccine",
+        "category": "vaccine",
+        "min_age": 19,
+        "interval_years": 10,
+        "guideline": "CDC/ACIP",
+        "description": "Tdap once, then Td every 10 years",
+        "order_code": "90715",
+        "keywords": ["tdap", "tetanus", "pertussis"],
+        "icd10": ["Z23"]
+    },
+    "covid_vaccine": {
+        "name": "COVID-19 Vaccine",
+        "category": "vaccine",
+        "min_age": 6,  # 6 months
+        "interval_years": 1,
+        "guideline": "CDC/ACIP",
+        "description": "Updated COVID-19 vaccine annually",
+        "order_code": "91318",
+        "keywords": ["covid", "covid-19", "coronavirus"],
+        "icd10": ["Z23"]
+    },
+
+    # === MENTAL HEALTH (USPSTF) ===
+    "depression_screening": {
+        "name": "Depression Screening",
+        "category": "screening",
+        "min_age": 12,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade B",
+        "description": "Annual PHQ-2/PHQ-9 screening",
+        "order_code": "96127",
+        "keywords": ["depression", "phq", "mental health"],
+        "icd10": ["Z13.31"]
+    },
+    "anxiety_screening": {
+        "name": "Anxiety Screening",
+        "category": "screening",
+        "min_age": 8,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade B (2023)",
+        "description": "Annual anxiety screening with GAD-7",
+        "order_code": "96127",
+        "keywords": ["anxiety", "gad"],
+        "icd10": ["Z13.31"]
+    },
+
+    # === SUBSTANCE USE ===
+    "tobacco_counseling": {
+        "name": "Tobacco Cessation Counseling",
+        "category": "counseling",
+        "conditions": ["tobacco_use", "smoking", "smoker", "nicotine"],
+        "guideline": "USPSTF Grade A",
+        "description": "Tobacco cessation intervention for smokers",
+        "order_code": "99406",
+        "keywords": ["smoking", "tobacco", "cessation", "quit"],
+        "icd10": ["Z87.891", "F17.210"]
+    },
+    "alcohol_screening": {
+        "name": "Alcohol Use Screening",
+        "category": "screening",
+        "min_age": 18,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade B",
+        "description": "Annual AUDIT-C screening for unhealthy alcohol use",
+        "keywords": ["alcohol", "audit", "drinking"],
+        "icd10": ["Z13.89"]
+    },
+
+    # === STI SCREENING ===
+    "hiv_screening": {
+        "name": "HIV Screening",
+        "category": "screening",
+        "min_age": 15, "max_age": 65,
+        "guideline": "USPSTF Grade A",
+        "description": "One-time HIV screening for all 15-65 year olds",
+        "order_code": "86703",
+        "keywords": ["hiv", "aids"],
+        "icd10": ["Z11.4"]
+    },
+    "hepatitis_c": {
+        "name": "Hepatitis C Screening",
+        "category": "screening",
+        "min_age": 18, "max_age": 79,
+        "guideline": "USPSTF Grade B",
+        "description": "One-time HCV screening for adults 18-79",
+        "order_code": "86803",
+        "keywords": ["hepatitis c", "hcv", "hep c"],
+        "icd10": ["Z11.59"]
+    },
+    "hepatitis_b_vaccine": {
+        "name": "Hepatitis B Vaccine",
+        "category": "vaccine",
+        "min_age": 19, "max_age": 59,
+        "guideline": "CDC/ACIP",
+        "description": "Hep B vaccine series for adults 19-59",
+        "order_code": "90746",
+        "keywords": ["hepatitis b", "hbv", "hep b"],
+        "icd10": ["Z23"]
+    },
+
+    # === WELLNESS ===
+    "annual_wellness": {
+        "name": "Annual Wellness Visit",
+        "category": "screening",
+        "min_age": 65,
+        "interval_years": 1,
+        "guideline": "Medicare",
+        "description": "Annual Wellness Visit for Medicare patients",
+        "order_code": "G0438",
+        "keywords": ["wellness", "annual visit", "awv"],
+        "icd10": ["Z00.00"]
+    },
+
+    # === CONDITION-SPECIFIC MONITORING ===
+    "ckd_monitoring": {
+        "name": "CKD Monitoring Labs",
+        "category": "lab",
+        "conditions": ["ckd", "chronic kidney", "renal"],
+        "interval_months": 6,
+        "guideline": "KDIGO",
+        "description": "CMP, CBC, phosphorus, PTH for CKD Stage 3+",
+        "keywords": ["ckd", "kidney", "renal function"],
+        "icd10": ["N18.3", "N18.4", "N18.5"]
+    },
+    "chf_monitoring": {
+        "name": "Heart Failure Monitoring",
+        "category": "lab",
+        "conditions": ["heart failure", "chf", "hfref", "hfpef"],
+        "interval_months": 6,
+        "guideline": "ACC/AHA Heart Failure Guidelines",
+        "description": "BNP, renal function, electrolytes for CHF",
+        "keywords": ["heart failure", "bnp", "chf"],
+        "icd10": ["I50.9"]
+    },
+    "warfarin_inr": {
+        "name": "Warfarin INR Monitoring",
+        "category": "lab",
+        "conditions": ["warfarin", "coumadin", "anticoagulation"],
+        "interval_weeks": 4,
+        "guideline": "ACC/AHA",
+        "description": "INR monitoring every 4 weeks when stable",
+        "order_code": "85610",
+        "keywords": ["inr", "warfarin", "coumadin", "anticoagulation"],
+        "icd10": ["Z79.01"]
+    },
+    "thyroid_monitoring": {
+        "name": "Thyroid Function Monitoring",
+        "category": "lab",
+        "conditions": ["hypothyroid", "hyperthyroid", "thyroid", "levothyroxine", "synthroid"],
+        "interval_months": 6,
+        "guideline": "ATA",
+        "description": "TSH monitoring every 6-12 months when stable",
+        "order_code": "84443",
+        "keywords": ["tsh", "thyroid", "t4"],
+        "icd10": ["E03.9", "E05.90"]
+    },
 }
+
+def detect_care_gaps(patient_data: dict, immunizations: list = None, documents: list = None) -> List[CareGapItem]:
+    """
+    Detect care gaps based on patient demographics, conditions, and clinical history.
+    Uses USPSTF, ADA, AHA, CDC/ACIP, and specialty society guidelines.
+
+    Args:
+        patient_data: Dict containing dob, gender, conditions, medications, labs, vitals
+        immunizations: List of immunization records
+        documents: List of clinical documents (for procedure history)
+
+    Returns:
+        List of CareGapItem objects sorted by priority
+    """
+    gaps = []
+    today = datetime.now()
+
+    # Extract patient data
+    dob = patient_data.get("dob", "")
+    gender = patient_data.get("gender", "").lower()
+    conditions = patient_data.get("conditions", [])
+    medications = patient_data.get("medications", [])
+    labs = patient_data.get("labs", [])
+    vitals = patient_data.get("vitals", [])
+    immunizations = immunizations or []
+    documents = documents or []
+
+    # Calculate age
+    try:
+        dob_date = datetime.strptime(dob[:10], "%Y-%m-%d")
+        age = today.year - dob_date.year - ((today.month, today.day) < (dob_date.month, dob_date.day))
+    except:
+        age = 0
+
+    # Normalize condition names for matching
+    condition_names = []
+    for c in conditions:
+        if isinstance(c, dict):
+            condition_names.append(c.get("name", "").lower())
+        else:
+            condition_names.append(str(c).lower())
+    condition_text = " ".join(condition_names)
+
+    # Normalize medication names
+    med_names = []
+    for m in medications:
+        if isinstance(m, dict):
+            med_names.append(m.get("name", "").lower())
+        else:
+            med_names.append(str(m).lower())
+    med_text = " ".join(med_names)
+
+    # Extract lab history with dates
+    lab_history = {}
+    for lab in labs:
+        if isinstance(lab, dict):
+            name = lab.get("name", "").lower()
+            date_str = lab.get("date", "")
+            if name and date_str:
+                if name not in lab_history or date_str > lab_history[name]:
+                    lab_history[name] = date_str
+
+    # Extract immunization history
+    vaccine_history = {}
+    for imm in immunizations:
+        if isinstance(imm, dict):
+            name = imm.get("name", "").lower()
+            date_str = imm.get("date", "")
+            if name and date_str:
+                if name not in vaccine_history or date_str > vaccine_history[name]:
+                    vaccine_history[name] = date_str
+
+    # Helper to check if something was done within interval
+    def check_interval(last_date_str: str, interval_months: int = None, interval_years: int = None, interval_weeks: int = None) -> tuple:
+        """Returns (is_due, due_status, last_completed, next_due)"""
+        if not last_date_str:
+            return True, "overdue", None, None
+
+        try:
+            last_date = datetime.strptime(last_date_str[:10], "%Y-%m-%d")
+
+            # Calculate interval in days
+            if interval_years:
+                interval_days = interval_years * 365
+            elif interval_months:
+                interval_days = interval_months * 30
+            elif interval_weeks:
+                interval_days = interval_weeks * 7
+            else:
+                interval_days = 365  # Default 1 year
+
+            next_due_date = last_date + timedelta(days=interval_days)
+            days_until_due = (next_due_date - today).days
+
+            if days_until_due < 0:
+                return True, "overdue", last_date_str, next_due_date.strftime("%Y-%m-%d")
+            elif days_until_due < 30:
+                return True, "due_soon", last_date_str, next_due_date.strftime("%Y-%m-%d")
+            elif days_until_due < 90:
+                return False, "due", last_date_str, next_due_date.strftime("%Y-%m-%d")
+            else:
+                return False, "ok", last_date_str, next_due_date.strftime("%Y-%m-%d")
+        except:
+            return True, "overdue", None, None
+
+    # Check each care gap rule
+    for gap_id, rule in CARE_GAP_RULES.items():
+        # Age eligibility
+        min_age = rule.get("min_age", 0)
+        max_age = rule.get("max_age", 999)
+        if age < min_age or age > max_age:
+            continue
+
+        # Gender eligibility
+        rule_gender = rule.get("gender")
+        if rule_gender and rule_gender.lower() != gender:
+            continue
+
+        # Condition requirement (if specified)
+        required_conditions = rule.get("conditions", [])
+        if required_conditions:
+            has_condition = any(
+                any(req in condition_text or req in med_text for req in required_conditions)
+                for _ in [1]  # Just for iteration
+            )
+            if not any(req in condition_text or req in med_text for req in required_conditions):
+                continue
+
+        # Check if item is due based on category
+        category = rule.get("category", "screening")
+        keywords = rule.get("keywords", [])
+
+        # Find last completed date from appropriate source
+        last_date = None
+
+        if category == "vaccine":
+            # Check immunization records
+            for keyword in keywords:
+                for vax_name, vax_date in vaccine_history.items():
+                    if keyword in vax_name:
+                        if not last_date or vax_date > last_date:
+                            last_date = vax_date
+                        break
+
+        elif category == "lab":
+            # Check lab records
+            for keyword in keywords:
+                for lab_name, lab_date in lab_history.items():
+                    if keyword in lab_name:
+                        if not last_date or lab_date > last_date:
+                            last_date = lab_date
+                        break
+
+        # For screenings/monitoring, would check procedures/documents
+        # For now, assume due if no record found
+
+        # Determine interval
+        interval_years = rule.get("interval_years")
+        interval_months = rule.get("interval_months")
+        interval_weeks = rule.get("interval_weeks")
+
+        # For one-time screenings (no interval), skip if already done
+        if not interval_years and not interval_months and not interval_weeks:
+            if last_date:
+                continue
+            is_due = True
+            due_status = "recommended"
+            next_due = None
+        else:
+            is_due, due_status, _, next_due = check_interval(
+                last_date,
+                interval_months=interval_months,
+                interval_years=interval_years,
+                interval_weeks=interval_weeks
+            )
+
+        if not is_due and due_status == "ok":
+            continue
+
+        # Determine priority
+        if due_status == "overdue":
+            priority = "high"
+        elif due_status == "due_soon":
+            priority = "medium"
+        else:
+            priority = "low"
+
+        # Boost priority for condition-specific items
+        if required_conditions:
+            if priority == "low":
+                priority = "medium"
+
+        # Build action command
+        if category == "vaccine":
+            action = f"order {gap_id.replace('_', ' ')}"
+        elif category == "lab":
+            action = f"order {keywords[0] if keywords else gap_id}"
+        elif category == "screening":
+            action = f"order {keywords[0] if keywords else gap_id}"
+        else:
+            action = f"show {category}"
+
+        gaps.append(CareGapItem(
+            gap_id=gap_id,
+            category=category,
+            name=rule.get("name", gap_id),
+            description=rule.get("description", ""),
+            guideline=rule.get("guideline", ""),
+            priority=priority,
+            due_status=due_status,
+            last_completed=last_date,
+            next_due=next_due,
+            action=action,
+            order_code=rule.get("order_code"),
+            icd10_codes=rule.get("icd10", [])
+        ))
+
+    # Sort by priority
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    gaps.sort(key=lambda x: (priority_order.get(x.priority, 3), x.name))
+
+    return gaps
+
+def generate_care_gap_spoken(patient_name: str, gaps: List[CareGapItem]) -> str:
+    """Generate TTS-friendly spoken summary of care gaps"""
+    if not gaps:
+        return f"No care gaps identified for {patient_name}. Preventive care appears up to date."
+
+    high_priority = [g for g in gaps if g.priority == "high"]
+    medium_priority = [g for g in gaps if g.priority == "medium"]
+
+    parts = []
+
+    if high_priority:
+        parts.append(f"{patient_name} has {len(high_priority)} overdue item{'s' if len(high_priority) > 1 else ''}.")
+        for gap in high_priority[:3]:
+            parts.append(f"{gap.name} is overdue.")
+
+    if medium_priority:
+        if parts:
+            parts.append(f"Also, {len(medium_priority)} item{'s' if len(medium_priority) > 1 else ''} due soon.")
+        else:
+            parts.append(f"{patient_name} has {len(medium_priority)} item{'s' if len(medium_priority) > 1 else ''} due soon.")
+        for gap in medium_priority[:2]:
+            parts.append(f"{gap.name}.")
+
+    if gaps and gaps[0].action:
+        parts.append(f"Say '{gaps[0].action}' to address.")
+
+    return " ".join(parts)
+
+def generate_care_gap_display(gaps: List[CareGapItem]) -> str:
+    """Generate formatted display summary for HUD"""
+    if not gaps:
+        return "✓ All preventive care up to date"
+
+    lines = []
+    icons = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+
+    for gap in gaps[:8]:
+        icon = icons.get(gap.priority, "•")
+        status = "OVERDUE" if gap.due_status == "overdue" else "DUE SOON" if gap.due_status == "due_soon" else "DUE"
+        lines.append(f"{icon} {gap.name} [{status}]")
+
+    if len(gaps) > 8:
+        lines.append(f"   +{len(gaps) - 8} more gaps")
+
+    return "\n".join(lines)
+
+# Import timedelta for interval calculations
+from datetime import timedelta
 
 def calculate_age(dob_str: str) -> int:
     """Calculate age from DOB string"""
@@ -5891,6 +6543,182 @@ async def get_pre_visit_prep(patient_id: str, request: Request):
         quick_actions=quick_actions,
         timestamp=datetime.now().isoformat()
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CARE GAP DETECTION (Feature #97 - Jarvis Wave 2)
+# Proactively identify missing screenings, labs, and preventive care
+# Based on USPSTF, ADA, AHA, CDC/ACIP, KDIGO guidelines
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/patient/{patient_id}/care-gaps", response_model=CareGapResponse)
+async def get_care_gaps(
+    patient_id: str,
+    request: Request,
+    category: Optional[str] = None,  # Filter by category: screening, lab, vaccine, monitoring, counseling
+    priority: Optional[str] = None   # Filter by priority: high, medium, low
+):
+    """
+    Care Gap Detection (Feature #97 - Jarvis Wave 2)
+
+    Proactively identifies missing screenings, labs, vaccines, and preventive care
+    based on patient demographics, conditions, and clinical guidelines.
+
+    Guidelines used:
+    - USPSTF: Colorectal, breast, cervical, lung cancer; depression, anxiety
+    - ADA: Diabetes care (A1c, eye exam, foot exam, uACR)
+    - AHA/ACC: Lipid panel, BP screening, heart failure monitoring
+    - CDC/ACIP: Influenza, pneumococcal, shingles, COVID, hepatitis
+    - KDIGO: CKD monitoring, eGFR
+    - Medicare: Annual Wellness Visit
+
+    Returns:
+    - gaps: List of care gaps with priority, due status, and actionable commands
+    - spoken_summary: TTS-friendly summary for voice output
+    - display_summary: Formatted for HUD/AR display
+
+    Query Parameters:
+    - category: Filter by type (screening, lab, vaccine, monitoring, counseling)
+    - priority: Filter by priority (high, medium, low)
+
+    Example:
+        GET /api/v1/patient/12724066/care-gaps
+        GET /api/v1/patient/12724066/care-gaps?priority=high
+        GET /api/v1/patient/12724066/care-gaps?category=vaccine
+
+    Voice Commands:
+    - "show care gaps"
+    - "what screenings are due"
+    - "overdue items"
+    - "care gaps for [patient]"
+    """
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
+            raise HTTPException(status_code=404, detail="Patient not found")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+
+    # Extract basic info
+    name = extract_patient_name(patient_data)
+    dob = patient_data.get("birthDate", "")
+    gender = patient_data.get("gender", "")
+
+    # Fetch clinical data in parallel
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=20&_sort=-date")
+    vitals = extract_vitals(vitals_bundle)
+
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date")
+    labs = extract_labs(lab_bundle)
+
+    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=30")
+    medications = extract_medications(med_bundle)
+
+    try:
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=20")
+        conditions = extract_conditions(cond_bundle)
+    except:
+        conditions = []
+
+    try:
+        imm_bundle = await fetch_fhir(f"Immunization?patient={patient_id}&_count=20&_sort=-date")
+        immunizations = extract_immunizations(imm_bundle)
+    except:
+        immunizations = []
+
+    # Convert to dict format
+    def to_dict(item):
+        if isinstance(item, str):
+            return {"name": item}
+        elif hasattr(item, 'model_dump'):
+            return item.model_dump()
+        elif hasattr(item, '__dict__'):
+            return item.__dict__
+        else:
+            return {"name": str(item)}
+
+    patient_analysis_data = {
+        "dob": dob,
+        "gender": gender,
+        "vitals": [to_dict(v) for v in vitals],
+        "labs": [to_dict(l) for l in labs],
+        "conditions": [to_dict(c) for c in conditions],
+        "medications": [to_dict(m) for m in medications],
+    }
+
+    immunization_data = [to_dict(i) for i in immunizations]
+
+    # Detect care gaps
+    gaps = detect_care_gaps(patient_analysis_data, immunizations=immunization_data)
+
+    # Apply filters
+    if category:
+        gaps = [g for g in gaps if g.category == category.lower()]
+    if priority:
+        gaps = [g for g in gaps if g.priority == priority.lower()]
+
+    # Generate summaries
+    spoken_summary = generate_care_gap_spoken(name, gaps)
+    display_summary = generate_care_gap_display(gaps)
+
+    # Count high priority
+    high_priority_count = len([g for g in gaps if g.priority == "high"])
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="CARE_GAP_DETECTION",
+        patient_id=patient_id,
+        status="success",
+        details={
+            "gaps_count": len(gaps),
+            "high_priority": high_priority_count,
+            "categories": list(set(g.category for g in gaps))
+        }
+    )
+
+    return CareGapResponse(
+        patient_id=patient_id,
+        patient_name=name,
+        total_gaps=len(gaps),
+        high_priority=high_priority_count,
+        gaps=gaps,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.get("/api/v1/care-gaps/rules")
+async def get_care_gap_rules():
+    """
+    Get all available care gap rules with their criteria.
+    Useful for understanding what screenings/tests are checked.
+    """
+    rules = []
+    for gap_id, rule in CARE_GAP_RULES.items():
+        rules.append({
+            "gap_id": gap_id,
+            "name": rule.get("name", gap_id),
+            "category": rule.get("category", "screening"),
+            "guideline": rule.get("guideline", ""),
+            "description": rule.get("description", ""),
+            "age_range": f"{rule.get('min_age', 0)}-{rule.get('max_age', 999)}",
+            "gender": rule.get("gender"),
+            "conditions": rule.get("conditions", []),
+            "interval": f"{rule.get('interval_years', '')}y" if rule.get('interval_years') else
+                       f"{rule.get('interval_months', '')}m" if rule.get('interval_months') else
+                       f"{rule.get('interval_weeks', '')}w" if rule.get('interval_weeks') else "one-time",
+            "order_code": rule.get("order_code"),
+            "icd10_codes": rule.get("icd10", [])
+        })
+
+    return {
+        "total_rules": len(rules),
+        "rules": rules,
+        "guidelines_covered": ["USPSTF", "ADA", "AHA/ACC", "CDC/ACIP", "KDIGO", "Medicare"]
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

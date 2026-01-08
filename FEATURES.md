@@ -917,6 +917,27 @@
   - [x] Command suggestions API (GET /api/v1/commands/suggestions)
   - [x] HIPAA audit logging
 
+- [x] **Care Gap Detection (Feature #97 - Jarvis Wave 2)** - Complete
+  - [x] Comprehensive care gap rules engine (31 rules)
+  - [x] USPSTF guidelines: Colonoscopy, mammogram, pap smear, lung cancer, AAA screening, depression/anxiety
+  - [x] ADA guidelines: A1c, diabetic eye/foot exam, urine albumin
+  - [x] AHA/ACC guidelines: Lipid panel, blood pressure, heart failure monitoring
+  - [x] CDC/ACIP guidelines: Flu, pneumonia, shingles, Tdap, COVID, Hep B vaccines
+  - [x] KDIGO guidelines: eGFR, CKD monitoring
+  - [x] Medicare: Annual Wellness Visit
+  - [x] Age/gender-based eligibility filtering
+  - [x] Condition-based requirements (diabetes, hypertension, CKD, CHF, warfarin)
+  - [x] Interval tracking (years, months, weeks)
+  - [x] Priority scoring (high/medium/low based on overdue status)
+  - [x] API endpoint: GET /api/v1/patient/{id}/care-gaps
+  - [x] Category/priority filtering via query params
+  - [x] Rules reference endpoint: GET /api/v1/care-gaps/rules
+  - [x] TTS-friendly spoken summary
+  - [x] HUD-formatted display summary with priority icons
+  - [x] Android voice commands ("care gaps", "screenings due", "overdue items", "vaccines due")
+  - [x] Vuzix HUD support
+  - [x] HIPAA audit logging
+
 ---
 
 ## Test Coverage

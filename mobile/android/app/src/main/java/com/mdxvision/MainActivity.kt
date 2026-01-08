@@ -24465,6 +24465,46 @@ SOFA Score: [X]
                     speakFeedback("Say 'workup for' followed by the chief complaint, like 'workup for chest pain'")
                 }
             }
+            // Care Gap Detection (Feature #97 - Jarvis Wave 2)
+            // Proactive identification of missing screenings, labs, and preventive care
+            lower.contains("care gap") || lower.contains("care gaps") || lower.contains("what's overdue") ||
+            lower.contains("screenings due") || lower.contains("overdue items") || lower.contains("preventive care") ||
+            lower.contains("what screenings") || lower.contains("missing screenings") || lower.contains("preventive") -> {
+                // Show all care gaps for the patient
+                val patientId = currentPatientData?.optString("id") ?: currentPatientData?.optString("patient_id")
+                if (patientId != null && patientId.isNotEmpty()) {
+                    fetchCareGaps(patientId, null, null)
+                } else {
+                    speakFeedback("No patient loaded. Load a patient to check care gaps.")
+                }
+            }
+            lower.contains("high priority") && (lower.contains("gap") || lower.contains("overdue")) -> {
+                // Show only high priority care gaps
+                val patientId = currentPatientData?.optString("id") ?: currentPatientData?.optString("patient_id")
+                if (patientId != null && patientId.isNotEmpty()) {
+                    fetchCareGaps(patientId, null, "high")
+                } else {
+                    speakFeedback("No patient loaded")
+                }
+            }
+            lower.contains("vaccines due") || lower.contains("missing vaccines") || lower.contains("vaccination status") -> {
+                // Show only vaccine care gaps
+                val patientId = currentPatientData?.optString("id") ?: currentPatientData?.optString("patient_id")
+                if (patientId != null && patientId.isNotEmpty()) {
+                    fetchCareGaps(patientId, "vaccine", null)
+                } else {
+                    speakFeedback("No patient loaded")
+                }
+            }
+            lower.contains("labs due") || lower.contains("overdue labs") -> {
+                // Show only lab care gaps
+                val patientId = currentPatientData?.optString("id") ?: currentPatientData?.optString("patient_id")
+                if (patientId != null && patientId.isNotEmpty()) {
+                    fetchCareGaps(patientId, "lab", null)
+                } else {
+                    speakFeedback("No patient loaded")
+                }
+            }
             // Indirect Commands (Feature #96 - Jarvis Wave 1)
             // Natural language queries like "check that potassium", "what's his blood pressure"
             (lower.startsWith("check") || lower.startsWith("what") || lower.startsWith("pull") ||
@@ -25331,6 +25371,150 @@ SOFA Score: [X]
                 Log.e(TAG, "Failed to fetch $section: ${e.message}")
             }
         }.start()
+    }
+
+    /**
+     * Care Gap Detection (Feature #97 - Jarvis Wave 2)
+     * Fetches care gaps (missing screenings, labs, vaccines) for the patient
+     * Based on USPSTF, ADA, AHA, CDC/ACIP, KDIGO guidelines
+     */
+    private fun fetchCareGaps(patientId: String, category: String?, priority: String?) {
+        statusText.text = "Checking care gaps..."
+        transcriptText.text = "Analyzing preventive care needs"
+
+        Thread {
+            try {
+                // Build URL with optional filters
+                var url = "$EHR_PROXY_URL/api/v1/patient/$patientId/care-gaps"
+                val params = mutableListOf<String>()
+                if (category != null) params.add("category=$category")
+                if (priority != null) params.add("priority=$priority")
+                if (params.isNotEmpty()) url += "?" + params.joinToString("&")
+
+                Log.d(TAG, "Fetching care gaps from: $url")
+
+                val request = Request.Builder()
+                    .url(url)
+                    .get()
+                    .build()
+
+                httpClient.newCall(request).enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        Log.e(TAG, "Care gaps fetch error: ${e.message}")
+                        runOnUiThread {
+                            statusText.text = "Failed to load care gaps"
+                            transcriptText.text = "Error: ${e.message}"
+                            speakFeedback("Failed to load care gaps")
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val body = response.body?.string()
+                        Log.d(TAG, "Care gaps response: $body")
+
+                        runOnUiThread {
+                            try {
+                                val data = JSONObject(body ?: "{}")
+                                displayCareGaps(data)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Parse error: ${e.message}")
+                                showDataOverlay("Error", "Parse error: ${e.message}")
+                            }
+                        }
+                    }
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch care gaps: ${e.message}")
+            }
+        }.start()
+    }
+
+    /**
+     * Display care gaps in overlay with priority indicators
+     */
+    private fun displayCareGaps(data: JSONObject) {
+        val patientName = data.optString("patient_name", "Patient")
+        val totalGaps = data.optInt("total_gaps", 0)
+        val highPriority = data.optInt("high_priority", 0)
+        val gaps = data.optJSONArray("gaps") ?: return
+
+        val sb = StringBuilder()
+
+        // Header with summary
+        sb.append("📋 CARE GAPS FOR $patientName\n")
+        sb.append("═".repeat(35) + "\n")
+
+        if (totalGaps == 0) {
+            sb.append("✅ All preventive care up to date!\n")
+            sb.append("No overdue screenings or vaccinations.\n")
+        } else {
+            sb.append("Total: $totalGaps gaps | High Priority: $highPriority\n")
+            sb.append("─".repeat(35) + "\n\n")
+
+            // Group by priority
+            val highItems = mutableListOf<JSONObject>()
+            val mediumItems = mutableListOf<JSONObject>()
+            val lowItems = mutableListOf<JSONObject>()
+
+            for (i in 0 until gaps.length()) {
+                val gap = gaps.getJSONObject(i)
+                when (gap.optString("priority", "low")) {
+                    "high" -> highItems.add(gap)
+                    "medium" -> mediumItems.add(gap)
+                    else -> lowItems.add(gap)
+                }
+            }
+
+            // High priority (overdue)
+            if (highItems.isNotEmpty()) {
+                sb.append("🔴 OVERDUE\n")
+                for (gap in highItems.take(5)) {
+                    val name = gap.optString("name", "Unknown")
+                    val guideline = gap.optString("guideline", "")
+                    val category = gap.optString("category", "").uppercase()
+                    sb.append("   • $name\n")
+                    sb.append("     $category | $guideline\n")
+                }
+                sb.append("\n")
+            }
+
+            // Medium priority (due soon)
+            if (mediumItems.isNotEmpty()) {
+                sb.append("🟡 DUE SOON\n")
+                for (gap in mediumItems.take(4)) {
+                    val name = gap.optString("name", "Unknown")
+                    sb.append("   • $name\n")
+                }
+                sb.append("\n")
+            }
+
+            // Low priority (recommended)
+            if (lowItems.isNotEmpty()) {
+                sb.append("🟢 RECOMMENDED\n")
+                for (gap in lowItems.take(3)) {
+                    val name = gap.optString("name", "Unknown")
+                    sb.append("   • $name\n")
+                }
+            }
+        }
+
+        // Show overlay
+        showDataOverlay("CARE GAPS", sb.toString())
+
+        // Speak summary
+        val spoken = data.optString("spoken_summary", "")
+        if (spoken.isNotEmpty() && totalGaps > 0) {
+            speakFeedback(spoken)
+        } else if (totalGaps == 0) {
+            speakFeedback("No care gaps found. Preventive care is up to date.")
+        }
+
+        // Update status
+        statusText.text = if (totalGaps > 0) {
+            "$totalGaps care gaps ($highPriority high priority)"
+        } else {
+            "✓ Preventive care up to date"
+        }
     }
 
     private fun formatVitals(patient: JSONObject): String {
