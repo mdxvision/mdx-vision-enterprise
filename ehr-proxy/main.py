@@ -309,9 +309,11 @@ EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "")
 EPIC_BASE_URL = os.getenv("EPIC_BASE_URL", "https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4")
 
 # Veradigm Configuration
-VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "")
-VERADIGM_CLIENT_SECRET = os.getenv("VERADIGM_CLIENT_SECRET", "")
+VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "11A47952-0F52-4936-A6A3-CF91FDFDDF14")
+VERADIGM_CLIENT_SECRET = os.getenv("VERADIGM_CLIENT_SECRET", "E32B4F39BA2F")
 VERADIGM_BASE_URL = os.getenv("VERADIGM_BASE_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/open/sandbox/r4")
+VERADIGM_AUTH_URL = os.getenv("VERADIGM_AUTH_URL", "https://open.allscripts.com/oauth2/authorize")
+VERADIGM_TOKEN_URL = os.getenv("VERADIGM_TOKEN_URL", "https://open.allscripts.com/oauth2/token")
 
 # athenahealth Configuration
 ATHENA_CLIENT_ID = os.getenv("ATHENA_CLIENT_ID", "")

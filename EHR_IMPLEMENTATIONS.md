@@ -13,7 +13,7 @@
 | **Epic** | ✅ READY | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | Configured | OAuth2 | Sandbox ready |
 | **athenahealth** | ✅ READY | `api.platform.athenahealth.com/fhir/r4` | Configured | OAuth2 | Self-service sandbox |
 | **NextGen** | ✅ READY | `fhir.nextgen.com/nge/fhir/r4` | Configured | OAuth2 | Developer program |
-| **Veradigm** | ⏳ PENDING | `fhir.fhirpoint.open.allscripts.com/...` | - | OAuth2 | Needs credentials |
+| **Veradigm** | ✅ READY | `fhir.fhirpoint.open.allscripts.com/...` | `11A47952-0F52...` | OAuth2 | Provider FHIR App |
 | **eClinicalWorks** | ✅ READY | `fhir.eclinicalworks.com/fhir/r4` | `576VCnKhhT1J...` | OAuth2 | Largest cloud EHR |
 | **MEDITECH** | ✅ READY | `greenfield.meditech.com/fhir/r4` | `MDxVision@269e...` | OAuth2 | Greenfield Workspace |
 | **DrChrono** | 📋 TODO | - | - | OAuth2 | Cloud EHR |
@@ -30,7 +30,7 @@
 # Environment Variables (lines ~302-332)
 CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "0fab9b20-adc8-4940-bbf6-82034d1d39ab")
 EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "")
-VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "")
+VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "11A47952-0F52-4936-A6A3-CF91FDFDDF14")
 ATHENA_CLIENT_ID = os.getenv("ATHENA_CLIENT_ID", "")
 NEXTGEN_CLIENT_ID = os.getenv("NEXTGEN_CLIENT_ID", "")
 MEDITECH_CLIENT_ID = os.getenv("MEDITECH_CLIENT_ID", "MDxVision@269e2312bf404c8293bcfffca232b729")
@@ -64,8 +64,8 @@ NEXTGEN_CLIENT_ID=
 NEXTGEN_CLIENT_SECRET=
 
 # Veradigm/Allscripts
-VERADIGM_CLIENT_ID=
-VERADIGM_CLIENT_SECRET=
+VERADIGM_CLIENT_ID=11A47952-0F52-4936-A6A3-CF91FDFDDF14
+VERADIGM_CLIENT_SECRET=E32B4F39BA2F
 
 # MEDITECH (Greenfield Workspace)
 MEDITECH_CLIENT_ID=MDxVision@269e2312bf404c8293bcfffca232b729
@@ -154,7 +154,7 @@ curl http://localhost:8002/api/v1/patient/{patient_id}?ehr=new_ehr
 - [x] Epic - Credentials in place
 - [x] athenahealth - Self-service sandbox
 - [x] NextGen - Developer program
-- [ ] Veradigm - Awaiting credentials
+- [x] Veradigm - Provider FHIR App configured
 - [x] eClinicalWorks - Registered and configured
 - [x] MEDITECH - Greenfield Workspace configured
 - [ ] DrChrono - Need to register
