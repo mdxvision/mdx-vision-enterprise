@@ -58,6 +58,15 @@ See [SALES_MATERIALS.md](SALES_MATERIALS.md) for complete index.
 | `GAP_CLOSURE_PLAN.md` | Competitive gap analysis |
 | `INTERNAL_COMPETITIVE_ANALYSIS.md` | Competitor analysis |
 | `INTERNATIONAL_EHR_EXPANSION.md` | International expansion strategy |
+| `PRICING.md` | **Pricing strategy, Redox costs, ROI calculations** |
+
+### EHR Integration Documents
+| File | Description |
+|------|-------------|
+| `EHR_IMPLEMENTATIONS.md` | Implementation status for all EHRs |
+| `EHR_ACCESS_GUIDE.md` | Detailed EHR registration instructions |
+| `EHR_AMBULATORY_RESEARCH.md` | DrChrono, Practice Fusion, CPSI research |
+| `EHR_AGGREGATOR_PLATFORMS.md` | Redox, Particle Health, Health Gorilla research |
 
 ### How to View HTML Decks
 ```bash
