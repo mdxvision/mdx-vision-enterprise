@@ -39,7 +39,7 @@
 | EHR | Status | Market Share | FHIR Base URL | Notes |
 |-----|--------|--------------|---------------|-------|
 | **athenahealth** | ✅ LIVE | ~15% | `api.platform.athenahealth.com/fhir/r4` | OAuth2 + FHIR R4 |
-| **eClinicalWorks** | ✅ READY | ~10% | `fhir.eclinicalworks.com/fhir/r4` | Largest cloud EHR |
+| **eClinicalWorks** | ✅ LIVE | ~10% | `fhir.eclinicalworks.com/fhir/r4` | OAuth2 + FHIR R4 |
 | **NextGen** | ✅ LIVE | ~10% | `fhir.nextgen.com/nge/prod/fhir-api-r4/fhir/r4` | OAuth2 + FHIR R4 |
 
 ### Pending EHRs
