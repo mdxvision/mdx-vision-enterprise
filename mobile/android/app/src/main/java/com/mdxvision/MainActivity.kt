@@ -163,8 +163,25 @@ class MainActivity : AppCompatActivity() {
             AudioStreamingService.setDeviceUrl(wsUrl)
             Log.d(TAG, "Server URL configured: HTTP=$serverUrl, WS=$wsUrl")
         }
-        // Test patient from Cerner sandbox
-        private const val TEST_PATIENT_ID = "12724066"
+        // EHR Selection
+        private const val PREF_EHR_TYPE = "selected_ehr"
+        private const val EHR_CERNER = "cerner"
+        private const val EHR_EPIC = "epic"
+
+        // Test patients - Cerner sandbox
+        private const val CERNER_TEST_PATIENT_ID = "12724066"  // SMARTS SR., NANCYS II
+
+        // Test patients - Epic sandbox (fhir.epic.com)
+        private val EPIC_TEST_PATIENTS = mapOf(
+            "erXuFYUfucBZaryVksYEcMg3" to "Camila Lopez",
+            "eq081-VQEgP8drUUqCWzHfw3" to "Derrick Lin",
+            "eAB3mDIBBcyUKviyzrxsnOQ3" to "Amy Shaw",
+            "egqBHVfQlt4Bw3XGXoxVxHg3" to "John Smith"
+        )
+        private const val EPIC_DEFAULT_TEST_PATIENT_ID = "erXuFYUfucBZaryVksYEcMg3"  // Camila Lopez
+
+        // Default to Cerner for backwards compatibility
+        private const val TEST_PATIENT_ID = CERNER_TEST_PATIENT_ID
         // DEBUG: Set to true to skip TOTP authentication for testing
         private const val DEBUG_SKIP_AUTH = true  // TODO: Set to false for production!
         // Offline cache
@@ -215,6 +232,9 @@ class MainActivity : AppCompatActivity() {
 
     // Offline cache
     private lateinit var cachePrefs: SharedPreferences
+
+    // EHR selection (Epic or Cerner)
+    private var currentEhr: String = EHR_CERNER
 
     private lateinit var speechRecognizer: SpeechRecognizer
     private lateinit var statusText: TextView
@@ -2728,6 +2748,7 @@ SOFA Score: [X]
         loadSessionTimeoutSetting()
         loadLanguagePreference()  // Multi-language support
         loadServerUrl()  // Configure server URL for API calls and WebSocket
+        loadEhrPreference()  // Load saved EHR selection (Epic/Cerner)
 
         // Initialize device authentication (TOTP + proximity lock)
         initializeDeviceAuth()
@@ -2839,7 +2860,7 @@ SOFA Score: [X]
         // Define all voice commands
         val commands = listOf(
             CommandButton("MDX MODE", 0xFF3B82F6.toInt()) { toggleContinuousListening() },
-            CommandButton("LOAD PATIENT", 0xFF6366F1.toInt()) { fetchPatientData(TEST_PATIENT_ID) },
+            CommandButton("LOAD PATIENT", 0xFF6366F1.toInt()) { loadCurrentEhrTestPatient() },
             CommandButton("FIND PATIENT", 0xFF8B5CF6.toInt()) { promptFindPatient() },
             CommandButton("SCAN WRISTBAND", 0xFFEC4899.toInt()) { startBarcodeScanner() },
             CommandButton("SHOW VITALS", 0xFF10B981.toInt()) { fetchPatientSection("vitals") },
@@ -12097,19 +12118,53 @@ SOFA Score: [X]
     /**
      * Speak text aloud using Text-to-Speech
      */
+    /**
+     * Sanitize text for TTS - remove JSON artifacts, brackets, and other non-speech characters
+     */
+    private fun sanitizeForSpeech(text: String): String {
+        return text
+            // Remove JSON-like patterns
+            .replace(Regex("\\{[^}]*\\}"), "")  // Remove {anything}
+            .replace(Regex("\\[[^\\]]*\\]"), "")  // Remove [anything]
+            .replace("\\n", " ")  // Replace escaped newlines with space
+            .replace("\n", " ")   // Replace actual newlines with space
+            .replace("\\t", " ")  // Replace escaped tabs
+            .replace("\t", " ")   // Replace actual tabs
+            // Remove special characters that TTS reads literally
+            .replace("{", "")
+            .replace("}", "")
+            .replace("[", "")
+            .replace("]", "")
+            .replace("\"", "")
+            .replace("\\", "")
+            .replace("_", " ")    // Underscores become spaces
+            .replace("|", ", ")   // Pipes become commas
+            // Clean up medical notation
+            .replace(Regex("\\(finding\\)", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\(disorder\\)", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\(procedure\\)", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\(situation\\)", RegexOption.IGNORE_CASE), "")
+            // Clean up extra spaces and punctuation
+            .replace(Regex("\\s+"), " ")  // Multiple spaces to single
+            .replace(Regex("\\.\\s*\\."), ".")  // Multiple periods
+            .replace(Regex(",\\s*,"), ",")  // Multiple commas
+            .trim()
+    }
+
     private fun speak(text: String, queueMode: Int = TextToSpeech.QUEUE_FLUSH) {
+        val sanitized = sanitizeForSpeech(text)
         if (isTtsReady && textToSpeech != null) {
             try {
-                textToSpeech?.speak(text, queueMode, null, "mdx_tts_${System.currentTimeMillis()}")
+                textToSpeech?.speak(sanitized, queueMode, null, "mdx_tts_${System.currentTimeMillis()}")
             } catch (e: Exception) {
                 Log.e(TAG, "TTS speak error: ${e.message}")
                 // Fall back to server-side TTS
-                speakViaServer(text)
+                speakViaServer(sanitized)
             }
         } else {
             Log.w(TAG, "TTS not ready - using server-side TTS")
             // Fall back to server-side TTS
-            speakViaServer(text)
+            speakViaServer(sanitized)
         }
     }
 
@@ -14713,10 +14768,11 @@ SOFA Score: [X]
         }
 
         statusText.text = "Loading patient..."
-        transcriptText.text = "Connecting to EHR"
+        transcriptText.text = "Connecting to ${currentEhr.uppercase()}"
 
         // Use quick endpoint for Samsung (returns minimal data instantly)
-        val urlStr = "$EHR_PROXY_URL/api/v1/patient/$patientId/quick"
+        // Append EHR type parameter for routing to correct EHR system
+        val urlStr = "$EHR_PROXY_URL/api/v1/patient/$patientId/quick?ehr=$currentEhr"
 
         // Use pure Java networking (Samsung blocks OkHttp large responses)
         Thread {
@@ -23349,11 +23405,14 @@ SOFA Score: [X]
 
         when {
             hasPatient && lower.contains("load") -> {
-                // Extract patient ID if mentioned
+                // Extract patient ID if mentioned, otherwise use current EHR's test patient
                 val words = transcript.split(" ")
                 val idIndex = words.indexOfFirst { it.all { c -> c.isDigit() } }
-                val patientId = if (idIndex >= 0) words[idIndex] else TEST_PATIENT_ID
-                fetchPatientData(patientId)
+                if (idIndex >= 0) {
+                    fetchPatientData(words[idIndex])
+                } else {
+                    loadCurrentEhrTestPatient()  // Uses Epic or Cerner test patient based on currentEhr
+                }
             }
             (hasPatient && lower.contains("find")) || lower.contains("search") -> {
                 // Patient search by name
@@ -23361,6 +23420,26 @@ SOFA Score: [X]
                 if (name.isNotEmpty()) {
                     searchPatients(name)
                 }
+            }
+            // ═══ EHR SELECTION COMMANDS ═══
+            lower.contains("switch to epic") || lower.contains("use epic") || lower.contains("epic mode") -> {
+                switchEhr(EHR_EPIC)
+            }
+            lower.contains("switch to cerner") || lower.contains("use cerner") || lower.contains("cerner mode") -> {
+                switchEhr(EHR_CERNER)
+            }
+            lower.contains("which ehr") || lower.contains("ehr status") || lower.contains("current ehr") -> {
+                showEhrStatus()
+            }
+            lower.contains("epic patient") || lower.contains("epic test") -> {
+                // Load Epic test patient (switches to Epic if not already)
+                if (currentEhr != EHR_EPIC) switchEhr(EHR_EPIC)
+                loadCurrentEhrTestPatient()
+            }
+            lower.contains("cerner patient") || lower.contains("cerner test") -> {
+                // Load Cerner test patient (switches to Cerner if not already)
+                if (currentEhr != EHR_CERNER) switchEhr(EHR_CERNER)
+                loadCurrentEhrTestPatient()
             }
             lower.contains("start note") || lower.contains("start documentation") -> {
                 // Voice command to start documentation
@@ -25789,15 +25868,99 @@ SOFA Score: [X]
         return sb.toString()
     }
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // EHR SELECTION FUNCTIONS (Epic / Cerner)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Switch to a different EHR system (Epic or Cerner).
+     * Persists the selection and notifies the user.
+     */
+    private fun switchEhr(ehr: String) {
+        if (ehr != EHR_EPIC && ehr != EHR_CERNER) {
+            speakFeedback("Invalid EHR. Use Epic or Cerner.")
+            return
+        }
+
+        currentEhr = ehr
+        // Persist the EHR selection
+        cachePrefs.edit().putString(PREF_EHR_TYPE, ehr).apply()
+
+        val ehrDisplay = ehr.replaceFirstChar { it.uppercase() }
+        statusText.text = "EHR: $ehrDisplay"
+
+        val testPatient = if (ehr == EHR_EPIC) {
+            EPIC_TEST_PATIENTS[EPIC_DEFAULT_TEST_PATIENT_ID] ?: "Camila Lopez"
+        } else {
+            "SMARTS SR., NANCYS II"
+        }
+        transcriptText.text = "Test patient: $testPatient"
+
+        speakFeedback("Switched to $ehrDisplay. Say load patient to load the test patient.")
+        Log.d(TAG, "EHR switched to: $ehr")
+    }
+
+    /**
+     * Show current EHR status and available test patients.
+     */
+    private fun showEhrStatus() {
+        val ehrDisplay = currentEhr.replaceFirstChar { it.uppercase() }
+        val sb = StringBuilder()
+        sb.appendLine("═══ EHR STATUS ═══")
+        sb.appendLine("Current EHR: $ehrDisplay")
+        sb.appendLine()
+
+        if (currentEhr == EHR_EPIC) {
+            sb.appendLine("📋 Epic Test Patients:")
+            EPIC_TEST_PATIENTS.entries.take(4).forEach { (id, name) ->
+                val marker = if (id == EPIC_DEFAULT_TEST_PATIENT_ID) " ← default" else ""
+                sb.appendLine("  • $name$marker")
+            }
+        } else {
+            sb.appendLine("📋 Cerner Test Patients:")
+            sb.appendLine("  • SMARTS SR., NANCYS II ← default")
+        }
+
+        sb.appendLine()
+        sb.appendLine("Voice Commands:")
+        sb.appendLine("  • \"Switch to Epic\" / \"Switch to Cerner\"")
+        sb.appendLine("  • \"Epic patient\" / \"Cerner patient\"")
+        sb.appendLine("  • \"Load patient\" - Load default test patient")
+
+        showDataOverlay("EHR: $ehrDisplay", sb.toString())
+        speakFeedback("Currently using $ehrDisplay. Say switch to epic or switch to cerner to change.")
+    }
+
+    /**
+     * Load the test patient for the current EHR.
+     */
+    private fun loadCurrentEhrTestPatient() {
+        val patientId = if (currentEhr == EHR_EPIC) {
+            EPIC_DEFAULT_TEST_PATIENT_ID
+        } else {
+            CERNER_TEST_PATIENT_ID
+        }
+        fetchPatientData(patientId)
+    }
+
+    /**
+     * Load the saved EHR preference on app startup.
+     * Called from onCreate after cachePrefs is initialized.
+     */
+    private fun loadEhrPreference() {
+        currentEhr = cachePrefs.getString(PREF_EHR_TYPE, EHR_CERNER) ?: EHR_CERNER
+        Log.d(TAG, "Loaded EHR preference: $currentEhr")
+    }
+
     private fun searchPatients(name: String) {
-        statusText.text = "Searching..."
+        statusText.text = "Searching in ${currentEhr.uppercase()}..."
         patientDataText.text = ""
 
         Thread {
             try {
                 val encodedName = java.net.URLEncoder.encode(name, "UTF-8")
                 val request = Request.Builder()
-                    .url("$EHR_PROXY_URL/api/v1/patient/search?name=$encodedName")
+                    .url("$EHR_PROXY_URL/api/v1/patient/search?name=$encodedName&ehr=$currentEhr")
                     .get()
                     .build()
 

@@ -336,12 +336,12 @@ NEXTGEN_AUTH_URL = os.getenv("NEXTGEN_AUTH_URL", "https://fhir.nextgen.com/nge/p
 NEXTGEN_TOKEN_URL = os.getenv("NEXTGEN_TOKEN_URL", "https://fhir.nextgen.com/nge/prod/patient-oauth/token")
 NEXTGEN_REDIRECT_URI = os.getenv("NEXTGEN_REDIRECT_URI", "http://localhost:8002/auth/nextgen/callback")
 
-# MEDITECH Configuration (Greenfield Workspace)
+# MEDITECH Configuration (Greenfield US Core STU6 v2.0)
 MEDITECH_CLIENT_ID = os.getenv("MEDITECH_CLIENT_ID", "MDxVision@269e2312bf404c8293bcfffca232b729")
 MEDITECH_CLIENT_SECRET = os.getenv("MEDITECH_CLIENT_SECRET", "ZCQi_K0MQqqSIGS35j5DNw==")
-MEDITECH_BASE_URL = os.getenv("MEDITECH_BASE_URL", "https://greenfield.meditech.com/fhir/r4")
-MEDITECH_AUTH_URL = os.getenv("MEDITECH_AUTH_URL", "https://greenfield.meditech.com/oauth2/authorize")
-MEDITECH_TOKEN_URL = os.getenv("MEDITECH_TOKEN_URL", "https://greenfield.meditech.com/oauth2/token")
+MEDITECH_BASE_URL = os.getenv("MEDITECH_BASE_URL", "https://greenfield-prod-apis.meditech.com/v2/uscore/STU6")
+MEDITECH_AUTH_URL = os.getenv("MEDITECH_AUTH_URL", "https://greenfield-prod-apis.meditech.com/oauth/authorize")
+MEDITECH_TOKEN_URL = os.getenv("MEDITECH_TOKEN_URL", "https://greenfield-prod-apis.meditech.com/oauth/token")
 MEDITECH_REDIRECT_URI = os.getenv("MEDITECH_REDIRECT_URI", "http://localhost:8002/auth/meditech/callback")
 
 # eClinicalWorks Configuration
@@ -468,6 +468,9 @@ async def epic_callback(
                     "patient": token_data.get("patient"),  # Patient ID if launch context
                     "scope": token_data.get("scope"),
                 }
+
+                # Persist token to file for demo simplicity
+                save_tokens()
 
                 print(f"✅ Epic authentication successful!")
                 print(f"   Patient ID: {token_data.get('patient')}")
@@ -608,6 +611,9 @@ async def veradigm_callback(code: str = None, state: str = None, error: str = No
                 "scope": token_data.get("scope"),
             }
 
+            # Persist token to file
+            save_tokens()
+
             return {
                 "success": True,
                 "message": "Veradigm authentication successful",
@@ -738,6 +744,9 @@ async def athena_callback(code: str = None, state: str = None, error: str = None
                 "patient": token_data.get("patient"),
                 "scope": token_data.get("scope"),
             }
+
+            # Persist token to file
+            save_tokens()
 
             return {
                 "success": True,
@@ -877,6 +886,9 @@ async def nextgen_callback(code: str = None, state: str = None, error: str = Non
                 "patient": token_data.get("patient"),
                 "scope": token_data.get("scope"),
             }
+
+            # Persist token to file
+            save_tokens()
 
             return {
                 "success": True,
@@ -1018,6 +1030,9 @@ async def ecw_callback(code: str = None, state: str = None, error: str = None):
                 "scope": token_data.get("scope"),
             }
 
+            # Persist token to file
+            save_tokens()
+
             return {
                 "success": True,
                 "message": "eClinicalWorks authentication successful",
@@ -1078,21 +1093,25 @@ async def get_ecw_test_patients():
     }
 
 
-# MEDITECH Test Patients (Greenfield sandbox)
+# MEDITECH Test Patients (Greenfield US Core STU6 sandbox)
+# From Postman collection: Sarai Mccall
 MEDITECH_TEST_PATIENTS = {
-    "MT-1001": {"name": "Test Patient One", "dob": "1978-06-15"},
-    "MT-1002": {"name": "Test Patient Two", "dob": "1965-11-22"},
-    "MT-1003": {"name": "Test Patient Three", "dob": "1992-03-08"},
+    "0218f2d0-968b-5888-976f-68a554670f6e": {"name": "Sarai Mccall", "dob": "1959-08-14"},
 }
 
+
+# Store PKCE code verifiers for MEDITECH OAuth
+meditech_pkce_store = {}
 
 @app.get("/auth/meditech/authorize")
 async def meditech_authorize():
     """
-    Initiate MEDITECH OAuth2 authorization flow.
+    Initiate MEDITECH OAuth2 authorization flow with PKCE.
     Redirects user to MEDITECH Greenfield login page.
     """
     import urllib.parse
+    import hashlib
+    import secrets
 
     if not MEDITECH_CLIENT_ID:
         return {
@@ -1100,14 +1119,27 @@ async def meditech_authorize():
             "message": "Set MEDITECH_CLIENT_ID and MEDITECH_CLIENT_SECRET in environment"
         }
 
-    # Build authorization URL
+    # Generate PKCE code verifier and challenge (S256)
+    code_verifier = secrets.token_urlsafe(64)[:128]  # 43-128 chars
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).decode().rstrip('=')
+
+    state = uuid.uuid4().hex
+
+    # Store code_verifier for later use in token exchange
+    meditech_pkce_store[state] = code_verifier
+
+    # Build authorization URL - Greenfield uses patient/*.read scope with PKCE
     params = {
         "response_type": "code",
         "client_id": MEDITECH_CLIENT_ID,
         "redirect_uri": MEDITECH_REDIRECT_URI,
-        "scope": "openid fhirUser launch/patient patient/*.read",
-        "state": uuid.uuid4().hex,
+        "scope": "patient/*.read",
+        "state": state,
         "aud": MEDITECH_BASE_URL,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
 
     auth_url = f"{MEDITECH_AUTH_URL}?{urllib.parse.urlencode(params)}"
@@ -1116,34 +1148,61 @@ async def meditech_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with MEDITECH",
         "redirect_uri": MEDITECH_REDIRECT_URI,
-        "client_id": MEDITECH_CLIENT_ID
+        "client_id": MEDITECH_CLIENT_ID,
+        "pkce_enabled": True
     }
 
 
 @app.get("/auth/meditech/callback")
-async def meditech_callback(code: str = None, state: str = None, error: str = None):
+async def meditech_callback(code: str = None, state: str = None, error: str = None, error_description: str = None):
     """
-    MEDITECH OAuth2 callback - exchanges authorization code for access token.
+    MEDITECH OAuth2 callback - exchanges authorization code for access token with PKCE.
     """
+    print(f"🔐 MEDITECH callback received:")
+    print(f"   code: {code[:20] if code else 'None'}...")
+    print(f"   state: {state}")
+    print(f"   error: {error}")
+    print(f"   error_description: {error_description}")
+
     if error:
-        return {"success": False, "error": error}
+        return {
+            "success": False,
+            "error": error,
+            "error_description": error_description,
+            "hint": "Check MEDITECH app configuration in Greenfield portal"
+        }
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
 
-    # Exchange code for token
-    async with httpx.AsyncClient() as client:
+    # Get PKCE code_verifier from store
+    code_verifier = meditech_pkce_store.pop(state, None) if state else None
+    if not code_verifier:
+        print(f"   ⚠️ No code_verifier found for state: {state}")
+
+    # Exchange code for token with PKCE
+    token_data_payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": MEDITECH_REDIRECT_URI,
+        "client_id": MEDITECH_CLIENT_ID,
+        "client_secret": MEDITECH_CLIENT_SECRET,
+    }
+    if code_verifier:
+        token_data_payload["code_verifier"] = code_verifier
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        print(f"🔄 Exchanging code for token...")
+        print(f"   Token URL: {MEDITECH_TOKEN_URL}")
+        print(f"   PKCE: {'Yes' if code_verifier else 'No'}")
+
         token_response = await client.post(
             MEDITECH_TOKEN_URL,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": MEDITECH_REDIRECT_URI,
-                "client_id": MEDITECH_CLIENT_ID,
-                "client_secret": MEDITECH_CLIENT_SECRET,
-            },
+            data=token_data_payload,
             headers={"Content-Type": "application/x-www-form-urlencoded"}
         )
+
+        print(f"   Response status: {token_response.status_code}")
 
         if token_response.status_code == 200:
             token_data = token_response.json()
@@ -1158,6 +1217,10 @@ async def meditech_callback(code: str = None, state: str = None, error: str = No
                 "scope": token_data.get("scope"),
             }
 
+            # Persist token to file
+            save_tokens()
+
+            print(f"✅ MEDITECH authentication successful")
             return {
                 "success": True,
                 "message": "MEDITECH authentication successful",
@@ -1166,6 +1229,7 @@ async def meditech_callback(code: str = None, state: str = None, error: str = No
                 "scope": token_data.get("scope")
             }
         else:
+            print(f"❌ Token exchange failed: {token_response.text}")
             return {
                 "success": False,
                 "error": f"Token exchange failed: {token_response.status_code}",
@@ -1668,37 +1732,202 @@ async def get_device_status(device_id: str):
         "last_seen": device.last_seen.isoformat() if device.last_seen else None
     }
 
-# Minimal patient endpoint for Samsung (returns compact data, no slow FHIR calls)
+# Minimal patient endpoint for Samsung (returns compact data from actual EHR)
 @app.get("/api/v1/patient/{patient_id}/quick")
-async def get_patient_quick(patient_id: str):
-    """Quick patient lookup - compact data for Samsung network issues"""
-    return {
-        "patient_id": patient_id,
-        "name": "SMARTS SR., NANCYS II",
-        "date_of_birth": "1990-09-15",
-        "gender": "female",
-        "allergies": [
-            {"substance": "Penicillin", "severity": "high", "reaction": "Anaphylaxis"},
-            {"substance": "Sulfa drugs", "severity": "moderate", "reaction": "Rash"}
-        ],
-        "vitals": [
-            {"name": "Blood Pressure", "value": "142/88", "unit": "mmHg", "is_critical": True},
-            {"name": "Heart Rate", "value": "92", "unit": "bpm", "is_critical": False},
-            {"name": "Temperature", "value": "98.6", "unit": "°F", "is_critical": False},
-            {"name": "SpO2", "value": "97", "unit": "%", "is_critical": False}
-        ],
-        "conditions": [
-            "Type 2 Diabetes Mellitus",
-            "Essential Hypertension",
-            "Hyperlipidemia"
-        ],
-        "medications": [
-            "Metformin 500mg BID",
-            "Lisinopril 10mg daily",
-            "Atorvastatin 20mg daily"
-        ],
-        "display_text": "SMARTS SR., NANCYS II\\nDOB: 1990-09-15 | Female\\n\\n⚠️ ALLERGIES: Penicillin (Anaphylaxis), Sulfa drugs\\n\\n📊 VITALS:\\nBP: 142/88 mmHg (HIGH)\\nHR: 92 bpm\\nTemp: 98.6°F\\nSpO2: 97%\\n\\n🏥 CONDITIONS:\\n• Type 2 Diabetes\\n• Hypertension\\n• Hyperlipidemia\\n\\n💊 MEDICATIONS:\\n• Metformin 500mg BID\\n• Lisinopril 10mg daily\\n• Atorvastatin 20mg daily"
-    }
+async def get_patient_quick(patient_id: str, ehr: str = "cerner"):
+    """Quick patient lookup - compact data for AR glasses, routes to correct EHR"""
+    import asyncio
+
+    async def fetch_with_timeout(endpoint: str, timeout: float = 8.0):
+        """Fetch FHIR data with short timeout for quick endpoint"""
+        try:
+            base_url = get_ehr_base_url(ehr)
+            headers = get_ehr_headers(ehr)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(f"{base_url}/{endpoint}", headers=headers)
+                if response.status_code == 200:
+                    return response.json()
+        except Exception as e:
+            print(f"Quick fetch timeout/error for {endpoint}: {e}")
+        return {}
+
+    try:
+        # Fetch patient data with short timeout
+        patient_data = await fetch_with_timeout(f"Patient/{patient_id}", timeout=10.0)
+
+        # Extract basic info
+        name = "Unknown"
+        if "name" in patient_data and patient_data["name"]:
+            name_obj = patient_data["name"][0]
+            given = " ".join(name_obj.get("given", []))
+            family = name_obj.get("family", "")
+            name = f"{given} {family}".strip() or family or given or "Unknown"
+
+        dob = patient_data.get("birthDate", "Unknown")
+        gender = patient_data.get("gender", "unknown")
+
+        # Fetch allergies, vitals, conditions, meds concurrently with short timeouts
+        allergy_task = fetch_with_timeout(f"AllergyIntolerance?patient={patient_id}&_count=5", timeout=6.0)
+        vitals_task = fetch_with_timeout(f"Observation?patient={patient_id}&category=vital-signs&_count=10&_sort=-date", timeout=6.0)
+        cond_task = fetch_with_timeout(f"Condition?patient={patient_id}&_count=5", timeout=6.0)
+        med_task = fetch_with_timeout(f"MedicationRequest?patient={patient_id}&_count=5", timeout=6.0)
+
+        # Run all fetches concurrently
+        allergy_bundle, vitals_bundle, cond_bundle, med_bundle = await asyncio.gather(
+            allergy_task, vitals_task, cond_task, med_task,
+            return_exceptions=True
+        )
+
+        # Handle exceptions from gather
+        if isinstance(allergy_bundle, Exception):
+            allergy_bundle = {}
+        if isinstance(vitals_bundle, Exception):
+            vitals_bundle = {}
+        if isinstance(cond_bundle, Exception):
+            cond_bundle = {}
+        if isinstance(med_bundle, Exception):
+            med_bundle = {}
+
+        # Parse allergies
+        allergies = []
+        try:
+            for entry in allergy_bundle.get("entry", []):
+                allergy = entry.get("resource", {})
+                substance = "Unknown"
+                if "code" in allergy and "coding" in allergy["code"]:
+                    substance = allergy["code"]["coding"][0].get("display", "Unknown")
+                elif "code" in allergy and "text" in allergy["code"]:
+                    substance = allergy["code"]["text"]
+
+                criticality = allergy.get("criticality", "unknown")
+                severity = "high" if criticality == "high" else "moderate" if criticality == "low" else "unknown"
+
+                reaction_text = ""
+                if "reaction" in allergy and allergy["reaction"]:
+                    manifestations = allergy["reaction"][0].get("manifestation", [])
+                    if manifestations and "coding" in manifestations[0]:
+                        reaction_text = manifestations[0]["coding"][0].get("display", "")
+
+                allergies.append({"substance": substance, "severity": severity, "reaction": reaction_text})
+        except Exception as e:
+            print(f"Error parsing allergies: {e}")
+
+        # Parse vitals (already fetched concurrently)
+        vitals = []
+        try:
+            vital_map = {}  # Keep only latest of each type
+            for entry in vitals_bundle.get("entry", []):
+                obs = entry.get("resource", {})
+                code = obs.get("code", {}).get("coding", [{}])[0].get("display", "Unknown")
+
+                value = ""
+                unit = ""
+                if "valueQuantity" in obs:
+                    value = str(obs["valueQuantity"].get("value", ""))
+                    unit = obs["valueQuantity"].get("unit", "")
+                elif "component" in obs:  # Blood pressure
+                    systolic = diastolic = ""
+                    for comp in obs["component"]:
+                        comp_code = comp.get("code", {}).get("coding", [{}])[0].get("code", "")
+                        if comp_code == "8480-6":  # Systolic
+                            systolic = str(comp.get("valueQuantity", {}).get("value", ""))
+                        elif comp_code == "8462-4":  # Diastolic
+                            diastolic = str(comp.get("valueQuantity", {}).get("value", ""))
+                    if systolic and diastolic:
+                        value = f"{systolic}/{diastolic}"
+                        unit = "mmHg"
+                        code = "Blood Pressure"
+
+                if code not in vital_map and value:
+                    is_critical = False
+                    if "Blood Pressure" in code:
+                        try:
+                            sys_val = int(value.split("/")[0])
+                            if sys_val > 180 or sys_val < 90:
+                                is_critical = True
+                        except:
+                            pass
+                    vital_map[code] = {"name": code, "value": value, "unit": unit, "is_critical": is_critical}
+            vitals = list(vital_map.values())[:6]
+        except Exception as e:
+            print(f"Error parsing vitals: {e}")
+
+        # Parse conditions (already fetched concurrently)
+        conditions = []
+        try:
+            for entry in cond_bundle.get("entry", []):
+                cond = entry.get("resource", {})
+                cond_name = cond.get("code", {}).get("coding", [{}])[0].get("display", "")
+                if not cond_name:
+                    cond_name = cond.get("code", {}).get("text", "Unknown")
+                if cond_name:
+                    conditions.append(cond_name)
+        except Exception as e:
+            print(f"Error parsing conditions: {e}")
+
+        # Parse medications (already fetched concurrently)
+        medications = []
+        try:
+            for entry in med_bundle.get("entry", []):
+                med = entry.get("resource", {})
+                med_name = ""
+                if "medicationCodeableConcept" in med:
+                    med_name = med["medicationCodeableConcept"].get("text", "")
+                    if not med_name and "coding" in med["medicationCodeableConcept"]:
+                        med_name = med["medicationCodeableConcept"]["coding"][0].get("display", "")
+                if med_name:
+                    medications.append(med_name)
+        except Exception as e:
+            print(f"Error parsing medications: {e}")
+
+        # Build display text
+        display_lines = [f"{name}", f"DOB: {dob} | {gender.capitalize()}", ""]
+
+        if allergies:
+            allergy_str = ", ".join([f"{a['substance']}" + (f" ({a['reaction']})" if a['reaction'] else "") for a in allergies[:3]])
+            display_lines.append(f"⚠️ ALLERGIES: {allergy_str}")
+            display_lines.append("")
+
+        if vitals:
+            display_lines.append("📊 VITALS:")
+            for v in vitals[:4]:
+                critical_mark = " (HIGH)" if v["is_critical"] else ""
+                display_lines.append(f"{v['name']}: {v['value']} {v['unit']}{critical_mark}")
+            display_lines.append("")
+
+        if conditions:
+            display_lines.append("🏥 CONDITIONS:")
+            for c in conditions[:4]:
+                display_lines.append(f"• {c}")
+            display_lines.append("")
+
+        if medications:
+            display_lines.append("💊 MEDICATIONS:")
+            for m in medications[:4]:
+                display_lines.append(f"• {m}")
+
+        return {
+            "patient_id": patient_id,
+            "name": name,
+            "date_of_birth": dob,
+            "gender": gender,
+            "allergies": allergies,
+            "vitals": vitals,
+            "conditions": conditions,
+            "medications": medications,
+            "ehr": ehr,
+            "display_text": "\n".join(display_lines)
+        }
+    except Exception as e:
+        print(f"Error in quick patient fetch: {e}")
+        # Return error response
+        return {
+            "patient_id": patient_id,
+            "name": "Error loading patient",
+            "error": str(e),
+            "ehr": ehr,
+            "display_text": f"Error loading patient from {ehr.upper()}:\n{str(e)}"
+        }
 
 
 class VitalSign(BaseModel):
@@ -2712,8 +2941,35 @@ class ConsultNote(BaseModel):
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
 
-# In-memory token storage for EHR OAuth sessions
+# Token storage for EHR OAuth sessions (persisted to file)
+TOKENS_FILE = os.path.join(os.path.dirname(__file__), ".ehr_tokens.json")
 ehr_tokens: Dict[str, Dict[str, Any]] = {}
+
+def save_tokens():
+    """Save EHR tokens to file for persistence across restarts"""
+    try:
+        with open(TOKENS_FILE, "w") as f:
+            json.dump(ehr_tokens, f, indent=2, default=str)
+        print(f"✅ Saved EHR tokens to {TOKENS_FILE}")
+    except Exception as e:
+        print(f"⚠️ Failed to save tokens: {e}")
+
+def load_tokens():
+    """Load EHR tokens from file on startup"""
+    global ehr_tokens
+    try:
+        if os.path.exists(TOKENS_FILE):
+            with open(TOKENS_FILE, "r") as f:
+                ehr_tokens = json.load(f)
+            # Check which tokens are still valid
+            valid = [k for k, v in ehr_tokens.items() if v.get("access_token")]
+            print(f"✅ Loaded EHR tokens: {', '.join(valid) if valid else 'none'}")
+    except Exception as e:
+        print(f"⚠️ Failed to load tokens: {e}")
+        ehr_tokens = {}
+
+# Load tokens on module import
+load_tokens()
 
 def get_ehr_base_url(ehr: str = "cerner") -> str:
     """Get FHIR base URL for specified EHR"""
