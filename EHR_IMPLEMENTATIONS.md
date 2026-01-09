@@ -5,20 +5,54 @@
 
 ---
 
+## Market Coverage Summary
+
+### Current Coverage
+
+| Market | Coverage | Configured EHRs |
+|--------|----------|-----------------|
+| **Hospitals** | ~80-85% | Epic, Cerner, MEDITECH, Veradigm |
+| **Ambulatory** | ~35% | athenahealth, NextGen, eClinicalWorks |
+
+### To Reach 90%+ Coverage
+
+| Market | Gap | EHRs Needed |
+|--------|-----|-------------|
+| **Hospitals** | ~10-15% | CPSI/TruBridge (rural), MEDHOST |
+| **Ambulatory** | ~15%+ | DrChrono, Practice Fusion, Kareo |
+
+---
+
 ## Implementation Status
 
-| EHR | Status | FHIR Base URL | Client ID | Auth Type | Notes |
-|-----|--------|---------------|-----------|-----------|-------|
-| **Cerner/Oracle** | ✅ LIVE | `fhir-open.cerner.com/r4/ec2458f2...` | `0fab9b20-adc8...` | Open | Full read, demo write via HAPI |
-| **Epic** | ✅ READY | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | Configured | OAuth2 | Sandbox ready |
-| **athenahealth** | ✅ READY | `api.platform.athenahealth.com/fhir/r4` | Configured | OAuth2 | Self-service sandbox |
-| **NextGen** | ✅ READY | `fhir.nextgen.com/nge/fhir/r4` | Configured | OAuth2 | Developer program |
-| **Veradigm** | ✅ READY | `fhir.fhirpoint.open.allscripts.com/...` | `11A47952-0F52...` | OAuth2 | Provider FHIR App |
-| **eClinicalWorks** | ✅ READY | `fhir.eclinicalworks.com/fhir/r4` | `576VCnKhhT1J...` | OAuth2 | Largest cloud EHR |
-| **MEDITECH** | ✅ READY | `greenfield.meditech.com/fhir/r4` | `MDxVision@269e...` | OAuth2 | Greenfield Workspace |
-| **DrChrono** | 📋 TODO | - | - | OAuth2 | Cloud EHR |
-| **Elation** | 📋 TODO | - | - | OAuth2 | Primary care focused |
-| **ModMed** | 📋 TODO | - | - | OAuth2 | Specialty focused |
+### Hospital EHRs (Configured: 4)
+
+| EHR | Status | Market Share | FHIR Base URL | Notes |
+|-----|--------|--------------|---------------|-------|
+| **Epic** | ✅ READY | ~35-38% | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | Dominant in large hospitals |
+| **Cerner/Oracle** | ✅ LIVE | ~25-28% | `fhir-open.cerner.com/r4/ec2458f2...` | Full read, demo write via HAPI |
+| **MEDITECH** | ✅ READY | ~15-20% | `greenfield.meditech.com/fhir/r4` | Community/rural hospitals |
+| **Veradigm** | ✅ READY | ~5-8% | `fhir.fhirpoint.open.allscripts.com/...` | Sunrise (hospital side) |
+
+### Ambulatory EHRs (Configured: 3)
+
+| EHR | Status | Market Share | FHIR Base URL | Notes |
+|-----|--------|--------------|---------------|-------|
+| **athenahealth** | ✅ READY | ~15% | `api.platform.athenahealth.com/fhir/r4` | Self-service sandbox |
+| **eClinicalWorks** | ✅ READY | ~10% | `fhir.eclinicalworks.com/fhir/r4` | Largest cloud EHR |
+| **NextGen** | ✅ READY | ~10% | `fhir.nextgen.com/nge/fhir/r4` | Developer program |
+
+### Pending EHRs
+
+| EHR | Market | Share | Status | Notes |
+|-----|--------|-------|--------|-------|
+| **DrChrono** | Ambulatory | ~5% | ⏳ PENDING | Have account (locked out) |
+| **Practice Fusion** | Ambulatory | ~4% | ⏳ PENDING | Awaiting email (Veradigm-owned) |
+| **CPSI/TruBridge** | Hospital | ~3-4% | 📋 TODO | Rural/critical access hospitals |
+| **Kareo/Tebra** | Ambulatory | ~3% | 📋 TODO | Small practices |
+| **MEDHOST** | Hospital | ~2% | 📋 TODO | Community hospitals |
+| **Elation** | Ambulatory | ~2% | 📋 TODO | Primary care focused |
+| **ModMed** | Ambulatory | ~3% | 📋 TODO | Specialty focused |
 
 ---
 
@@ -150,17 +184,30 @@ curl http://localhost:8002/api/v1/patient/{patient_id}?ehr=new_ehr
 
 ## Credentials Checklist
 
-- [x] Cerner/Oracle - Client ID configured
-- [x] Epic - Credentials in place
-- [x] athenahealth - Self-service sandbox
-- [x] NextGen - Developer program
-- [x] Veradigm - Provider FHIR App configured
-- [x] eClinicalWorks - Registered and configured
-- [x] MEDITECH - Greenfield Workspace configured
-- [ ] DrChrono - Need to register
-- [ ] Redox - Consider for multi-EHR
-- [ ] Particle Health - Consider for coverage
+### Hospital EHRs
+- [x] Epic - Credentials in place (~35-38%)
+- [x] Cerner/Oracle - Client ID configured (~25-28%)
+- [x] MEDITECH - Greenfield Workspace configured (~15-20%)
+- [x] Veradigm - Provider FHIR App configured (~5-8%)
+- [ ] CPSI/TruBridge - Rural hospitals (~3-4%)
+- [ ] MEDHOST - Community hospitals (~2%)
+
+### Ambulatory EHRs
+- [x] athenahealth - Self-service sandbox (~15%)
+- [x] eClinicalWorks - Registered and configured (~10%)
+- [x] NextGen - Developer program (~10%)
+- [ ] DrChrono - Account locked out (~5%)
+- [ ] Practice Fusion - Awaiting email (~4%)
+- [ ] Kareo/Tebra - Small practices (~3%)
+- [ ] ModMed - Specialty focused (~3%)
+- [ ] Elation - Primary care (~2%)
+
+### Aggregator Platforms (Alternative)
+- [ ] Redox - 50+ EHRs, single API
+- [ ] Particle Health - 90% market coverage
+- [ ] Health Gorilla - 320M patients
 
 ---
 
 *See [EHR_ACCESS_GUIDE.md](EHR_ACCESS_GUIDE.md) for detailed registration instructions.*
+*See [EHR_AMBULATORY_RESEARCH.md](EHR_AMBULATORY_RESEARCH.md) for DrChrono & Practice Fusion deep dive.*

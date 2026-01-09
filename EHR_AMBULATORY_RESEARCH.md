@@ -1,18 +1,29 @@
-# Ambulatory EHR Deep Dive: DrChrono & Practice Fusion
+# EHR Expansion Research: Ambulatory & Rural Hospital Markets
 
-> Research document for expanding MDx Vision ambulatory market coverage.
+> Research document for expanding MDx Vision market coverage.
 > **Last Updated:** January 8, 2026
 
 ---
 
 ## Executive Summary
 
+### Ambulatory EHRs
+
 | EHR | Market Share | Target | Pricing | API Access | Status |
 |-----|--------------|--------|---------|------------|--------|
 | **DrChrono** | ~5% ambulatory | Small-mid practices | $199-399/mo | OAuth2 + FHIR | Have account (locked out) |
 | **Practice Fusion** | ~4% ambulatory | Solo/small practices | $149-199/mo | FHIR via Veradigm | Awaiting email response |
 
-Combined potential: **~9% additional ambulatory market coverage**
+**Combined ambulatory potential: ~9% additional coverage**
+
+### Rural Hospital EHRs
+
+| EHR | Market Share | Target | Pricing | API Access | Status |
+|-----|--------------|--------|---------|------------|--------|
+| **CPSI/TruBridge** | ~3-4% hospitals | Rural/critical access | Enterprise | FHIR R4 | 📋 TODO |
+| **MEDHOST** | ~2% hospitals | Community hospitals | Enterprise | FHIR R4 | 📋 TODO |
+
+**Combined hospital potential: ~5-6% additional coverage**
 
 ---
 
@@ -376,10 +387,165 @@ May use existing Veradigm credentials:
 
 ---
 
+---
+
+## CPSI/TruBridge (Rural Hospital EHR)
+
+### Company Overview
+
+| Attribute | Details |
+|-----------|---------|
+| **Full Name** | TruBridge (formerly CPSI - Computer Programs and Systems, Inc.) |
+| **Founded** | 1979 (45+ years in healthcare) |
+| **Headquarters** | Mobile, Alabama |
+| **Stock** | TBRG (NASDAQ) |
+| **Target Market** | Rural, critical access, and community hospitals |
+| **Clients** | 1,500+ healthcare facilities |
+
+### Why CPSI/TruBridge Matters
+
+**Rural Hospital Dominance**: CPSI/TruBridge is the leading EHR vendor for:
+- Critical Access Hospitals (CAH) - 25-bed limit
+- Rural community hospitals
+- Small independent hospitals
+- Clinics affiliated with rural hospitals
+
+These facilities are often underserved by large EHR vendors like Epic and Cerner, who focus on larger health systems.
+
+### Market Position
+
+| Metric | Value |
+|--------|-------|
+| **Hospital Market Share** | ~3-4% overall, but ~20-30% of rural hospitals |
+| **Clients** | 1,500+ facilities |
+| **Focus** | Exclusively community-based healthcare |
+| **Geographic Strength** | Strong in Southeast, Midwest, rural America |
+
+### Product Portfolio
+
+#### EHR Products
+1. **Evident Thrive** - Core acute care EHR
+2. **Evident Centriq** - Ambulatory/clinic EHR
+3. **CPSI System** - Legacy hospital system
+
+#### Additional Services
+- Revenue Cycle Management (RCM)
+- Medical coding
+- Patient engagement
+- Population health
+- Business analytics
+
+### Recent Developments
+
+- **Microsoft Partnership**: Integrated Dragon Copilot (AI scribe) into EHR
+- **HFMA Certified**: Peer reviewed for revenue cycle
+- **Cloud Migration**: Moving to cloud-based infrastructure
+
+### API & Integration
+
+#### FHIR Support
+- **ONC Certified**: Yes (21st Century Cures Act compliant)
+- **FHIR Version**: R4
+- **API Access**: Available for certified apps
+
+#### Developer Access
+Unlike self-service portals (athenahealth, DrChrono), TruBridge requires:
+1. Business relationship discussion
+2. Technical review
+3. Security assessment
+4. Contract/agreement
+
+#### Integration Approach
+- Contact TruBridge partnership team
+- Discuss MDx Vision use case (AR glasses for rural providers)
+- Request developer/sandbox access
+- Implement FHIR integration
+
+### Why MDx Vision + TruBridge Makes Sense
+
+| Rural Hospital Challenge | MDx Vision Solution |
+|--------------------------|---------------------|
+| Provider shortage | Efficiency gains, faster documentation |
+| Limited IT staff | Simple AR interface, minimal training |
+| High documentation burden | Voice-first, hands-free |
+| Long patient encounters | Faster data access |
+| Distance between facilities | Mobile, portable solution |
+
+### Pricing Model
+
+Enterprise pricing (not published):
+- Implementation fees
+- Per-facility licensing
+- Ongoing support costs
+- RCM services optional
+
+### Contact Information
+
+- **Website**: https://www.trubridge.com
+- **Sales Contact**: Available on website
+- **Partnership Inquiries**: Through sales team
+
+---
+
+## MEDHOST (Community Hospital EHR)
+
+### Company Overview
+
+| Attribute | Details |
+|-----------|---------|
+| **Full Name** | MEDHOST |
+| **Target Market** | Community hospitals, ambulatory surgery centers |
+| **Market Share** | ~2% of hospital market |
+| **Focus** | Mid-size community hospitals |
+
+### Products
+- **YourCare** - Patient engagement
+- **YourHealth** - EHR platform
+- **Enterprise** - Hospital management
+
+### API Access
+- ONC certified for FHIR R4
+- Enterprise partnership model
+- Not self-service
+
+---
+
+## Path to 90%+ Coverage
+
+### Current State (7 EHRs)
+| Market | Coverage |
+|--------|----------|
+| Hospitals | ~80-85% |
+| Ambulatory | ~35% |
+
+### After Adding These 4 EHRs
+| EHR | Market | Add |
+|-----|--------|-----|
+| DrChrono | Ambulatory | +5% |
+| Practice Fusion | Ambulatory | +4% |
+| CPSI/TruBridge | Hospital | +4% |
+| MEDHOST | Hospital | +2% |
+
+### Projected Coverage (11 EHRs)
+| Market | Coverage |
+|--------|----------|
+| **Hospitals** | ~90%+ |
+| **Ambulatory** | ~44% |
+
+### To Reach 50%+ Ambulatory
+Additional EHRs needed:
+- Kareo/Tebra (~3%)
+- ModMed (~3%)
+- Elation (~2%)
+- AdvancedMD (~4%)
+
+---
+
 ## References
 
 - DrChrono Website: https://www.drchrono.com
 - Practice Fusion Website: https://www.practicefusion.com
+- TruBridge Website: https://www.trubridge.com
 - Veradigm Developer Portal: https://developer.veradigm.com
 - ONC CHPL Database: https://chpl.healthit.gov
 - 21st Century Cures Act FHIR Requirements
