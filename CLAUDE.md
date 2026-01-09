@@ -59,6 +59,7 @@ See [SALES_MATERIALS.md](SALES_MATERIALS.md) for complete index.
 | `INTERNAL_COMPETITIVE_ANALYSIS.md` | Competitor analysis |
 | `INTERNATIONAL_EHR_EXPANSION.md` | International expansion strategy |
 | `PRICING.md` | **Pricing strategy, Redox costs, ROI calculations** |
+| `INVESTOR.md` | **Investor deck content, market size, path to $100M ARR** |
 
 ### EHR Integration Documents
 | File | Description |
