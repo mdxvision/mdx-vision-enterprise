@@ -31,7 +31,7 @@
 |-----|--------|--------------|---------------|-------|
 | **Epic** | ✅ LIVE | ~35-38% | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | MdxClinicalStaff app registered Jan 2026 |
 | **Cerner/Oracle** | ✅ LIVE | ~25-28% | `fhir-open.cerner.com/r4/ec2458f2...` | Full read, demo write via HAPI |
-| **MEDITECH** | ✅ READY | ~15-20% | `greenfield.meditech.com/fhir/r4` | Community/rural hospitals |
+| **MEDITECH** | ✅ LIVE | ~15-20% | `greenfield.meditech.com/fhir/r4` | OAuth2 + FHIR R4 (Greenfield) |
 | **Veradigm** | ✅ LIVE | ~5-8% | `fhir.fhirpoint.open.allscripts.com/fhirroute/fhir/CP00101` | OAuth2 + FHIR R4 |
 
 ### Ambulatory EHRs (Configured: 3)

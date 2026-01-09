@@ -342,6 +342,7 @@ MEDITECH_CLIENT_SECRET = os.getenv("MEDITECH_CLIENT_SECRET", "ZCQi_K0MQqqSIGS35j
 MEDITECH_BASE_URL = os.getenv("MEDITECH_BASE_URL", "https://greenfield.meditech.com/fhir/r4")
 MEDITECH_AUTH_URL = os.getenv("MEDITECH_AUTH_URL", "https://greenfield.meditech.com/oauth2/authorize")
 MEDITECH_TOKEN_URL = os.getenv("MEDITECH_TOKEN_URL", "https://greenfield.meditech.com/oauth2/token")
+MEDITECH_REDIRECT_URI = os.getenv("MEDITECH_REDIRECT_URI", "http://localhost:8002/auth/meditech/callback")
 
 # eClinicalWorks Configuration
 ECLINICALWORKS_CLIENT_ID = os.getenv("ECLINICALWORKS_CLIENT_ID", "576VCnKhhT1JSru1lkHheokd-iCJjRUkIIc3RmrRf1Y")
@@ -1034,6 +1035,146 @@ async def get_ecw_test_patients():
             {"id": pid, **info} for pid, info in ECW_TEST_PATIENTS.items()
         ],
         "note": "Use these patient IDs with ?ehr=eclinicalworks parameter after OAuth authentication"
+    }
+
+
+# MEDITECH Test Patients (Greenfield sandbox)
+MEDITECH_TEST_PATIENTS = {
+    "MT-1001": {"name": "Test Patient One", "dob": "1978-06-15"},
+    "MT-1002": {"name": "Test Patient Two", "dob": "1965-11-22"},
+    "MT-1003": {"name": "Test Patient Three", "dob": "1992-03-08"},
+}
+
+
+@app.get("/auth/meditech/authorize")
+async def meditech_authorize():
+    """
+    Initiate MEDITECH OAuth2 authorization flow.
+    Redirects user to MEDITECH Greenfield login page.
+    """
+    import urllib.parse
+
+    if not MEDITECH_CLIENT_ID:
+        return {
+            "error": "MEDITECH not configured",
+            "message": "Set MEDITECH_CLIENT_ID and MEDITECH_CLIENT_SECRET in environment"
+        }
+
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": MEDITECH_CLIENT_ID,
+        "redirect_uri": MEDITECH_REDIRECT_URI,
+        "scope": "openid fhirUser launch/patient patient/*.read",
+        "state": uuid.uuid4().hex,
+        "aud": MEDITECH_BASE_URL,
+    }
+
+    auth_url = f"{MEDITECH_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with MEDITECH",
+        "redirect_uri": MEDITECH_REDIRECT_URI,
+        "client_id": MEDITECH_CLIENT_ID
+    }
+
+
+@app.get("/auth/meditech/callback")
+async def meditech_callback(code: str = None, state: str = None, error: str = None):
+    """
+    MEDITECH OAuth2 callback - exchanges authorization code for access token.
+    """
+    if error:
+        return {"success": False, "error": error}
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            MEDITECH_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": MEDITECH_REDIRECT_URI,
+                "client_id": MEDITECH_CLIENT_ID,
+                "client_secret": MEDITECH_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["meditech"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),
+                "scope": token_data.get("scope"),
+            }
+
+            return {
+                "success": True,
+                "message": "MEDITECH authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/meditech/status")
+async def meditech_auth_status():
+    """Check MEDITECH authentication status"""
+    if not MEDITECH_CLIENT_ID:
+        return {
+            "configured": False,
+            "message": "MEDITECH not configured. Set MEDITECH_CLIENT_ID in environment."
+        }
+
+    token_data = ehr_tokens.get("meditech")
+
+    if not token_data:
+        return {
+            "configured": True,
+            "authenticated": False,
+            "message": "Not authenticated with MEDITECH. Use /auth/meditech/authorize to start.",
+            "client_id": MEDITECH_CLIENT_ID[:12] + "...",
+            "base_url": MEDITECH_BASE_URL
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "configured": True,
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope")
+    }
+
+
+@app.get("/api/v1/meditech/test-patients")
+async def get_meditech_test_patients():
+    """Get list of MEDITECH Greenfield sandbox test patients"""
+    return {
+        "ehr": "meditech",
+        "sandbox_url": MEDITECH_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in MEDITECH_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=meditech parameter after OAuth authentication"
     }
 
 
