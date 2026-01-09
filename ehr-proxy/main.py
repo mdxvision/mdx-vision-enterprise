@@ -315,9 +315,10 @@ EPIC_REDIRECT_URI = os.getenv("EPIC_REDIRECT_URI", "http://localhost:8002/auth/e
 # Veradigm Configuration
 VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "11A47952-0F52-4936-A6A3-CF91FDFDDF14")
 VERADIGM_CLIENT_SECRET = os.getenv("VERADIGM_CLIENT_SECRET", "E32B4F39BA2F")
-VERADIGM_BASE_URL = os.getenv("VERADIGM_BASE_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/open/sandbox/r4")
-VERADIGM_AUTH_URL = os.getenv("VERADIGM_AUTH_URL", "https://open.allscripts.com/oauth2/authorize")
-VERADIGM_TOKEN_URL = os.getenv("VERADIGM_TOKEN_URL", "https://open.allscripts.com/oauth2/token")
+VERADIGM_BASE_URL = os.getenv("VERADIGM_BASE_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/fhir/CP00101")
+VERADIGM_AUTH_URL = os.getenv("VERADIGM_AUTH_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/authorizationV2/CP00101/connect/authorize")
+VERADIGM_TOKEN_URL = os.getenv("VERADIGM_TOKEN_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/authorizationV2/CP00101/connect/token")
+VERADIGM_REDIRECT_URI = os.getenv("VERADIGM_REDIRECT_URI", "http://localhost:8002/auth/veradigm/callback")
 
 # athenahealth Configuration
 ATHENA_CLIENT_ID = os.getenv("ATHENA_CLIENT_ID", "")
@@ -482,6 +483,132 @@ async def get_epic_test_patients():
             {"id": pid, **info} for pid, info in EPIC_TEST_PATIENTS.items()
         ],
         "note": "Use these patient IDs with ?ehr=epic parameter"
+    }
+
+
+# Veradigm Test Patients (CP00101 sandbox)
+VERADIGM_TEST_PATIENTS = {
+    "R2785": {"name": "Test Patient", "dob": "1980-01-15"},
+    "R2786": {"name": "Demo Patient", "dob": "1975-03-22"},
+    "R2787": {"name": "Sample Patient", "dob": "1990-07-08"},
+}
+
+
+@app.get("/auth/veradigm/authorize")
+async def veradigm_authorize():
+    """
+    Initiate Veradigm OAuth2 authorization flow.
+    Redirects user to Veradigm login page.
+    """
+    import urllib.parse
+
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": VERADIGM_CLIENT_ID,
+        "redirect_uri": VERADIGM_REDIRECT_URI,
+        "scope": "launch/patient patient/*.read openid fhirUser",
+        "state": uuid.uuid4().hex,
+        "aud": VERADIGM_BASE_URL,
+    }
+
+    auth_url = f"{VERADIGM_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with Veradigm",
+        "redirect_uri": VERADIGM_REDIRECT_URI,
+        "client_id": VERADIGM_CLIENT_ID
+    }
+
+
+@app.get("/auth/veradigm/callback")
+async def veradigm_callback(code: str = None, state: str = None, error: str = None):
+    """
+    Veradigm OAuth2 callback - exchanges authorization code for access token.
+    """
+    if error:
+        return {"success": False, "error": error}
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            VERADIGM_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": VERADIGM_REDIRECT_URI,
+                "client_id": VERADIGM_CLIENT_ID,
+                "client_secret": VERADIGM_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["veradigm"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),
+                "scope": token_data.get("scope"),
+            }
+
+            return {
+                "success": True,
+                "message": "Veradigm authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/veradigm/status")
+async def veradigm_auth_status():
+    """Check Veradigm authentication status"""
+    token_data = ehr_tokens.get("veradigm")
+
+    if not token_data:
+        return {
+            "authenticated": False,
+            "message": "Not authenticated with Veradigm. Use /auth/veradigm/authorize to start.",
+            "client_id": VERADIGM_CLIENT_ID,
+            "base_url": VERADIGM_BASE_URL
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope")
+    }
+
+
+@app.get("/api/v1/veradigm/test-patients")
+async def get_veradigm_test_patients():
+    """Get list of Veradigm sandbox test patients"""
+    return {
+        "ehr": "veradigm",
+        "sandbox_url": VERADIGM_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in VERADIGM_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=veradigm parameter after OAuth authentication"
     }
 
 
@@ -2761,9 +2888,14 @@ async def get_ehr_status():
 
 
 @app.get("/api/v1/patient/search", response_model=List[SearchResult])
-async def search_patients(name: str, request: Request):
-    """Search patients by name - for voice command 'Find patient...'"""
-    bundle = await fetch_fhir(f"Patient?name={name}&_count=10")
+async def search_patients(name: str, request: Request, ehr: str = "cerner"):
+    """Search patients by name - for voice command 'Find patient...'
+
+    Args:
+        name: Patient name to search for
+        ehr: EHR system to query (cerner, epic, veradigm, athena, nextgen, meditech, eclinicalworks, hapi)
+    """
+    bundle = await fetch_fhir(f"Patient?name={name}&_count=10", ehr=ehr)
 
     results = []
     for entry in bundle.get("entry", []):
@@ -2782,7 +2914,7 @@ async def search_patients(name: str, request: Request):
         patient_id="search",
         endpoint="/api/v1/patient/search",
         status="success",
-        details=f"query={name}, results={len(results)}",
+        details=f"query={name}, ehr={ehr}, results={len(results)}",
         ip_address=ip_address,
         user_agent=request.headers.get("User-Agent", "")
     )

@@ -32,7 +32,7 @@
 | **Epic** | ✅ LIVE | ~35-38% | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | MdxClinicalStaff app registered Jan 2026 |
 | **Cerner/Oracle** | ✅ LIVE | ~25-28% | `fhir-open.cerner.com/r4/ec2458f2...` | Full read, demo write via HAPI |
 | **MEDITECH** | ✅ READY | ~15-20% | `greenfield.meditech.com/fhir/r4` | Community/rural hospitals |
-| **Veradigm** | ✅ READY | ~5-8% | `fhir.fhirpoint.open.allscripts.com/...` | Sunrise (hospital side) |
+| **Veradigm** | ✅ LIVE | ~5-8% | `fhir.fhirpoint.open.allscripts.com/fhirroute/fhir/CP00101` | OAuth2 + FHIR R4 |
 
 ### Ambulatory EHRs (Configured: 3)
 
@@ -74,7 +74,7 @@ ECLINICALWORKS_CLIENT_ID = os.getenv("ECLINICALWORKS_CLIENT_ID", "576VCnKhhT1JSr
 # FHIR Base URLs
 CERNER_BASE_URL = "https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d"
 EPIC_BASE_URL = "https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4"
-VERADIGM_BASE_URL = "https://fhir.fhirpoint.open.allscripts.com/fhirroute/open/sandbox/r4"
+VERADIGM_BASE_URL = "https://fhir.fhirpoint.open.allscripts.com/fhirroute/fhir/CP00101"
 MEDITECH_BASE_URL = "https://greenfield.meditech.com/fhir/r4"
 ECLINICALWORKS_BASE_URL = "https://fhir.eclinicalworks.com/fhir/r4"
 ```
