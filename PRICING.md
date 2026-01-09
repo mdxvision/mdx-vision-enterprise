@@ -9,53 +9,265 @@
 
 MDx Vision is **NOT** an AI scribe. It's a **complete AR clinical platform** with 96+ features that happens to include AI documentation. Pricing must reflect the full value delivered.
 
-| Competitor | What They Do | Price |
-|------------|--------------|-------|
-| Nuance DAX | AI transcription + notes | $200-300/physician/mo |
-| Augmedix | Human + AI scribe | $300-400/physician/mo |
-| Suki AI | Voice assistant | $200-250/physician/mo |
-| **MDx Vision** | **Everything above + 90 more features** | **$399-599/physician/mo** |
+### 2025-2026 Market Pricing (Verified)
 
-**We are 3-5x more capable. We should price 1.5-2x higher.**
+| Competitor | What They Do | Price/Month | Annual |
+|------------|--------------|-------------|--------|
+| Freed | Basic AI scribe | $99 | $1,188 |
+| Nabla | AI scribe + 55 specialties | $99-119 | $1,200-1,400 |
+| Suki AI | Voice assistant + EHR | $399 | $4,788 |
+| Abridge | Enterprise AI scribe (Epic) | $400-600 | $4,800-7,200 |
+| DeepScribe | Enterprise + specialty templates | ~$667 | ~$8,000 |
+| Nuance DAX Copilot | Microsoft/enterprise | $500-800 | $6,000-9,600 |
+| Augmedix (AI) | AI-only scribe | $300-700 | $3,600-8,400 |
+| Augmedix (Premium) | Human + AI hybrid | $1,200-2,000 | $14,400-24,000 |
+| Ambience | Full AI OS suite | $233-417 | $2,800-5,000 |
+| **MDx Vision** | **96-feature AR platform** | **$499-799** | **$5,988-9,588** |
+
+### Why MDx Vision Commands Premium Pricing
+
+| Factor | Competitors | MDx Vision |
+|--------|-------------|------------|
+| **Core Function** | AI scribe only | Full clinical platform |
+| **Features** | 5-15 | **96** |
+| **Hardware** | Phone/tablet app | **AR glasses (hands-free)** |
+| **EHR Write-Back** | Limited/none | **Full CRUD to 7+ EHRs** |
+| **Clinical Decision Support** | None | **DDx, interactions, care gaps** |
+| **Health Equity** | None | **8 comprehensive modules** |
+| **Billing Automation** | Basic/none | **Full ICD-10/CPT with modifiers** |
+
+**We deliver 10-20x more capability. We price 1.5-2x higher. That's exceptional value.**
+
+---
+
+## Competitive Landscape (Deep Dive)
+
+### Tier 1: Budget AI Scribes ($99-150/month)
+
+#### Freed ($99/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | $99/user/month ($90 annual) |
+| **What It Does** | Basic AI transcription, SOAP notes |
+| **Target** | Solo practitioners, small clinics |
+| **EHR Integration** | Basic (copy/paste) |
+| **Strengths** | Affordable, simple, 7-day free trial |
+| **Weaknesses** | No voice commands, no clinical decision support, no write-back |
+| **Source** | [Freed Pricing](https://www.getfreed.ai/pricing) |
+
+#### Nabla ($99-119/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | $99-119/user/month |
+| **What It Does** | AI scribe with 55 specialty templates |
+| **Target** | SMB practices |
+| **EHR Integration** | Basic integrations |
+| **Strengths** | Fast (notes in <10 sec), multi-specialty |
+| **Weaknesses** | No write-back, no clinical decision support, no hardware |
+| **Funding** | $70M Series C (June 2025) |
+| **Source** | [Nabla](https://www.nabla.com/) |
+
+### Tier 2: Mid-Market AI Scribes ($300-500/month)
+
+#### Suki AI ($399/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | $399/user/month |
+| **What It Does** | Voice assistant + AI documentation |
+| **Target** | Enterprise health systems (100+ clinicians) |
+| **EHR Integration** | Bidirectional (major EHRs) |
+| **Strengths** | Voice-first, mobile app, EHR depth |
+| **Weaknesses** | No AR/hardware, limited clinical decision support, enterprise-only |
+| **Funding** | $70M (total) |
+| **Source** | [Suki AI](https://www.suki.ai/) |
+
+#### Abridge ($400-600/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | $400-600/user/month (enterprise) |
+| **What It Does** | Generative AI notes, Epic focus |
+| **Target** | Large health systems (150+ providers) |
+| **EHR Integration** | Deep Epic integration |
+| **Strengths** | LLM summarization, Epic native |
+| **Weaknesses** | Epic-centric, 3-6 month setup, enterprise-only |
+| **Valuation** | $5.3B (June 2025) |
+| **ARR** | ~$100M (May 2025) |
+| **Source** | [Abridge](https://www.abridge.com/), [TechCrunch](https://techcrunch.com/2025/06/24/in-just-4-months-ai-medical-scribe-abridge-doubles-valuation-to-5-3b/) |
+
+#### Ambience Healthcare ($233-417/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | $2,800-5,000/year ($233-417/month) |
+| **What It Does** | Full "AI OS" suite with ambient scribe |
+| **Target** | Major health systems |
+| **EHR Integration** | Custom enterprise integrations |
+| **Strengths** | Comprehensive AI suite, billing features |
+| **Weaknesses** | Long implementation, enterprise-only, no hardware |
+| **Funding** | $243M Series C (July 2025) |
+| **ARR** | ~$30M (May 2025) |
+| **Source** | [Ambience Healthcare](https://www.ambiencehealthcare.com/) |
+
+### Tier 3: Enterprise AI Scribes ($500-800/month)
+
+#### Nuance DAX Copilot ($500-800/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | $500-800/user/month |
+| **What It Does** | Microsoft-backed ambient clinical intelligence |
+| **Target** | Enterprise health systems |
+| **EHR Integration** | Major EHRs via Microsoft Health |
+| **Strengths** | Microsoft backing, Dragon integration, enterprise scale |
+| **Weaknesses** | Requires Dragon Medical One, expensive, iOS only, complex setup |
+| **Parent** | Microsoft (acquired 2021 for $19.7B) |
+| **Source** | [Microsoft Dragon Copilot](https://www.microsoft.com/en-us/health-solutions/clinical-workflow/dragon-copilot) |
+
+#### DeepScribe (~$667/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | ~$8,000/year (~$667/month) |
+| **What It Does** | Enterprise AI scribe with human QA loop |
+| **Target** | Large hospitals, multi-specialty orgs |
+| **EHR Integration** | Deep EHR integrations |
+| **Strengths** | Human-in-loop QA, specialty templates |
+| **Weaknesses** | Sales consultation required, complex setup |
+| **Source** | [DeepScribe](https://www.deepscribe.ai/) |
+
+### Tier 4: Premium Human+AI Hybrid ($1,000-2,000/month)
+
+#### Augmedix Premium ($1,200-2,000/month)
+| Attribute | Details |
+|-----------|---------|
+| **Price** | $1,200-2,000/user/month |
+| **What It Does** | Human scribes assisted by AI |
+| **Target** | High-volume practices needing guaranteed quality |
+| **EHR Integration** | Full integration |
+| **Strengths** | Human QA, notes ready in 1 hour, coding assistance |
+| **Weaknesses** | Very expensive, human dependency |
+| **Note** | Also offers AI-only tier at $300-700/month |
+| **Source** | [Augmedix](https://www.augmedix.com/) |
+
+### Tier 5: Traditional Human Scribes ($2,500-4,000/month)
+
+| Provider | Price | Notes |
+|----------|-------|-------|
+| In-person scribes | $2,500-4,000/physician/month | Highest quality, highest cost |
+| Virtual scribes | $1,500-2,500/physician/month | Remote human documentation |
+
+---
+
+## Where MDx Vision Fits
+
+### Positioning Map
+
+```
+                    LOW FEATURES ←―――――――――――――――――→ HIGH FEATURES
+                         │
+        $2,000/mo        │                      ┌─────────────────┐
+                         │                      │ Human Scribes   │
+                         │                      │ ($2,500-4,000)  │
+                         │                      └─────────────────┘
+        $1,500/mo        │          ┌──────────────┐
+                         │          │ Augmedix     │
+                         │          │ Premium      │
+                         │          │ ($1,200-2K)  │
+        $1,000/mo        │          └──────────────┘
+                         │
+         $800/mo         │     ┌──────────────┐
+                         │     │ Nuance DAX   │
+                         │     │ ($500-800)   │
+         $600/mo         │     └──────────────┘  ┌─────────────────────┐
+                         │   ┌───────────┐      │                     │
+                         │   │ DeepScribe│      │   ★ MDx VISION ★    │
+         $500/mo         │   │ Abridge   │      │     ($499-799)      │
+                         │   │ ($400-667)│      │   96 FEATURES       │
+                         │   └───────────┘      │   AR GLASSES        │
+         $400/mo         │ ┌────────┐           │   FULL EHR CRUD     │
+                         │ │ Suki   │           │   CLINICAL CDS      │
+                         │ │ ($399) │           │   HEALTH EQUITY     │
+         $300/mo         │ └────────┘           │   BILLING AUTO      │
+                         │                      └─────────────────────┘
+         $200/mo         │
+                         │
+         $100/mo    ┌────────────┐
+                    │Freed/Nabla │
+                    │ ($99-119)  │
+                    └────────────┘
+                         │
+                    5 features              96 features
+```
+
+### MDx Vision vs Every Competitor
+
+| vs Competitor | Their Price | Our Price | Our Advantage |
+|---------------|-------------|-----------|---------------|
+| **vs Freed** | $99 | $499 | 5x price, 19x features, AR hardware, EHR write-back |
+| **vs Nabla** | $119 | $499 | 4x price, 16x features, AR hardware, clinical CDS |
+| **vs Suki** | $399 | $499 | 1.25x price, 10x features, AR hardware, health equity |
+| **vs Abridge** | $500 | $499 | SAME price, 10x features, works with ALL EHRs not just Epic |
+| **vs DeepScribe** | $667 | $499 | CHEAPER, more features, AR hardware |
+| **vs Nuance DAX** | $600 | $499 | CHEAPER, 15x features, AR hardware, no Dragon required |
+| **vs Augmedix AI** | $500 | $499 | SAME price, 12x features, AR hardware |
+| **vs Augmedix Premium** | $1,600 | $499 | 3x CHEAPER, AI-native, AR hardware |
+| **vs Human Scribes** | $3,000 | $499 | 6x CHEAPER, available 24/7, AR hardware |
 
 ---
 
 ## What MDx Vision Actually Does (vs Competition)
 
-### Feature Comparison Matrix
+### Feature Comparison Matrix (All Competitors)
 
-| Category | Nuance DAX | Augmedix | Suki | **MDx Vision** |
-|----------|------------|----------|------|----------------|
-| **AI Transcription** | Yes | Yes | Yes | **Yes** |
-| **SOAP Note Generation** | Yes | Yes | Yes | **Yes** |
-| **AR Glasses Display** | No | No | No | **Yes** |
-| **Hands-Free Operation** | No | No | Partial | **Yes** |
-| **Wake Word Activation** | No | No | Yes | **Yes** |
-| **EHR Integration (Read)** | Limited | Limited | Limited | **7 EHRs + Aggregators** |
-| **EHR Write-Back** | Limited | Limited | No | **Full CRUD** |
-| **Voice Commands (50+)** | No | No | ~10 | **50+ Commands** |
-| **Gesture Control** | No | No | No | **Yes (Nod/Shake/Wink)** |
-| **Clinical Decision Support** | No | No | No | **Yes (DDx, Interactions)** |
-| **Care Gap Detection** | No | No | No | **Yes (31 Rules)** |
-| **Health Equity Features** | No | No | No | **Yes (8 Features)** |
-| **Billing/Coding Automation** | No | No | No | **Yes (ICD-10/CPT)** |
-| **Order Entry by Voice** | No | No | No | **Yes** |
-| **Medical Image Analysis** | No | No | No | **Yes (Claude Vision)** |
-| **RAG Knowledge System** | No | No | No | **Yes (Evidence-Based)** |
-| **HIPAA Audit Logging** | Basic | Basic | Basic | **Comprehensive** |
-| **Multi-Language** | No | No | No | **Yes (5 Languages)** |
-| **Offline Mode** | No | No | No | **Yes** |
+| Feature | Freed | Nabla | Suki | Abridge | DeepScribe | Nuance DAX | Augmedix | **MDx Vision** |
+|---------|-------|-------|------|---------|------------|------------|----------|----------------|
+| **Price/month** | $99 | $119 | $399 | $500 | $667 | $600 | $500 | **$499** |
+| **AI Transcription** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | **Yes** |
+| **SOAP Notes** | Yes | Yes | Yes | Yes | Yes | Yes | Yes | **Yes** |
+| **Specialty Templates** | No | 55 | Some | Some | Yes | Some | Yes | **14** |
+| **AR Glasses Display** | No | No | No | No | No | No | No | **Yes** |
+| **Hands-Free Operation** | No | No | Partial | No | No | No | No | **Yes** |
+| **Wake Word Activation** | No | No | Yes | No | No | No | No | **Yes** |
+| **EHR Integration** | Copy/paste | Basic | Major | Epic only | Major | Major | Major | **7+ EHRs** |
+| **EHR Write-Back** | No | No | Limited | Yes | Limited | Limited | Yes | **Full CRUD** |
+| **Voice Commands** | No | No | ~10 | No | No | Basic | No | **50+** |
+| **Gesture Control** | No | No | No | No | No | No | No | **Yes** |
+| **AI Differential Dx** | No | No | No | No | No | No | No | **Yes** |
+| **Drug Interactions** | No | No | No | No | No | No | No | **Yes** |
+| **Care Gap Detection** | No | No | No | No | No | No | No | **Yes (31 rules)** |
+| **Health Equity** | No | No | No | No | No | No | No | **Yes (8 modules)** |
+| **ICD-10/CPT Coding** | Basic | Basic | Basic | Basic | Yes | Basic | Yes | **Full + modifiers** |
+| **Order Entry by Voice** | No | No | No | No | No | No | No | **Yes** |
+| **Medical Image Analysis** | No | No | No | No | No | No | No | **Yes** |
+| **RAG Knowledge System** | No | No | No | No | No | No | No | **Yes** |
+| **Voiceprint Security** | No | No | No | No | No | No | No | **Yes** |
+| **Multi-Language** | No | No | No | No | No | No | No | **Yes (5)** |
+| **Offline Mode** | No | No | No | No | No | No | No | **Yes** |
+| **Ambient Mode (ACI)** | No | Some | No | Yes | Yes | Yes | Yes | **Yes** |
+| **HIPAA Audit Logging** | Basic | Basic | Basic | Yes | Yes | Yes | Yes | **Comprehensive** |
 
-### Feature Count Comparison
+### Feature Count & Value Analysis
 
-| Product | Features | Price | Value Ratio |
-|---------|----------|-------|-------------|
-| Nuance DAX | ~5 | $250/mo | $50/feature |
-| Augmedix | ~8 | $350/mo | $44/feature |
-| Suki | ~10 | $225/mo | $23/feature |
-| **MDx Vision** | **96** | **$499/mo** | **$5/feature** |
+| Product | Features | Price/mo | $/Feature | ROI vs MDx |
+|---------|----------|----------|-----------|------------|
+| Freed | ~5 | $99 | $19.80 | MDx has 19x features for 5x price |
+| Nabla | ~8 | $119 | $14.88 | MDx has 12x features for 4x price |
+| Suki | ~12 | $399 | $33.25 | MDx has 8x features for 1.25x price |
+| Abridge | ~10 | $500 | $50.00 | MDx has 10x features for SAME price |
+| DeepScribe | ~12 | $667 | $55.58 | MDx has 8x features for LESS |
+| Nuance DAX | ~8 | $600 | $75.00 | MDx has 12x features for LESS |
+| Augmedix | ~10 | $500 | $50.00 | MDx has 10x features for SAME price |
+| **MDx Vision** | **96** | **$499** | **$5.20** | **Best value by far** |
 
-**MDx Vision delivers 10-20x more features at only 1.5-2x the price.**
+### The Bottom Line
+
+**Every competitor charges $99-800/month for 5-12 features.**
+
+**MDx Vision charges $499-799/month for 96 features.**
+
+That's:
+- **8-19x more features** than any competitor
+- **Same or lower price** than enterprise competitors
+- **Only product with AR hardware support**
+- **Only product with comprehensive health equity features**
+- **Only product with full voice-controlled clinical decision support**
 
 ---
 
@@ -152,94 +364,121 @@ Redox is a healthcare data aggregator that provides single-API access to 50+ EHR
 - Nurses included FREE (competitive advantage)
 - Scales naturally with hospital size
 
-### Pricing Tiers
+### Pricing Tiers (Updated with Competitive Analysis)
 
-| Tier | Price | Target | Includes |
-|------|-------|--------|----------|
-| **Essentials** | $299/physician/mo | Small practices | Core documentation, 3 EHRs |
-| **Professional** | $399/physician/mo | Community hospitals | Full platform, 7 EHRs, health equity |
-| **Enterprise** | $499/physician/mo | Academic centers | Everything + RAG, custom integrations |
-| **Enterprise+** | $599/physician/mo | Health systems | Multi-site, dedicated support, SLA |
+| Tier | Price | Target | Competes With |
+|------|-------|--------|---------------|
+| **Essentials** | $399/physician/mo | Small practices | Suki ($399) - but 8x features |
+| **Professional** | $599/physician/mo | Community hospitals | Abridge ($500), Nuance ($600) - 10x features |
+| **Enterprise** | $799/physician/mo | Academic centers | Premium tier, no direct competitor |
+| **Enterprise+** | Custom | Health systems | Full partnership, dedicated team |
+
+### Why These Prices Make Sense
+
+| Our Tier | Price | Competitor | Their Price | Our Advantage |
+|----------|-------|------------|-------------|---------------|
+| Essentials | $399 | Suki | $399 | Same price, 8x features, AR hardware |
+| Professional | $599 | Nuance DAX | $600 | Same price, 12x features, no Dragon needed |
+| Enterprise | $799 | Augmedix Premium | $1,600 | Half price, no human dependency |
+| Enterprise+ | Custom | Human Scribes | $3,000 | 75%+ savings, 24/7 availability |
 
 ### What Each Tier Includes
 
-#### Essentials ($299/physician/month)
-- AI transcription + SOAP notes
+#### Essentials ($399/physician/month)
+*Competes with Suki at same price, delivers 8x more*
+
+- AI transcription + SOAP notes (ambient mode)
 - Voice commands (50+)
-- AR glasses support (BYOD)
+- AR glasses support (BYOD - Vuzix, RealWear, etc.)
 - 3 major EHRs (Epic, Cerner, MEDITECH)
-- ICD-10/CPT coding suggestions
+- ICD-10/CPT coding suggestions with modifiers
 - Basic clinical decision support
+- Drug interaction checking
 - HIPAA audit logging
 - Email support
+- **Nurses included FREE** (Suki charges per user)
 
-#### Professional ($399/physician/month)
+#### Professional ($599/physician/month)
+*Competes with Nuance DAX at same price, delivers 10x more*
+
 Everything in Essentials, plus:
-- All 7 EHR integrations
+- All 7+ EHR integrations (via Redox: 50+ EHRs)
 - Full CRUD write-back to EHR
-- Health equity features (8 modules)
+- Health equity features (8 modules) - **UNIQUE TO MDx**
 - Care gap detection (31 rules)
-- Drug interaction checking
-- Medical calculators
-- Multi-language support (5)
-- Gesture control
+- AI Differential Diagnosis
+- Medical calculators (10+)
+- Multi-language support (5 languages)
+- Gesture control (nod, shake, wink)
+- Voiceprint biometric security
 - Phone support
 
-#### Enterprise ($499/physician/month)
+#### Enterprise ($799/physician/month)
+*Premium tier - no direct competitor at this capability level*
+
 Everything in Professional, plus:
-- RAG knowledge system
-- AI Clinical Co-pilot
-- Differential diagnosis
-- Medical image analysis
-- Custom order sets
-- Specialty templates (14)
-- API access
+- RAG knowledge system (evidence-based notes)
+- AI Clinical Co-pilot (teaching mode, second opinion)
+- Medical image analysis (Claude Vision)
+- Custom order sets (12 built-in)
+- Specialty templates (14 specialties)
+- Pre-visit prep alerts (Jarvis AI)
+- Chief complaint workflows
+- API access for custom integrations
 - Dedicated success manager
 - 99.9% SLA
+- Priority support (4-hour response)
 
-#### Enterprise+ ($599/physician/month)
+#### Enterprise+ (Custom Pricing)
+*Full partnership for large health systems*
+
 Everything in Enterprise, plus:
-- Multi-site deployment
-- Custom EHR integrations
-- White-label option
-- On-premise option
-- 24/7 support
-- Custom training
+- Multi-site deployment with central management
+- Custom EHR integrations beyond standard 7
+- White-label option (your branding)
+- On-premise deployment option
+- 24/7 dedicated support line
+- Custom training and onboarding
 - Quarterly business reviews
+- Executive sponsor
+- Custom feature development
+- Volume discounts negotiated
 
 ---
 
-## Revenue Projections
+## Revenue Projections (Updated Pricing)
 
 ### Single Hospital: NYP Columbia (738 beds)
 
 | Tier | Physicians | Price | Monthly | Annual |
 |------|------------|-------|---------|--------|
-| Professional | 1,400 | $399 | $558,600 | $6.7M |
-| Enterprise | 1,400 | $499 | $698,600 | $8.4M |
-| **Recommended** | 1,400 | $449 | $628,600 | **$7.5M** |
+| Essentials | 1,400 | $399 | $558,600 | $6.7M |
+| Professional | 1,400 | $599 | $838,600 | $10.1M |
+| Enterprise | 1,400 | $799 | $1,118,600 | $13.4M |
+| **Recommended** | 1,400 | $599 | $838,600 | **$10.1M** |
 
 **Costs:**
 - Redox: ~$35,000/month = $420,000/year
 - Infrastructure: ~$5,000/month = $60,000/year
-- Support: ~$10,000/month = $120,000/year
-- **Total Cost: ~$600,000/year**
+- Support (dedicated): ~$15,000/month = $180,000/year
+- **Total Cost: ~$660,000/year**
 
-**Profit: $6.9M/year (92% margin)**
+**Profit: $9.4M/year (93% margin)**
 
 ### Single Hospital: Community (180 beds)
 
 | Tier | Physicians | Price | Monthly | Annual |
 |------|------------|-------|---------|--------|
-| Professional | 90 | $399 | $35,910 | $431K |
-| Enterprise | 90 | $499 | $44,910 | $539K |
-| **Recommended** | 90 | $399 | $35,910 | **$431K** |
+| Essentials | 90 | $399 | $35,910 | $431K |
+| Professional | 90 | $599 | $53,910 | $647K |
+| **Recommended** | 90 | $599 | $53,910 | **$647K** |
 
 **Costs:**
 - Redox: ~$5,000/month = $60,000/year
+- Infrastructure + Support: ~$20,000/year
 - **Total Cost: ~$80,000/year**
 
-**Profit: $351K/year (81% margin)**
+**Profit: $567K/year (88% margin)**
 
 ### Health System: 10 Hospitals
 
@@ -247,11 +486,12 @@ Everything in Enterprise, plus:
 |--------|-------|
 | Total Beds | 3,500 |
 | Total Physicians | 5,000 |
-| Price (volume discount) | $399/physician |
-| Monthly Revenue | $1,995,000 |
-| Annual Revenue | **$23.9M** |
-| Redox Costs | ~$150,000/month |
-| Annual Profit | **$22M (92% margin)** |
+| Price (volume discount) | $499/physician (Enterprise+ negotiated) |
+| Monthly Revenue | $2,495,000 |
+| Annual Revenue | **$29.9M** |
+| Redox Costs | ~$150,000/month = $1.8M/year |
+| Other Costs | ~$300,000/year |
+| **Annual Profit** | **$27.8M (93% margin)** |
 
 ---
 
@@ -266,8 +506,8 @@ Everything in Enterprise, plus:
 | Physician hourly rate | $150-400/hour |
 | Daily savings per physician | $112-400/day |
 | Monthly savings per physician | $2,464-8,800/month |
-| **MDx Vision cost** | $399-499/month |
-| **ROI** | **5-22x return** |
+| **MDx Vision cost** | $399-799/month |
+| **ROI** | **4-22x return** |
 
 ### Additional Value (Often Overlooked)
 
@@ -278,19 +518,22 @@ Everything in Enterprise, plus:
 | Compliance improvements | $100-300 |
 | Reduced burnout/turnover | $500-2,000 |
 | Care gap closure (quality bonuses) | $200-1,000 |
-| **Total Additional Value** | $1,300-4,600 |
+| Health equity compliance | $100-500 |
+| **Total Additional Value** | $1,400-5,100 |
 
 ### Sales ROI Pitch
 
-> "Dr. Smith, MDx Vision costs $499/month. You currently spend 2 hours daily on documentation - that's $400/day at your billing rate.
+> "Dr. Smith, MDx Vision Professional costs $599/month. You currently spend 2 hours daily on documentation - that's $400/day at your billing rate.
 >
-> MDx Vision cuts documentation time by 45-60 minutes. That's $150-200/day saved.
+> MDx Vision cuts documentation time by 45-60 minutes. That's $150-200/day saved = **$3,300-4,400/month**.
 >
 > Plus automated coding catches an extra $300/month in missed charges.
 >
-> **Total value: $3,500-5,000/month. Cost: $499/month. ROI: 7-10x.**
+> Plus health equity features help you meet quality metrics for another $200-500/month.
 >
-> And your nurses get it free. Would you like to start a pilot?"
+> **Total value: $4,000-5,500/month. Cost: $599/month. ROI: 7-9x.**
+>
+> And your nurses get it free. Nuance DAX charges $600 for 8 features. We charge $599 for 96 features. Would you like to start a pilot?"
 
 ---
 
@@ -313,13 +556,22 @@ Everything in Enterprise, plus:
 ### Objection Handling
 
 **"Nuance DAX is cheaper"**
-> "Nuance is an AI scribe for $250/month. MDx Vision is a complete clinical platform with 96 features including AR display, clinical decision support, health equity, and full EHR integration for $499/month. You're comparing a bicycle to a Tesla."
+> "Actually, Nuance DAX costs $500-800/month. Our Professional tier is $599 - basically the same price. But DAX has ~8 features. We have 96. DAX doesn't have AR glasses, health equity features, or care gap detection. You're getting 12x more features for the same price. That's not more expensive - that's dramatically better value."
+
+**"Suki is only $399"**
+> "Correct, and our Essentials tier is also $399. Same price. But Suki has ~12 features and no AR glasses. We have 96 features with full AR support. At $399, we're giving you 8x more capability. Why would you choose fewer features at the same price?"
+
+**"Freed is only $99"**
+> "Freed is a basic AI scribe - transcription and notes only. No EHR write-back, no clinical decision support, no health equity, no AR glasses, no voice commands. It's fine for a solo practitioner who just wants to dictate notes. But for a hospital that needs real clinical workflow integration? That's like comparing a calculator to a computer. Different tools for different jobs."
 
 **"We already have Epic"**
-> "Great! MDx Vision integrates directly with Epic AND adds hands-free AR display, voice-activated everything, clinical decision support, and health equity features that Epic doesn't have. We enhance Epic, we don't replace it."
+> "Perfect - we integrate with Epic. MDx Vision adds hands-free AR display, 50+ voice commands, clinical decision support with AI differential diagnosis, drug interaction checking, care gap detection, and comprehensive health equity features. None of that exists in Epic. We make your Epic investment work harder."
 
 **"The price is too high"**
-> "Let's do the math. Your physicians spend 2 hours daily on documentation at $300/hour. That's $600/day, $13,200/month in lost productivity. MDx Vision costs $499 and saves 45-60 minutes daily. That's $3,000-4,000/month recovered. ROI is 7-8x. Can your hospital afford NOT to use this?"
+> "Let's compare: Your physicians spend 2 hours daily on documentation. At $300/hour, that's $13,200/month in lost productivity per physician. MDx Vision Professional costs $599/month and saves 45-60 minutes daily - that's $3,300-4,400/month recovered. ROI is 6-7x. Plus we catch coding errors worth $200-500/month. Nuance charges the same for 12x fewer features. How is $599 too high when it returns $4,000+?"
+
+**"We're looking at Abridge"**
+> "Abridge is great if you're Epic-only. They charge $400-600/month for AI notes with Epic integration. We charge $599 for 96 features that work with Epic, Cerner, MEDITECH, athena, NextGen, eClinicalWorks, and Veradigm. Plus AR glasses. Plus health equity. Plus clinical decision support. If you ever expand beyond Epic, or want features Abridge doesn't have, you'll have to switch. We're future-proof."
 
 ---
 
