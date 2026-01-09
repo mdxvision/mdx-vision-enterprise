@@ -135,14 +135,32 @@ ECLINICALWORKS_BASE_URL=https://fhir.eclinicalworks.com/fhir/r4
 
 ---
 
-## Integration Platforms (Alternative to Direct)
+## Aggregator Platforms (Single API → All EHRs)
 
-| Platform | Status | Coverage | Notes |
-|----------|--------|----------|-------|
-| **Redox** | 📋 TODO | 50+ EHRs | Single API, free reads |
-| **Health Gorilla** | 📋 TODO | 320M patients | Aggregated data |
-| **Particle Health** | 📋 TODO | 90% EHR market | Single connection |
-| **1upHealth** | 📋 TODO | 10,000+ health centers | FHIR-first |
+> **Fastest path to 90%+ coverage**: One integration instead of dozens.
+> See [EHR_AGGREGATOR_PLATFORMS.md](EHR_AGGREGATOR_PLATFORMS.md) for detailed research.
+
+| Platform | Coverage | Best For | Pricing | Recommendation |
+|----------|----------|----------|---------|----------------|
+| **Redox** | 50+ EHRs, 12,200 orgs | EHR read/write | Free reads, paid writes | ⭐ PRIMARY |
+| **Particle Health** | 320M patients, 90% US | Record retrieval | Per-query | ⭐ SECONDARY |
+| **Health Gorilla** | TEFCA certified | Lab ordering | Subscription | Enterprise |
+| **1upHealth** | 10,000+ facilities | Payer compliance | Per-connection | Payer-focused |
+
+### Why Use Aggregators?
+
+| Direct Integration | Aggregator |
+|--------------------|------------|
+| 7 EHRs = 14-28 weeks work | 2 platforms = 8-12 weeks |
+| ~80% hospital coverage | ~95% hospital coverage |
+| ~35% ambulatory coverage | ~90% ambulatory coverage |
+| Maintain 7 integrations | Maintain 2 integrations |
+
+### Recommended Strategy
+
+1. **Keep**: Epic, Cerner, MEDITECH (major hospital EHRs)
+2. **Add Redox**: For all other EHRs + write-back capability
+3. **Add Particle**: For patient record retrieval across networks
 
 ---
 
@@ -209,5 +227,10 @@ curl http://localhost:8002/api/v1/patient/{patient_id}?ehr=new_ehr
 
 ---
 
-*See [EHR_ACCESS_GUIDE.md](EHR_ACCESS_GUIDE.md) for detailed registration instructions.*
-*See [EHR_AMBULATORY_RESEARCH.md](EHR_AMBULATORY_RESEARCH.md) for DrChrono & Practice Fusion deep dive.*
+## Related Documentation
+
+| Document | Description |
+|----------|-------------|
+| [EHR_ACCESS_GUIDE.md](EHR_ACCESS_GUIDE.md) | Detailed EHR registration instructions |
+| [EHR_AMBULATORY_RESEARCH.md](EHR_AMBULATORY_RESEARCH.md) | DrChrono, Practice Fusion, CPSI/TruBridge research |
+| [EHR_AGGREGATOR_PLATFORMS.md](EHR_AGGREGATOR_PLATFORMS.md) | Redox, Particle Health, Health Gorilla, 1upHealth research |
