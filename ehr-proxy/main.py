@@ -330,6 +330,13 @@ MEDITECH_BASE_URL = os.getenv("MEDITECH_BASE_URL", "https://greenfield.meditech.
 MEDITECH_AUTH_URL = os.getenv("MEDITECH_AUTH_URL", "https://greenfield.meditech.com/oauth2/authorize")
 MEDITECH_TOKEN_URL = os.getenv("MEDITECH_TOKEN_URL", "https://greenfield.meditech.com/oauth2/token")
 
+# eClinicalWorks Configuration
+ECLINICALWORKS_CLIENT_ID = os.getenv("ECLINICALWORKS_CLIENT_ID", "576VCnKhhT1JSru1lkHheokd-iCJjRUkIIc3RmrRf1Y")
+ECLINICALWORKS_CLIENT_SECRET = os.getenv("ECLINICALWORKS_CLIENT_SECRET", "tpxvpRqcgj8Fwa0O16Wf_dOMfQK1vtqew6Dv6-9cv3XI4JCmKy1AXMz5Xrt8mdtz")
+ECLINICALWORKS_BASE_URL = os.getenv("ECLINICALWORKS_BASE_URL", "https://fhir.eclinicalworks.com/fhir/r4")
+ECLINICALWORKS_AUTH_URL = os.getenv("ECLINICALWORKS_AUTH_URL", "https://fhir.eclinicalworks.com/ecwopendev/oauth/authorize")
+ECLINICALWORKS_TOKEN_URL = os.getenv("ECLINICALWORKS_TOKEN_URL", "https://fhir.eclinicalworks.com/ecwopendev/oauth/token")
+
 # HAPI FHIR Configuration (Full CRUD Demo Server)
 HAPI_FHIR_BASE_URL = os.getenv("HAPI_FHIR_BASE_URL", "http://hapi.fhir.org/baseR4")
 HAPI_FHIR_ENABLED = os.getenv("HAPI_FHIR_ENABLED", "true").lower() == "true"
@@ -2543,6 +2550,14 @@ async def get_ehr_status():
             "base_url": MEDITECH_BASE_URL if MEDITECH_CLIENT_ID else None,
             "market": "~25% community hospitals",
             "status": "ready" if MEDITECH_CLIENT_ID else "pending_credentials"
+        },
+        "eclinicalworks": {
+            "name": "eClinicalWorks",
+            "configured": bool(ECLINICALWORKS_CLIENT_ID),
+            "client_id": ECLINICALWORKS_CLIENT_ID[:12] + "..." if ECLINICALWORKS_CLIENT_ID else None,
+            "base_url": ECLINICALWORKS_BASE_URL if ECLINICALWORKS_CLIENT_ID else None,
+            "market": "~10% ambulatory, largest cloud EHR",
+            "status": "ready" if ECLINICALWORKS_CLIENT_ID else "pending_credentials"
         },
         "hapi_fhir": {
             "name": "HAPI FHIR (Demo Server)",
@@ -13345,8 +13360,11 @@ if __name__ == "__main__":
     print(f"   • MEDITECH: {'✅ READY' if MEDITECH_CLIENT_ID else '❌ Pending'}")
     if MEDITECH_CLIENT_ID:
         print(f"     Client ID: {MEDITECH_CLIENT_ID[:12]}...")
-    configured = sum([bool(CERNER_CLIENT_ID), bool(EPIC_CLIENT_ID), bool(VERADIGM_CLIENT_ID), bool(ATHENA_CLIENT_ID), bool(NEXTGEN_CLIENT_ID), bool(MEDITECH_CLIENT_ID)])
-    print(f"   → {configured}/6 EHRs configured")
+    print(f"   • eClinicalWorks: {'✅ READY' if ECLINICALWORKS_CLIENT_ID else '❌ Pending'}")
+    if ECLINICALWORKS_CLIENT_ID:
+        print(f"     Client ID: {ECLINICALWORKS_CLIENT_ID[:12]}...")
+    configured = sum([bool(CERNER_CLIENT_ID), bool(EPIC_CLIENT_ID), bool(VERADIGM_CLIENT_ID), bool(ATHENA_CLIENT_ID), bool(NEXTGEN_CLIENT_ID), bool(MEDITECH_CLIENT_ID), bool(ECLINICALWORKS_CLIENT_ID)])
+    print(f"   → {configured}/7 EHRs configured")
     print("─" * 50)
     print("🔬 Demo Server (Full CRUD):")
     print(f"   • HAPI FHIR: {'✅ READY' if HAPI_FHIR_ENABLED else '❌ Disabled'}")
