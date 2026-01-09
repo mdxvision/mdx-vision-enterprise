@@ -121,6 +121,42 @@ Features **NO competitor has**:
 
 ---
 
+## Revenue Model @ $599/user/month
+
+**Cost assumptions:** $40/user/month (Redox $25 + Infrastructure $5 + Support $10)
+
+### Monthly Revenue
+
+| Users | Gross Revenue | Costs | Net Profit | Margin |
+|------:|-------------:|------:|-----------:|-------:|
+| 100 | $59,900 | $4,000 | $55,900 | 93% |
+| 1,000 | $599,000 | $40,000 | $559,000 | 93% |
+| 10,000 | $5,990,000 | $400,000 | $5,590,000 | 93% |
+| 100,000 | $59,900,000 | $4,000,000 | $55,900,000 | 93% |
+| 1,000,000 | $599,000,000 | $40,000,000 | $559,000,000 | 93% |
+
+### Annual Revenue
+
+| Users | Gross Revenue | Costs | Net Profit | Margin |
+|------:|-------------:|------:|-----------:|-------:|
+| 100 | $718,800 | $48,000 | $670,800 | 93% |
+| 1,000 | $7.19M | $480,000 | $6.71M | 93% |
+| 10,000 | $71.9M | $4.8M | $67.1M | 93% |
+| 100,000 | $718.8M | $48M | $670.8M | 93% |
+| 1,000,000 | $7.19B | $480M | $6.71B | 93% |
+
+### Key Milestones
+
+| Milestone | Users Needed |
+|-----------|-------------:|
+| $10M ARR | 1,392 |
+| $100M ARR | 13,919 |
+| $1B ARR | 139,190 |
+
+**93% gross margin at all scales.** Redox volume discounts improve margins further at 100K+ users.
+
+---
+
 ## Path to $100M ARR
 
 | Year | Physicians | Monthly Revenue | ARR |
@@ -132,7 +168,7 @@ Features **NO competitor has**:
 
 **Assumptions:**
 - Average $449/physician (blended across tiers)
-- 91% gross margin maintained at scale
+- 93% gross margin maintained at scale
 - Redox volume discounts improve margins at scale
 
 ---

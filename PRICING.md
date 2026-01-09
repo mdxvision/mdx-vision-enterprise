@@ -1052,31 +1052,55 @@ Everything in Enterprise, plus:
 
 | Metric | Value |
 |--------|-------|
-| Average Revenue Per Physician (ARPP) | $449/month |
+| Price Per Physician | $599/month |
 | Redox Cost Per Physician | ~$25/month |
 | Infrastructure Per Physician | ~$5/month |
 | Support Per Physician | ~$10/month |
 | **Total Cost Per Physician** | **~$40/month** |
-| **Gross Margin Per Physician** | **$409/month (91%)** |
+| **Net Profit Per Physician** | **$559/month (93%)** |
 
-### Scaling Economics
+### Revenue Model @ $599/user/month
 
-| Physicians | Monthly Revenue | Monthly Cost | Gross Profit | Margin |
-|------------|-----------------|--------------|--------------|--------|
-| 100 | $44,900 | $4,000 | $40,900 | 91% |
-| 500 | $224,500 | $20,000 | $204,500 | 91% |
-| 1,000 | $449,000 | $40,000 | $409,000 | 91% |
-| 5,000 | $2,245,000 | $200,000 | $2,045,000 | 91% |
-| 10,000 | $4,490,000 | $400,000 | $4,090,000 | 91% |
+**Cost assumptions:** $40/user/month (Redox $25 + Infrastructure $5 + Support $10)
+
+#### Monthly Revenue
+
+| Users | Gross Revenue | Costs | Net Profit | Margin |
+|------:|-------------:|------:|-----------:|-------:|
+| 100 | $59,900 | $4,000 | $55,900 | 93% |
+| 1,000 | $599,000 | $40,000 | $559,000 | 93% |
+| 10,000 | $5,990,000 | $400,000 | $5,590,000 | 93% |
+| 100,000 | $59,900,000 | $4,000,000 | $55,900,000 | 93% |
+| 1,000,000 | $599,000,000 | $40,000,000 | $559,000,000 | 93% |
+
+#### Annual Revenue
+
+| Users | Gross Revenue | Costs | Net Profit | Margin |
+|------:|-------------:|------:|-----------:|-------:|
+| 100 | $718,800 | $48,000 | $670,800 | 93% |
+| 1,000 | $7.19M | $480,000 | $6.71M | 93% |
+| 10,000 | $71.9M | $4.8M | $67.1M | 93% |
+| 100,000 | $718.8M | $48M | $670.8M | 93% |
+| 1,000,000 | $7.19B | $480M | $6.71B | 93% |
+
+#### Key Milestones
+
+| Milestone | Users Needed |
+|-----------|-------------:|
+| $10M ARR | 1,392 |
+| $100M ARR | 13,919 |
+| $1B ARR | 139,190 |
+
+**93% gross margin at all scales.** Redox volume discounts improve margins further at 100K+ users.
 
 ### Path to $100M ARR
 
 | Milestone | Physicians | Monthly Revenue | ARR |
 |-----------|------------|-----------------|-----|
-| Year 1 | 2,000 | $898,000 | $10.8M |
-| Year 2 | 8,000 | $3,592,000 | $43.1M |
-| Year 3 | 18,000 | $8,082,000 | $97M |
-| Year 4 | 25,000 | $11,225,000 | $134.7M |
+| Year 1 | 2,000 | $1.2M | $14.4M |
+| Year 2 | 8,000 | $4.8M | $57.5M |
+| Year 3 | 14,000 | $8.4M | $100.5M |
+| Year 4 | 25,000 | $15.0M | $179.7M |
 
 ---
 
