@@ -386,11 +386,12 @@ async def epic_authorize():
     import urllib.parse
 
     # Build authorization URL
+    # Using scopes from old working smartConfig.js
     params = {
         "response_type": "code",
         "client_id": EPIC_CLIENT_ID,
         "redirect_uri": EPIC_REDIRECT_URI,
-        "scope": "openid fhirUser launch/patient patient/*.read",
+        "scope": "launch openid fhirUser",
         "state": uuid.uuid4().hex,
         "aud": EPIC_BASE_URL,
     }
@@ -406,55 +407,94 @@ async def epic_authorize():
 
 
 @app.get("/auth/epic/callback")
-async def epic_callback(code: str = None, state: str = None, error: str = None):
+async def epic_callback(
+    code: str = None,
+    state: str = None,
+    error: str = None,
+    error_description: str = None,
+    error_uri: str = None
+):
     """
     Epic OAuth2 callback - exchanges authorization code for access token.
     """
+    # Log callback parameters for debugging
+    print(f"🔐 Epic callback received:")
+    print(f"   code: {code[:20] if code else 'None'}...")
+    print(f"   error: {error}")
+    print(f"   error_description: {error_description}")
+
     if error:
-        return {"success": False, "error": error}
+        return {
+            "success": False,
+            "error": error,
+            "error_description": error_description,
+            "error_uri": error_uri,
+            "hint": "Check Epic app configuration: OAuth 2.0 must be ON, app must be in Ready state"
+        }
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
 
     # Exchange code for token
-    async with httpx.AsyncClient() as client:
-        token_response = await client.post(
-            EPIC_TOKEN_URL,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": EPIC_REDIRECT_URI,
-                "client_id": EPIC_CLIENT_ID,
-            },
-            headers={"Content-Type": "application/x-www-form-urlencoded"}
-        )
+    try:
+        print(f"🔄 Exchanging code for token...")
+        print(f"   Token URL: {EPIC_TOKEN_URL}")
+        print(f"   Client ID: {EPIC_CLIENT_ID[:20]}...")
+        print(f"   Redirect URI: {EPIC_REDIRECT_URI}")
 
-        if token_response.status_code == 200:
-            token_data = token_response.json()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            token_response = await client.post(
+                EPIC_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": EPIC_REDIRECT_URI,
+                    "client_id": EPIC_CLIENT_ID,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
 
-            # Store token
-            ehr_tokens["epic"] = {
-                "access_token": token_data.get("access_token"),
-                "token_type": token_data.get("token_type", "Bearer"),
-                "expires_in": token_data.get("expires_in", 3600),
-                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
-                "patient": token_data.get("patient"),  # Patient ID if launch context
-                "scope": token_data.get("scope"),
-            }
+            print(f"   Response status: {token_response.status_code}")
 
-            return {
-                "success": True,
-                "message": "Epic authentication successful",
-                "patient_id": token_data.get("patient"),
-                "expires_in": token_data.get("expires_in"),
-                "scope": token_data.get("scope")
-            }
-        else:
-            return {
-                "success": False,
-                "error": f"Token exchange failed: {token_response.status_code}",
-                "details": token_response.text
-            }
+            if token_response.status_code == 200:
+                token_data = token_response.json()
+
+                # Store token
+                ehr_tokens["epic"] = {
+                    "access_token": token_data.get("access_token"),
+                    "token_type": token_data.get("token_type", "Bearer"),
+                    "expires_in": token_data.get("expires_in", 3600),
+                    "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                    "patient": token_data.get("patient"),  # Patient ID if launch context
+                    "scope": token_data.get("scope"),
+                }
+
+                print(f"✅ Epic authentication successful!")
+                print(f"   Patient ID: {token_data.get('patient')}")
+
+                return {
+                    "success": True,
+                    "message": "Epic authentication successful",
+                    "patient_id": token_data.get("patient"),
+                    "expires_in": token_data.get("expires_in"),
+                    "scope": token_data.get("scope")
+                }
+            else:
+                error_text = token_response.text
+                print(f"❌ Token exchange failed: {token_response.status_code}")
+                print(f"   Response: {error_text[:500]}")
+                return {
+                    "success": False,
+                    "error": f"Token exchange failed: {token_response.status_code}",
+                    "details": error_text
+                }
+    except Exception as e:
+        print(f"❌ Epic callback exception: {str(e)}")
+        return {
+            "success": False,
+            "error": "Exception during token exchange",
+            "details": str(e)
+        }
 
 
 @app.get("/auth/epic/status")
