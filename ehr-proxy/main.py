@@ -6411,6 +6411,500 @@ async def copilot_challenge(request: CopilotRequest, req: Request):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# MINERVA AI CLINICAL ASSISTANT (Feature #97)
+# Named in honor of Minerva Diaz
+# Conversational AI with RAG-grounded responses to prevent hallucination
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MinervaRequest(BaseModel):
+    """Request model for Minerva chat"""
+    message: str
+    patient_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    patient_context: Optional[Dict[str, Any]] = None
+
+class MinervaCitation(BaseModel):
+    """Citation from RAG knowledge base"""
+    index: int
+    source: str
+    title: str
+    relevance: Optional[str] = None
+
+class MinervaSuggestedAction(BaseModel):
+    """Suggested action from Minerva"""
+    type: str  # "order", "calculate", "document", "alert"
+    command: str  # Voice command to execute
+    description: Optional[str] = None
+
+class MinervaResponse(BaseModel):
+    """Response model for Minerva chat"""
+    response: str
+    citations: List[MinervaCitation] = []
+    suggested_actions: List[MinervaSuggestedAction] = []
+    confidence: float = 0.0
+    rag_enhanced: bool = False
+    conversation_id: str
+    follow_up_prompt: Optional[str] = None
+
+class MinervaContextResponse(BaseModel):
+    """Patient context for Minerva"""
+    patient_id: str
+    patient_name: str
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    conditions: List[str] = []
+    medications: List[str] = []
+    allergies: List[str] = []
+    recent_labs: List[Dict[str, Any]] = []
+    recent_vitals: List[Dict[str, Any]] = []
+    summary: str
+
+# In-memory conversation history storage (keyed by conversation_id)
+minerva_conversations: Dict[str, List[Dict[str, str]]] = {}
+
+# Minerva's system prompt - defines her persona and behavior
+MINERVA_SYSTEM_PROMPT = """You are Minerva, an AI clinical assistant for MDx Vision AR glasses.
+You help clinicians with evidence-based clinical decision support.
+
+CRITICAL RULES:
+1. EVERY clinical claim MUST cite a source using [1], [2], etc.
+2. If you don't have a guideline source, say "I don't have specific guidelines on this, but generally..."
+3. NEVER make up drug doses, treatment protocols, or clinical recommendations without citation
+4. Be concise - responses will be spoken via TTS (aim for under 100 words)
+5. Be professional but warm, like a trusted colleague
+6. When uncertain, acknowledge it and suggest consulting specialists
+
+RESPONSE FORMAT:
+- Start with a direct answer to the question
+- Include 2-3 key points with citations [1], [2]
+- End with a suggested next step or follow-up question
+- For orders/actions, phrase as voice commands ("say 'order CBC'")
+
+PATIENT CONTEXT (when available):
+{patient_context}
+
+CLINICAL GUIDELINES (cite these using [1], [2], etc.):
+{rag_context}
+"""
+
+
+async def generate_minerva_response(
+    message: str,
+    patient_context: Optional[Dict[str, Any]] = None,
+    conversation_history: List[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Generate Minerva's response with RAG grounding.
+
+    Args:
+        message: User's question
+        patient_context: Current patient data
+        conversation_history: Previous messages in conversation
+
+    Returns:
+        Response dict with citations and suggestions
+    """
+    if conversation_history is None:
+        conversation_history = []
+
+    # Build RAG context
+    rag_context = ""
+    citations = []
+    rag_enhanced = False
+
+    if RAG_AVAILABLE and rag_engine.initialized:
+        try:
+            # Retrieve relevant guidelines based on the question
+            augmented_prompt, sources = get_augmented_prompt(message, n_results=5)
+
+            if sources:
+                rag_enhanced = True
+                for source in sources:
+                    rag_context += f"[{source['index']}] {source['source_name']}: {source['title']}\n"
+                    rag_context += f"   Content: {source.get('content', '')[:300]}...\n\n"
+                    citations.append({
+                        "index": source['index'],
+                        "source": source['source_name'],
+                        "title": source['title'],
+                        "relevance": source.get('relevance', 'Related to query')
+                    })
+        except Exception as e:
+            print(f"RAG retrieval error: {e}")
+            rag_context = "No guidelines available - respond with general medical knowledge and note uncertainty."
+    else:
+        rag_context = "RAG not available - respond with general medical knowledge and note that specific guidelines should be consulted."
+
+    # Format patient context
+    patient_context_str = "No patient loaded"
+    if patient_context:
+        context_parts = []
+        if patient_context.get('name'):
+            context_parts.append(f"Patient: {patient_context['name']}")
+        if patient_context.get('age'):
+            context_parts.append(f"Age: {patient_context['age']}")
+        if patient_context.get('gender'):
+            context_parts.append(f"Gender: {patient_context['gender']}")
+        if patient_context.get('conditions'):
+            context_parts.append(f"Conditions: {', '.join(patient_context['conditions'][:5])}")
+        if patient_context.get('medications'):
+            context_parts.append(f"Medications: {', '.join(patient_context['medications'][:5])}")
+        if patient_context.get('allergies'):
+            context_parts.append(f"Allergies: {', '.join(patient_context['allergies'])}")
+        patient_context_str = '\n'.join(context_parts) if context_parts else "No patient loaded"
+
+    # Build system prompt with context
+    system_prompt = MINERVA_SYSTEM_PROMPT.format(
+        patient_context=patient_context_str,
+        rag_context=rag_context if rag_context else "No specific guidelines retrieved."
+    )
+
+    # Build messages for Claude
+    messages = []
+
+    # Add conversation history (last 6 messages for context)
+    for msg in conversation_history[-6:]:
+        messages.append({
+            "role": msg.get("role", "user"),
+            "content": msg.get("content", "")
+        })
+
+    # Add current message
+    messages.append({
+        "role": "user",
+        "content": message
+    })
+
+    # Call Claude API
+    if not CLAUDE_API_KEY:
+        return {
+            "response": "I'm sorry, I can't process your request right now. The AI service is not configured.",
+            "citations": [],
+            "suggested_actions": [],
+            "confidence": 0.0,
+            "rag_enhanced": False,
+            "follow_up_prompt": None
+        }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 500,
+                "system": system_prompt,
+                "messages": messages
+            }
+        )
+
+        if response.status_code != 200:
+            return {
+                "response": "I encountered an error processing your request. Please try again.",
+                "citations": citations,
+                "suggested_actions": [],
+                "confidence": 0.0,
+                "rag_enhanced": rag_enhanced,
+                "follow_up_prompt": None
+            }
+
+        result = response.json()
+        minerva_response = result.get("content", [{}])[0].get("text", "")
+
+    # Extract suggested actions from response
+    suggested_actions = []
+    action_patterns = [
+        (r"say ['\"]([^'\"]+)['\"]", "order"),
+        (r"order (\w+)", "order"),
+        (r"calculate (\w+)", "calculate"),
+    ]
+
+    import re
+    for pattern, action_type in action_patterns:
+        matches = re.findall(pattern, minerva_response, re.IGNORECASE)
+        for match in matches[:2]:  # Limit to 2 actions
+            suggested_actions.append({
+                "type": action_type,
+                "command": match if action_type == "order" else f"calculate {match}",
+                "description": f"Voice command: {match}"
+            })
+
+    # Calculate confidence based on RAG and citation presence
+    confidence = 0.5  # Base confidence
+    if rag_enhanced:
+        confidence += 0.3
+    if "[1]" in minerva_response or "[2]" in minerva_response:
+        confidence += 0.15
+    confidence = min(confidence, 0.95)
+
+    return {
+        "response": minerva_response,
+        "citations": citations,
+        "suggested_actions": suggested_actions,
+        "confidence": confidence,
+        "rag_enhanced": rag_enhanced,
+        "follow_up_prompt": "Is there anything else you'd like to know?" if len(conversation_history) < 3 else None
+    }
+
+
+@app.post("/api/v1/minerva/chat", response_model=MinervaResponse)
+async def minerva_chat(request: MinervaRequest, req: Request):
+    """
+    Minerva AI Clinical Assistant chat endpoint (Feature #97).
+
+    Provides conversational clinical decision support with:
+    - RAG-grounded responses citing clinical guidelines
+    - Patient context awareness
+    - Multi-turn conversation support
+    - Suggested voice commands for actions
+
+    Example:
+        POST /api/v1/minerva/chat
+        {
+            "message": "What's the recommended treatment for afib with RVR?",
+            "patient_id": "12724066",
+            "conversation_id": "abc123"
+        }
+    """
+    # Validate input
+    if not request.message or not request.message.strip():
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    # Generate or use conversation ID
+    conversation_id = request.conversation_id or str(uuid.uuid4())[:8]
+
+    # Get conversation history
+    conversation_history = minerva_conversations.get(conversation_id, [])
+
+    # Audit log - Minerva interaction
+    audit_logger._log_event(
+        event_type="AI",
+        action="MINERVA_CHAT",
+        patient_id=request.patient_id,
+        status="processing",
+        details={
+            "message_length": len(request.message),
+            "conversation_id": conversation_id,
+            "has_patient_context": bool(request.patient_context or request.patient_id)
+        }
+    )
+
+    try:
+        # Generate response
+        result = await generate_minerva_response(
+            message=request.message,
+            patient_context=request.patient_context,
+            conversation_history=conversation_history
+        )
+
+        # Store conversation history
+        minerva_conversations[conversation_id] = conversation_history + [
+            {"role": "user", "content": request.message},
+            {"role": "assistant", "content": result["response"]}
+        ]
+
+        # Keep only last 10 messages per conversation
+        if len(minerva_conversations[conversation_id]) > 10:
+            minerva_conversations[conversation_id] = minerva_conversations[conversation_id][-10:]
+
+        # Audit success
+        audit_logger._log_event(
+            event_type="AI",
+            action="MINERVA_CHAT",
+            patient_id=request.patient_id,
+            status="success",
+            details={
+                "conversation_id": conversation_id,
+                "rag_enhanced": result["rag_enhanced"],
+                "citations_count": len(result["citations"]),
+                "confidence": result["confidence"]
+            }
+        )
+
+        return MinervaResponse(
+            response=result["response"],
+            citations=[MinervaCitation(**c) for c in result["citations"]],
+            suggested_actions=[MinervaSuggestedAction(**a) for a in result["suggested_actions"]],
+            confidence=result["confidence"],
+            rag_enhanced=result["rag_enhanced"],
+            conversation_id=conversation_id,
+            follow_up_prompt=result.get("follow_up_prompt")
+        )
+
+    except Exception as e:
+        audit_logger._log_event(
+            event_type="AI",
+            action="MINERVA_CHAT",
+            patient_id=request.patient_id,
+            status="failure",
+            details={"error": str(e)[:100]}
+        )
+        raise HTTPException(status_code=500, detail=f"Minerva error: {str(e)}")
+
+
+@app.get("/api/v1/minerva/context/{patient_id}", response_model=MinervaContextResponse)
+async def minerva_get_context(patient_id: str, ehr: str = "cerner", req: Request = None):
+    """
+    Get patient context formatted for Minerva (Feature #97).
+
+    Returns a summary of patient data optimized for AI context.
+
+    Example:
+        GET /api/v1/minerva/context/12724066?ehr=cerner
+    """
+    # Audit log
+    audit_logger._log_event(
+        event_type="PHI_ACCESS",
+        action="MINERVA_CONTEXT",
+        patient_id=patient_id,
+        status="processing",
+        details={"ehr": ehr}
+    )
+
+    try:
+        # Fetch patient data from EHR
+        base_url = get_ehr_base_url(ehr)
+        headers = get_ehr_headers(ehr)
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Fetch patient demographics
+            patient_resp = await client.get(f"{base_url}/Patient/{patient_id}", headers=headers)
+
+            if patient_resp.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Patient not found: {patient_id}")
+
+            patient_data = patient_resp.json()
+
+            # Extract name
+            names = patient_data.get("name", [])
+            patient_name = "Unknown"
+            if names:
+                name = names[0]
+                given = " ".join(name.get("given", []))
+                family = name.get("family", "")
+                patient_name = f"{given} {family}".strip()
+
+            # Calculate age
+            birth_date = patient_data.get("birthDate")
+            age = None
+            if birth_date:
+                from datetime import datetime
+                try:
+                    birth = datetime.strptime(birth_date, "%Y-%m-%d")
+                    today = datetime.now()
+                    age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+                except:
+                    pass
+
+            gender = patient_data.get("gender", "unknown")
+
+            # Fetch conditions, medications, allergies concurrently
+            conditions_task = client.get(f"{base_url}/Condition?patient={patient_id}&_count=10", headers=headers)
+            meds_task = client.get(f"{base_url}/MedicationRequest?patient={patient_id}&_count=10", headers=headers)
+            allergies_task = client.get(f"{base_url}/AllergyIntolerance?patient={patient_id}&_count=10", headers=headers)
+
+            import asyncio
+            cond_resp, meds_resp, allergy_resp = await asyncio.gather(
+                conditions_task, meds_task, allergies_task,
+                return_exceptions=True
+            )
+
+            # Parse conditions
+            conditions = []
+            if not isinstance(cond_resp, Exception) and cond_resp.status_code == 200:
+                cond_data = cond_resp.json()
+                for entry in cond_data.get("entry", []):
+                    resource = entry.get("resource", {})
+                    code = resource.get("code", {})
+                    text = code.get("text") or (code.get("coding", [{}])[0].get("display") if code.get("coding") else None)
+                    if text:
+                        conditions.append(text)
+
+            # Parse medications
+            medications = []
+            if not isinstance(meds_resp, Exception) and meds_resp.status_code == 200:
+                meds_data = meds_resp.json()
+                for entry in meds_data.get("entry", []):
+                    resource = entry.get("resource", {})
+                    med_ref = resource.get("medicationCodeableConcept", {}) or resource.get("medicationReference", {})
+                    text = med_ref.get("text") or (med_ref.get("coding", [{}])[0].get("display") if med_ref.get("coding") else None)
+                    if text:
+                        medications.append(text)
+
+            # Parse allergies
+            allergies = []
+            if not isinstance(allergy_resp, Exception) and allergy_resp.status_code == 200:
+                allergy_data = allergy_resp.json()
+                for entry in allergy_data.get("entry", []):
+                    resource = entry.get("resource", {})
+                    code = resource.get("code", {})
+                    text = code.get("text") or (code.get("coding", [{}])[0].get("display") if code.get("coding") else None)
+                    if text:
+                        allergies.append(text)
+
+            # Build summary
+            summary_parts = [f"{patient_name}, {age}yo {gender}" if age else f"{patient_name}, {gender}"]
+            if conditions:
+                summary_parts.append(f"Conditions: {', '.join(conditions[:3])}")
+            if allergies:
+                summary_parts.append(f"Allergies: {', '.join(allergies[:3])}")
+            summary = ". ".join(summary_parts)
+
+            # Audit success
+            audit_logger._log_event(
+                event_type="PHI_ACCESS",
+                action="MINERVA_CONTEXT",
+                patient_id=patient_id,
+                status="success",
+                details={"conditions_count": len(conditions), "meds_count": len(medications)}
+            )
+
+            return MinervaContextResponse(
+                patient_id=patient_id,
+                patient_name=patient_name,
+                age=age,
+                gender=gender,
+                conditions=conditions,
+                medications=medications,
+                allergies=allergies,
+                recent_labs=[],  # TODO: Add labs
+                recent_vitals=[],  # TODO: Add vitals
+                summary=summary
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        audit_logger._log_event(
+            event_type="PHI_ACCESS",
+            action="MINERVA_CONTEXT",
+            patient_id=patient_id,
+            status="failure",
+            details={"error": str(e)[:100]}
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to get patient context: {str(e)}")
+
+
+@app.delete("/api/v1/minerva/conversation/{conversation_id}")
+async def minerva_clear_conversation(conversation_id: str):
+    """
+    Clear Minerva conversation history (Feature #97).
+
+    Use this when starting a new clinical context or patient.
+
+    Example:
+        DELETE /api/v1/minerva/conversation/abc123
+    """
+    if conversation_id in minerva_conversations:
+        del minerva_conversations[conversation_id]
+        return {"success": True, "message": f"Conversation {conversation_id} cleared"}
+    return {"success": True, "message": "Conversation not found (already cleared)"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # JARVIS-LIKE AI FEATURES - INDIRECT COMMANDS (Feature #96)
 # Natural language parsing to translate conversational commands into actions
 # Examples: "check that potassium" -> show_labs, "what's his blood pressure" -> show_vitals
