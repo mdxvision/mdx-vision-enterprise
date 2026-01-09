@@ -940,6 +940,54 @@
 
 ---
 
+## Minerva AI Clinical Assistant (Feature #97)
+
+> *Named in honor of Minerva Diaz*
+
+- [ ] **Phase 1: Foundation**
+  - [ ] Create `/api/v1/minerva/chat` endpoint with RAG integration
+  - [ ] Create `/api/v1/minerva/context` endpoint for patient context
+  - [ ] Add conversation history management (multi-turn)
+  - [ ] Implement citation injection from RAG
+  - [ ] Add HIPAA audit logging for Minerva interactions
+
+- [ ] **Phase 2: Wake Word & Voice**
+  - [ ] Add "Hey Minerva" wake word detection (Android)
+  - [ ] Create Minerva voice activation mode
+  - [ ] Add TTS response with Minerva persona
+  - [ ] Implement conversation state management
+  - [ ] Add "Minerva, stop" / "Thank you, Minerva" to end conversation
+
+- [ ] **Phase 3: Proactive Intelligence**
+  - [ ] Proactive alerts on patient load (extends Feature #92)
+  - [ ] Critical value announcements via Minerva voice
+  - [ ] Care gap reminders spoken proactively
+  - [ ] Drug interaction warnings via Minerva
+  - [ ] Shift handoff briefings
+
+- [ ] **Phase 4: Clinical Reasoning**
+  - [ ] "Minerva, what do you think?" - differential diagnosis with RAG
+  - [ ] "Minerva, explain..." - teaching mode with citations
+  - [ ] "Minerva, what am I missing?" - second opinion mode
+  - [ ] "Minerva, what questions should I ask?" - clarify mode
+  - [ ] Treatment recommendations with guideline citations
+
+- [ ] **Phase 5: Actions & Integration**
+  - [ ] "Minerva, order..." - voice orders through Minerva
+  - [ ] "Minerva, document..." - note dictation
+  - [ ] "Minerva, remind me..." - clinical reminders
+  - [ ] "Minerva, calculate..." - medical calculators
+
+- [ ] **Phase 6: Learning & Personalization**
+  - [ ] Clinician preference learning
+  - [ ] Specialty-specific responses
+  - [ ] Feedback loop for response quality
+  - [ ] Custom guideline ingestion per organization
+
+See `MINERVA.md` for full implementation details.
+
+---
+
 ## Test Coverage
 
 | Test File | Tests | Status |
@@ -963,9 +1011,11 @@
 ## NOT YET IMPLEMENTED (Gap Analysis)
 
 ### High Priority
-- [ ] Epic live integration (needs OAuth credentials)
-- [ ] Veradigm live integration (needs OAuth credentials)
-- [ ] OAuth2/SMART on FHIR authentication
+- [x] Epic live integration - **WORKING** (Jan 2025)
+- [x] Cerner live integration - **WORKING** (Jan 2025)
+- [ ] Veradigm live integration (awaiting approval)
+- [x] OAuth2/SMART on FHIR authentication - **WORKING**
+- [x] Token persistence for demo simplicity - **WORKING**
 
 ### Medium Priority
 - [x] Vuzix HUD native overlay - Feature #73 ✅

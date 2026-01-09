@@ -5,77 +5,136 @@
 
 ---
 
-## Active Session: Comprehensive Test Coverage Implementation (Jan 5, 2025)
+## Active Session: Minerva AI Assistant & EHR Completion (Jan 9, 2025)
 
-**Started:** 2025-01-05
-**Focus:** Implementing comprehensive test coverage across all components
+**Started:** 2025-01-09
+**Focus:** Minerva AI clinical assistant, Epic/Cerner EHR completion, token persistence
 
 ### Session Summary
-- Analyzed test coverage gaps across all 5 components (Backend, EHR Proxy, Web, Android, AI Service)
-- Created TEST_COVERAGE_PLAN.md with full implementation checklist
-- Implemented 28+ new test files with 300+ test cases
+- **Epic OAuth WORKING**: Full OAuth2 flow with token persistence
+- **Cerner FHIR WORKING**: Live sandbox connection
+- **EHR Voice Switching**: "Switch to Epic" / "Switch to Cerner" commands
+- **Token Persistence**: OAuth tokens persist across proxy restarts (.ehr_tokens.json)
+- **TTS Sanitization**: Fixed readback of JSON artifacts ("curly bracket" etc.)
+- **Minerva AI Planning**: Created MINERVA.md implementation plan
 
-### Test Files Created
+### EHR Integration Status (Updated)
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **Cerner/Oracle** | **WORKING** | SMARTS SR., NANCYS II |
+| **Epic** | **WORKING** | Camila Maria Lopez (FHIRTWO/EpicFhir11!) |
+| **Veradigm** | Ready | Awaiting approval |
+| **athenahealth** | Ready | OAuth configured |
+| **NextGen** | Ready | OAuth configured |
+| **MEDITECH** | Ready | OAuth configured |
+| **eClinicalWorks** | Ready | OAuth configured |
 
-| Component | Files Created | Test Count |
-|-----------|---------------|------------|
-| Backend (Java) | 4 files | 40+ tests |
-| EHR Proxy (Python) | 11 files | 100+ tests |
-| Web (Vitest) | 6 files | 60+ tests |
-| Android (Kotlin) | 3 files | 50+ tests |
-| AI Service (Python) | 4 files | 50+ tests |
+### Token Persistence Implementation
+- Added `save_tokens()` and `load_tokens()` functions
+- Tokens saved to `ehr-proxy/.ehr_tokens.json`
+- Auto-loads on proxy startup
+- Saves after every OAuth callback (all 6 EHRs)
+- Demo-ready: no re-login needed after restart
 
-### Key Coverage Areas
+### Minerva AI Clinical Assistant (Feature #97)
+> Named in honor of Minerva Diaz
 
-**Backend Java (JUnit 5 + Spring Boot Test)**
-- UnifiedEhrServiceTest.java - Multi-EHR abstraction layer
-- CernerFhirServiceTest.java - FHIR R4 client operations
-- SessionControllerTest.java - REST endpoints with security
-- AuditServiceTest.java - HIPAA audit logging
+Created `MINERVA.md` with:
+- Full architecture diagram
+- 6-phase implementation checklist
+- API endpoint specifications
+- Voice command definitions
+- RAG integration plan for hallucination prevention
+- Persona and speech patterns
+- Security and compliance considerations
 
-**EHR Proxy Python (pytest)**
-- test_auth.py - Device authentication (Feature #64)
-- test_voiceprint.py - Biometric auth (Features #66, #77)
-- test_clinical_safety.py - Critical alerts, medication interactions
-- test_racial_medicine.py - Health equity (Feature #79)
-- test_maternal_health.py - OB monitoring (Feature #82)
-- test_cultural_care.py - Religious/cultural preferences (Feature #80)
-- test_sdoh.py - Social determinants (Feature #84)
-- test_copilot.py - AI Clinical Co-pilot (Feature #78)
-- test_literacy.py - Health literacy (Feature #85)
-- test_interpreter.py - Interpreter integration (Feature #86)
-- test_rag.py - RAG knowledge system (Features #88-90)
+**Key Minerva Features:**
+- "Hey Minerva" wake word activation
+- RAG-grounded responses (citations from AHA, ADA, USPSTF)
+- Multi-turn conversation with patient context
+- Clinical reasoning modes (differential, teaching, challenge, clarify)
+- Proactive alerts and briefings
 
-**Web Dashboard (Vitest + React Testing Library)**
-- vitest.config.ts - Test configuration
-- setup.ts - Next.js/next-auth mocks
-- login.test.tsx - Authentication flow
-- dashboard.test.tsx - Main dashboard components
-- settings.test.tsx - Settings + Health Equity tab (Feature #83)
-- billing.test.tsx - Billing/coding (Feature #71)
-- devices.test.tsx - Device management (Feature #65)
+### Files Created/Updated
+- **Created**: `MINERVA.md` - Full implementation plan
+- **Updated**: `CLAUDE.md` - Added Feature #97, updated Next Up section
+- **Updated**: `FEATURES.md` - Added Minerva checklist, updated EHR status
+- **Updated**: `README.md` - Jan 2025 status, 7 EHRs listed
+- **Updated**: `ehr-proxy/main.py` - Token persistence, save_tokens() calls
+- **Updated**: `MainActivity.kt` - EHR switching, TTS sanitization
 
-**Android App (JUnit 4 + Mockito)**
-- MainActivityTest.kt - Voice commands, wake word, multi-language
-- AudioStreamingServiceTest.kt - Audio processing, Vuzix gain
-- BarcodeScannerActivityTest.kt - MRN extraction, barcode formats
+### Git Commits
+1. `feat: EHR switching + token persistence for demos`
+2. `docs: update README with 7 EHR integrations and Jan 2025 status`
 
-**AI Service (pytest)**
-- conftest.py - Shared fixtures
-- test_transcription_service.py - Real-time transcription, AssemblyAI
-- test_notes_service.py - SOAP note generation, ICD-10/CPT
-- test_drug_interaction.py - Drug interaction checking
+---
 
-### Documentation Updates
-- Updated CLAUDE.md with comprehensive Testing section
-- Added test running commands for all components
-- Documented test patterns for each framework
+## Previous Session: C-Suite Demo & EHR Integration (Jan 4, 2025)
+
+**Started:** 2025-01-04
+**Focus:** C-suite hospital demo creation, EHR integration research, expanded TTS features
+
+### Session Summary
+- **Server-side TTS expanded**: All 7 TTS speak functions now use server fallback for Vuzix
+- **C-Suite Demo Guide**: Created comprehensive DEMO_CSUITE.md (575 lines) for hospital presentations
+- **Competitor Research**: DAX ($600/mo), Augmedix ($2,000/mo), Suki ($299-399/mo) - no AR, no equity
+- **EHR Integration Research**: Researched access for 7 EHR platforms
+- **Cerner Registration**: Guided user through Oracle Health Code Console registration
+- **Feature Audit**: 8.5/10 demo-ready score with identified gaps
+
+### Server-Side TTS Expansion
+Updated 7 speak* functions to use server TTS fallback (Vuzix has no local TTS engines):
+1. `speakFeedback()` - General action confirmations
+2. `speakAllergyWarnings()` - Critical allergy alerts
+3. `speakCriticalLabAlerts()` - Dangerous lab values
+4. `speakLabTrends()` - Lab trend changes
+5. `speakVitalTrends()` - Vital sign trends
+6. `speakCriticalVitalAlerts()` - Dangerous vital values
+7. `speakMedicationInteractions()` - Drug-drug interactions
+
+### C-Suite Demo Guide Created
+`DEMO_CSUITE.md` includes:
+- Executive summary with competitor pricing comparison
+- Feature readiness audit (8.5/10 score)
+- 3 demo scripts: 5-minute, 15-minute, 30-minute deep dive
+- Competitor analysis (DAX, Augmedix, Suki)
+- Objection handling responses
+- Technical setup checklist
+- Fallback plans for demo failures
+
+### EHR Integration Research Summary
+| Platform | Access | Cost | Notes |
+|----------|--------|------|-------|
+| **Cerner/Oracle** | READY | $0 | Client ID: `0fab9b20-adc8-4940-bbf6-82034d1d39ab` |
+| **Epic** | Pending | TBD | User has credentials |
+| **Veradigm** | Pending | $99/mo | User has credentials |
+| **athenahealth** | FREE | $0 | Self-service sandbox |
+| **eClinicalWorks** | FREE | $0 | FHIR APIs available |
+| **NextGen** | FREE | $0 | Developer program |
+| **MEDITECH** | FREE | $0 | Greenfield Workspace |
+
+**Total platforms researched:** 29 (see EHR_ACCESS_GUIDE.md)
+
+### Cerner Registration Guidance
+Provided recommendations for Oracle Health Code Console form:
+- Application Type: Provider
+- Type of Access: Offline
+- Application Privacy: Confidential
+- SMART Version: v2
+- Intended Users: Clinical Team, Healthcare Administrator
+- Intended Purposes: Clinical Tools, Administrative Tasks, Patient-Provider Communication
+- Recommended APIs: Oracle Health EHR APIs + FHIR R4 APIs
+
+### Commits This Session
+| Commit | Description |
+|--------|-------------|
+| TBD | Extended server TTS to all voice features |
+| TBD | Create C-suite demo guide |
 
 ---
 
 ## Previous Session: Vuzix Microphone & Ambient Mode Fix (Jan 4, 2025)
 
-**Started:** 2025-01-04
 **Focus:** Fixing Vuzix Blade 2 microphone sensitivity, ambient mode, UI visibility, and crash fixes
 
 ### Session Summary
@@ -380,14 +439,23 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 ## Next Steps (Backlog)
 
+### EHR Integration (Active - Jan 4, 2025)
+- [x] Cerner/Oracle - Code Console registration COMPLETE
+- [ ] Cerner - Receive Client ID and configure integration
+- [ ] Epic - Receive credentials from user and configure
+- [ ] Veradigm - Configure Silver plan credentials
+
+### Free EHR Sandboxes Available
+See `EHR_ACCESS_GUIDE.md` for complete details:
+- athenahealth - FREE self-service
+- eClinicalWorks - FREE FHIR APIs
+- NextGen - FREE developer program
+- MEDITECH - FREE Greenfield Workspace
+
 ### Production Readiness
 - [ ] HIPAA compliance documentation
 - [ ] SOC 2 Type II audit
 - [ ] Cloud deployment (AWS/GCP/Azure with HIPAA BAA)
-
-### EHR Integration
-- [ ] Epic live integration (needs OAuth credentials)
-- [ ] Veradigm live integration (needs credentials)
 
 ### Hardware
 - [x] Vuzix Blade 2 physical device testing (completed Jan 4, 2025 - mic sensitivity fix)

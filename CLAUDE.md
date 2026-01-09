@@ -560,20 +560,29 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 94. **Multi-Turn Clinical Reasoning (Jarvis Wave 1)** - Enhanced AI copilot with multiple reasoning modes for clinical decision support; Teaching mode explains clinical reasoning with educational context and step-by-step logic; Second Opinion mode provides alternative diagnoses, challenges assumptions, and highlights considerations you may have missed; Clarify mode identifies gaps in clinical information and suggests questions to ask; conversation history maintained for contextual back-and-forth dialogue; patient context (conditions, medications, allergies) automatically included; TTS-friendly spoken responses with follow-up prompts; voice commands ("explain why", "teach me", "why do you think", "second opinion", "what else could it be", "challenge", "what am I missing", "clarify", "what should I ask"); API endpoints POST /api/v1/copilot/reason, /api/v1/copilot/teach, /api/v1/copilot/challenge; Android integration with sendCopilotTeachingMode(), sendCopilotSecondOpinion(), sendCopilotClarifyMode(); HIPAA audit logging
 95. **Indirect Commands (Jarvis Wave 1)** - Natural language parsing for conversational queries; translates informal requests like "check that potassium" or "what's his blood pressure" into actionable commands; 25+ lab items with LOINC codes (potassium, sodium, creatinine, hemoglobin, glucose, a1c, troponin, BNP, INR, TSH, CBC, CMP, BMP, lipid panel, etc.); 9 vital items (blood pressure, heart rate, temperature, SpO2, respiratory rate, weight, height, BMI, pain); category keywords for meds, allergies, conditions, procedures, immunizations, care plans, clinical notes; temporal parsing (last, latest, recent, trend, history); alias support (k->potassium, bp->blood pressure, hgb->hemoglobin, o2 sat->oxygen saturation); confidence scoring (high/medium/low); filtered display highlights matching item; TTS spoken results; voice commands ("check the potassium", "what's his blood pressure", "get the cbc", "what was the last creatinine"); API endpoints POST /api/v1/commands/parse, GET /api/v1/commands/suggestions; HIPAA audit logging; Android integration with parseAndExecuteIndirectCommand()
 96. **Care Gap Detection (Jarvis Wave 2)** - Proactive identification of missing screenings, labs, vaccines, and preventive care; comprehensive rules engine with 31 care gap rules based on clinical guidelines; USPSTF screening recommendations (colonoscopy, mammogram, pap smear, lung cancer, AAA screening, depression/anxiety); ADA diabetes care standards (A1c, eye exam, foot exam, urine albumin); AHA/ACC cardiovascular guidelines (lipid panel, blood pressure, heart failure monitoring); CDC/ACIP vaccine recommendations (influenza, pneumococcal, shingles, Tdap, COVID, hepatitis B); KDIGO kidney disease guidelines (eGFR, CKD monitoring); Medicare Annual Wellness Visit; age/gender-based eligibility filtering; condition-based requirements (diabetes, hypertension, CKD, CHF, warfarin therapy); interval tracking (years, months, weeks) with overdue detection; priority scoring (high/medium/low) based on due status; TTS-friendly spoken summary; HUD-formatted display with priority icons (🔴🟡🟢); voice commands ("care gaps", "screenings due", "overdue items", "vaccines due", "labs due", "high priority gaps"); API endpoints GET /api/v1/patient/{id}/care-gaps (with category/priority filters), GET /api/v1/care-gaps/rules; Android integration with fetchCareGaps(), displayCareGaps(); Vuzix HUD support; HIPAA audit logging
+97. **Minerva AI Clinical Assistant** - Conversational AI assistant named after Minerva Diaz; "Hey Minerva" wake word activation; RAG-grounded responses to prevent hallucination; every clinical claim cited from guidelines (AHA, ADA, USPSTF, etc.); multi-turn conversation with patient context; proactive alerts and briefings; clinical reasoning modes (differential, teaching, challenge, clarify); voice commands ("Hey Minerva", "Minerva what do you think?", "Minerva how do I treat...", "Minerva what am I missing?", "Minerva stop"); API endpoints POST /api/v1/minerva/chat, GET /api/v1/minerva/context/{patient_id}, POST /api/v1/minerva/proactive/{patient_id}, POST /api/v1/minerva/reason; TTS responses with professional female voice; HIPAA audit logging for all interactions; see MINERVA.md for full implementation plan
 
 ## Research Documents
 
 | Document | Description |
 |----------|-------------|
+| `MINERVA.md` | **Minerva AI Assistant** - Implementation plan, API design, voice commands, RAG integration |
 | `RACIAL_MEDICINE_DISPARITIES.md` | Comprehensive research on racial disparities in medicine with implementation guidance |
 | `CULTURAL_CARE_PREFERENCES.md` | Research on cultural/religious care preferences with clinical recommendations |
 
 ## Next Up (Recommended)
 
-### Quick Wins
-| Feature | Notes |
-|---------|-------|
-| All medium effort items completed! | 91 features implemented |
+### Current Focus: Minerva AI Assistant (Feature #97)
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1: Foundation | **IN PROGRESS** | RAG-integrated chat endpoint, conversation history |
+| Phase 2: Wake Word | Pending | "Hey Minerva" activation on Android |
+| Phase 3: Proactive | Pending | Proactive alerts via Minerva voice |
+| Phase 4: Reasoning | Pending | Differential, teaching, challenge modes |
+| Phase 5: Actions | Pending | Voice orders, documentation through Minerva |
+| Phase 6: Learning | Pending | Personalization, specialty responses |
+
+See `MINERVA.md` for full implementation checklist.
 
 ### EHR Integration Status (Jan 4, 2025)
 
