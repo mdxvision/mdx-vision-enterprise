@@ -28,6 +28,33 @@ MDx Vision is an AR smart glasses platform for healthcare documentation. It impl
 
 See [CONVERSATIONS.md](CONVERSATIONS.md) for session history, decisions, and progress tracking.
 
+## Planning with Files (Manus-Style)
+
+For complex multi-phase tasks, use the **three-file planning system** inspired by Manus AI:
+
+```
+task_plan.md   - Phase tracking with checkboxes, errors, decisions
+findings.md    - Research discoveries, code snippets, technical decisions
+progress.md    - Session logs, test results, metrics
+```
+
+**When to use:** Any task with 3+ phases, 5+ tool calls, or research requirements.
+
+**Key Rules:**
+1. Create `task_plan.md` before starting complex work
+2. **2-Action Rule**: After every 2 search/browse operations, update `findings.md`
+3. Log ALL errors in both `task_plan.md` and `progress.md`
+4. Never repeat failed approaches - mutate strategy
+5. Re-read `task_plan.md` before major decisions
+
+**Templates:** `.claude/skills/planning-with-files/templates/`
+
+**Hooks configured:**
+- PreToolUse: Re-reads task_plan.md before Write/Edit/Bash
+- Stop: Verifies all phases complete
+
+See `.claude/skills/planning-with-files/SKILL.md` for full documentation.
+
 ## Sales & Marketing Materials
 
 See [SALES_MATERIALS.md](SALES_MATERIALS.md) for complete index.
@@ -575,9 +602,9 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 ### Current Focus: Minerva AI Assistant (Feature #97)
 | Phase | Status | Description |
 |-------|--------|-------------|
-| Phase 1: Foundation | **IN PROGRESS** | RAG-integrated chat endpoint, conversation history |
-| Phase 2: Wake Word | Pending | "Hey Minerva" activation on Android |
-| Phase 3: Proactive | Pending | Proactive alerts via Minerva voice |
+| Phase 1: Foundation | **COMPLETE** | RAG-integrated chat endpoint, conversation history |
+| Phase 2: Wake Word | **COMPLETE** | "Hey Minerva" activation on Android |
+| Phase 3: Proactive | **NEXT** | Proactive alerts via Minerva voice |
 | Phase 4: Reasoning | Pending | Differential, teaching, challenge modes |
 | Phase 5: Actions | Pending | Voice orders, documentation through Minerva |
 | Phase 6: Learning | Pending | Personalization, specialty responses |

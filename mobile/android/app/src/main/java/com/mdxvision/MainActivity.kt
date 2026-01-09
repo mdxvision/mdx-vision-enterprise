@@ -366,6 +366,16 @@ class MainActivity : AppCompatActivity() {
     private var lastCopilotQuestion: String = ""
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // MINERVA AI CLINICAL ASSISTANT (Feature #97)
+    // Named in honor of Minerva Diaz
+    // RAG-grounded conversational AI with evidence-based clinical guidance
+    // ═══════════════════════════════════════════════════════════════════════════
+    private var isMinervaActive: Boolean = false
+    private var minervaConversationId: String? = null
+    private var lastMinervaQuestion: String = ""
+    private var minervaConversationHistory: MutableList<Pair<String, String>> = mutableListOf()
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // RACIAL MEDICINE AWARENESS (Feature #79) - Addressing "white default" in medicine
     // ═══════════════════════════════════════════════════════════════════════════
     private var currentPatientSkinType: String? = null  // Fitzpatrick I-VI
@@ -11903,6 +11913,18 @@ SOFA Score: [X]
             |• "Encryption status" - Show security info
             |• "Wipe data" - Securely erase all PHI
             |
+            |🦉 MINERVA AI ASSISTANT
+            |• "Hey Minerva" - Wake up Minerva
+            |• "Minerva, [question]" - Ask clinical question
+            |• "Minerva, what do you think?" - Get assessment
+            |• "Minerva, how do I treat [condition]?" - Treatment advice
+            |• "Minerva, what's the dose for [med]?" - Dosing help
+            |• "Minerva, explain [topic]" - Clinical education
+            |• "Minerva, what am I missing?" - Second opinion
+            |• "Minerva, brief me" - Patient briefing
+            |• "Clear Minerva" - Reset conversation
+            |• "Minerva stop" - End Minerva session
+            |
             |🔧 OTHER
             |• Just speak naturally - no wake word needed
             |• "Close" - Dismiss overlay
@@ -17793,6 +17815,249 @@ SOFA Score: [X]
         }
 
         Log.d(TAG, "Multi-turn response handled (mode=$mode): ${responseText.take(100)}...")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // MINERVA AI CLINICAL ASSISTANT (Feature #97)
+    // Named in honor of Minerva Diaz
+    // RAG-grounded conversational AI with evidence-based clinical guidance
+    // ═══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Activate Minerva mode for RAG-grounded clinical assistance.
+     * Voice commands: "Hey Minerva", "Hi Minerva"
+     */
+    private fun activateMinervaMode() {
+        isMinervaActive = true
+        if (minervaConversationId == null) {
+            minervaConversationId = "minerva_${System.currentTimeMillis()}"
+        }
+        speakFeedback("Hello, I'm Minerva. How can I help you?")
+        Toast.makeText(this, "🦉 Minerva activated", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Minerva mode activated (conversation: $minervaConversationId)")
+    }
+
+    /**
+     * Deactivate Minerva mode.
+     * Voice commands: "Minerva stop", "Thank you Minerva"
+     */
+    private fun deactivateMinervaMode() {
+        isMinervaActive = false
+        speakFeedback("Goodbye. Call me if you need anything.")
+        Toast.makeText(this, "🦉 Minerva deactivated", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Minerva mode deactivated")
+    }
+
+    /**
+     * Send a question to Minerva with RAG-grounded context.
+     * Uses patient data and conversation history for continuity.
+     */
+    private fun sendMinervaQuestion(question: String) {
+        if (question.isBlank()) {
+            speakFeedback("Please ask me a question.")
+            return
+        }
+
+        lastMinervaQuestion = question
+        speakFeedback("Let me look that up...")
+
+        // Build patient context if available
+        val patientContext: JSONObject? = if (currentPatientData != null && currentPatientId != null) {
+            JSONObject().apply {
+                put("patient_id", currentPatientId)
+                put("name", currentPatientData?.optString("name", "Unknown"))
+                put("age", currentPatientData?.optString("age", ""))
+                put("gender", currentPatientData?.optString("gender", ""))
+                put("conditions", currentPatientData?.optJSONArray("conditions")?.let { arr ->
+                    (0 until arr.length()).map {
+                        arr.getJSONObject(it).optString("display", "")
+                    }.take(10).joinToString(", ")
+                } ?: "")
+                put("medications", currentPatientData?.optJSONArray("medications")?.let { arr ->
+                    (0 until arr.length()).map {
+                        arr.getJSONObject(it).optString("display", "")
+                    }.take(10).joinToString(", ")
+                } ?: "")
+                put("allergies", currentPatientData?.optJSONArray("allergies")?.let { arr ->
+                    (0 until arr.length()).map {
+                        arr.getJSONObject(it).optString("display", "")
+                    }.take(10).joinToString(", ")
+                } ?: "")
+                put("recent_labs", currentPatientData?.optJSONArray("labs")?.let { arr ->
+                    (0 until minOf(arr.length(), 5)).map {
+                        val lab = arr.getJSONObject(it)
+                        "${lab.optString("display", "")}: ${lab.optString("value", "")} ${lab.optString("unit", "")}"
+                    }.joinToString(", ")
+                } ?: "")
+            }
+        } else null
+
+        // Build request body
+        val requestBody = JSONObject().apply {
+            put("message", question)
+            if (minervaConversationId != null) {
+                put("conversation_id", minervaConversationId)
+            }
+            if (patientContext != null) {
+                put("patient_id", currentPatientId)
+                put("patient_context", patientContext)
+            }
+        }
+
+        // POST to Minerva chat endpoint
+        val url = "$EHR_PROXY_URL/api/v1/minerva/chat"
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("X-Device-ID", deviceId)
+            .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
+            .build()
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    Log.e(TAG, "Minerva request failed", e)
+                    speakFeedback("Sorry, I couldn't connect. Please try again.")
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val json = JSONObject(body)
+                            runOnUiThread { handleMinervaResponse(json) }
+                        }
+                    } else {
+                        val errorBody = resp.body?.string()
+                        runOnUiThread {
+                            Log.e(TAG, "Minerva error: ${resp.code} - $errorBody")
+                            speakFeedback("I'm having trouble right now. Please try again.")
+                        }
+                    }
+                }
+            }
+        })
+
+        Log.d(TAG, "Minerva question sent: $question")
+    }
+
+    /**
+     * Handle Minerva response - speak with citations and track conversation.
+     */
+    private fun handleMinervaResponse(response: JSONObject) {
+        val responseText = response.optString("response", "")
+        val citations = response.optJSONArray("citations")
+        val suggestedActions = response.optJSONArray("suggested_actions")
+        val confidence = response.optDouble("confidence", 0.0)
+        val ragEnhanced = response.optBoolean("rag_enhanced", false)
+        val followUpPrompt = response.optString("follow_up_prompt", "")
+
+        // Update conversation ID if returned
+        response.optString("conversation_id")?.let { convId ->
+            if (convId.isNotBlank()) {
+                minervaConversationId = convId
+            }
+        }
+
+        if (responseText.isBlank()) {
+            speakFeedback("I don't have information on that. Let me know if I can help with something else.")
+            return
+        }
+
+        // Add to conversation history
+        minervaConversationHistory.add(Pair("user", lastMinervaQuestion))
+        minervaConversationHistory.add(Pair("assistant", responseText))
+
+        // Trim history to last 20 messages
+        while (minervaConversationHistory.size > 20) {
+            minervaConversationHistory.removeAt(0)
+        }
+
+        // Speak the response (TTS will handle sanitization)
+        speakFeedback(responseText)
+
+        // Display in UI
+        val citationCount = citations?.length() ?: 0
+        val displayText = buildString {
+            append("🦉 Minerva:\n")
+            append(responseText)
+            if (ragEnhanced && citationCount > 0) {
+                append("\n\n📚 Sources: $citationCount citations")
+                if (citations != null) {
+                    for (i in 0 until minOf(citations.length(), 3)) {
+                        val citation = citations.getJSONObject(i)
+                        append("\n  [${citation.optInt("id", i+1)}] ${citation.optString("source", "")}")
+                    }
+                }
+            }
+            if (confidence > 0) {
+                append("\n📊 Confidence: ${(confidence * 100).toInt()}%")
+            }
+        }
+        patientDataText.text = displayText
+
+        // Log citation sources
+        if (citations != null && citations.length() > 0) {
+            val sources = (0 until citations.length()).map {
+                citations.getJSONObject(it).optString("source", "Unknown")
+            }
+            Log.d(TAG, "Minerva citations: $sources")
+        }
+
+        // Handle suggested actions
+        if (suggestedActions != null && suggestedActions.length() > 0) {
+            android.os.Handler(mainLooper).postDelayed({
+                val firstAction = suggestedActions.getJSONObject(0)
+                val actionType = firstAction.optString("type", "")
+                val command = firstAction.optString("command", "")
+                if (command.isNotBlank()) {
+                    speakFeedback("Say '$command' to proceed.")
+                }
+            }, 4000)
+        }
+
+        // Offer follow-up if provided
+        if (followUpPrompt.isNotBlank()) {
+            android.os.Handler(mainLooper).postDelayed({
+                speakFeedback(followUpPrompt)
+            }, 5000)
+        }
+
+        Log.d(TAG, "Minerva response handled (RAG: $ragEnhanced, Citations: $citationCount): ${responseText.take(100)}...")
+    }
+
+    /**
+     * Clear Minerva conversation history and start fresh.
+     */
+    private fun clearMinervaHistory() {
+        minervaConversationHistory.clear()
+        lastMinervaQuestion = ""
+        minervaConversationId = "minerva_${System.currentTimeMillis()}"
+
+        // Call server to clear conversation
+        val oldConvId = minervaConversationId
+        if (oldConvId != null) {
+            val url = "$EHR_PROXY_URL/api/v1/minerva/conversation/$oldConvId"
+            val request = Request.Builder()
+                .url(url)
+                .delete()
+                .build()
+            httpClient.newCall(request).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    Log.w(TAG, "Failed to clear Minerva server conversation", e)
+                }
+                override fun onResponse(call: Call, response: Response) {
+                    Log.d(TAG, "Minerva server conversation cleared")
+                    response.close()
+                }
+            })
+        }
+
+        speakFeedback("Minerva conversation cleared. Fresh start!")
+        Toast.makeText(this, "🦉 Minerva reset", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Minerva history cleared")
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -23790,6 +24055,58 @@ SOFA Score: [X]
                 // Clarify mode - AI asks clarifying questions
                 val question = lastCopilotQuestion.ifEmpty { "What additional information would help?" }
                 sendCopilotClarifyMode(question)
+            }
+            // ═══ MINERVA AI CLINICAL ASSISTANT (Feature #97) ═══
+            lower.contains("hey minerva") || lower.contains("hi minerva") ||
+            lower.contains("minerva") && (lower.contains("wake") || lower.contains("activate")) -> {
+                // Wake word activation
+                activateMinervaMode()
+            }
+            lower.contains("minerva stop") || lower.contains("minerva quit") ||
+            lower.contains("minerva close") || lower.contains("thank you minerva") ||
+            lower.contains("thanks minerva") || lower.contains("bye minerva") -> {
+                // Deactivate Minerva
+                deactivateMinervaMode()
+            }
+            isMinervaActive && (lower.startsWith("minerva ") || lower.startsWith("minerva,")) -> {
+                // Direct question to Minerva: "Minerva, what's the treatment for afib?"
+                val question = transcript
+                    .replace(Regex("^minerva[,\\s]*", RegexOption.IGNORE_CASE), "")
+                    .trim()
+                if (question.isNotBlank()) {
+                    sendMinervaQuestion(question)
+                }
+            }
+            isMinervaActive && (
+                lower.contains("what do you think") ||
+                lower.contains("how do i treat") ||
+                lower.contains("what's the dose") ||
+                lower.contains("explain ") ||
+                lower.contains("what am i missing") ||
+                lower.contains("brief me") ||
+                lower.contains("any concerns")
+            ) -> {
+                // Natural clinical questions when Minerva is active
+                sendMinervaQuestion(transcript)
+            }
+            lower.contains("minerva what") || lower.contains("minerva how") ||
+            lower.contains("minerva why") || lower.contains("minerva explain") ||
+            lower.contains("minerva tell") -> {
+                // Direct Minerva questions even when not active
+                val question = transcript
+                    .replace(Regex("^minerva[,\\s]*", RegexOption.IGNORE_CASE), "")
+                    .trim()
+                if (!isMinervaActive) {
+                    activateMinervaMode()
+                }
+                if (question.isNotBlank()) {
+                    sendMinervaQuestion(question)
+                }
+            }
+            lower.contains("clear minerva") || lower.contains("reset minerva") ||
+            lower.contains("new minerva conversation") -> {
+                // Clear Minerva history
+                clearMinervaHistory()
             }
             // ═══ IMAGE ANALYSIS COMMANDS (Feature #70) ═══
             lower.contains("take photo") || lower.contains("capture image") ||

@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f task_plan.md ]; then echo '📋 Re-reading task plan for goal alignment...'; cat task_plan.md | head -50; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f task_plan.md ]; then echo '🔍 Verifying task completion...'; grep -c '\\[x\\]' task_plan.md 2>/dev/null || echo '0'; grep -c '\\[ \\]' task_plan.md 2>/dev/null || echo '0'; fi"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(cat task_plan.md:*)",
+      "Bash(cat findings.md:*)",
+      "Bash(cat progress.md:*)",
+      "Read(task_plan.md)",
+      "Read(findings.md)",
+      "Read(progress.md)"
+    ]
+  }
+}
