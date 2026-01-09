@@ -304,9 +304,13 @@ CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "")
 CERNER_APPLICATION_ID = os.getenv("CERNER_APPLICATION_ID", "")
 CERNER_BASE_URL = os.getenv("CERNER_BASE_URL", "https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d")
 
-# Epic Configuration
-EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "")
+# Epic Configuration (MdxClinicalStaff App - Registered Jan 2026)
+EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "97fe3459-e967-4283-aa94-47ab0a85e93b")  # Non-Production/Sandbox
+EPIC_PROD_CLIENT_ID = os.getenv("EPIC_PROD_CLIENT_ID", "2ade3e6f-a7da-4c72-8548-9c0441072aa2")  # Production
 EPIC_BASE_URL = os.getenv("EPIC_BASE_URL", "https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4")
+EPIC_AUTH_URL = os.getenv("EPIC_AUTH_URL", "https://fhir.epic.com/interconnect-fhir-oauth/oauth2/authorize")
+EPIC_TOKEN_URL = os.getenv("EPIC_TOKEN_URL", "https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token")
+EPIC_REDIRECT_URI = os.getenv("EPIC_REDIRECT_URI", "http://localhost:8002/auth/epic/callback")
 
 # Veradigm Configuration
 VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "11A47952-0F52-4936-A6A3-CF91FDFDDF14")
@@ -349,6 +353,136 @@ FHIR_HEADERS = {"Accept": "application/fhir+json"}
 @app.get("/ping")
 async def ping():
     return {"status": "ok", "time": datetime.now().isoformat()}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EHR OAUTH2 AUTHENTICATION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Epic test patients (from Epic sandbox)
+EPIC_TEST_PATIENTS = {
+    "Tbt3KuCY0B5PSrJvCu2j-PlK.aiทRwdgmSAmH1U2D5rZ4": {"name": "Jason Argonaut", "dob": "1978-01-25"},
+    "erXuFYUfucBZaryVksYEcMg3": {"name": "Camila Lopez", "dob": "1987-09-12"},
+    "eq081-VQEgP8drUUqCWzHfw3": {"name": "Derrick Lin", "dob": "1973-06-03"},
+    "eAB3mDIBBcyUKviyzrxsnOQ3": {"name": "Amy Shaw", "dob": "1985-11-22"},
+    "egqBHVfQlt4Bw3XGXoxVxHg3": {"name": "John Smith", "dob": "1965-02-14"},
+}
+
+@app.get("/auth/epic/authorize")
+async def epic_authorize():
+    """
+    Initiate Epic OAuth2 authorization flow.
+    Redirects user to Epic login page.
+    """
+    import urllib.parse
+
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": EPIC_CLIENT_ID,
+        "redirect_uri": EPIC_REDIRECT_URI,
+        "scope": "openid fhirUser launch/patient patient/*.read",
+        "state": uuid.uuid4().hex,
+        "aud": EPIC_BASE_URL,
+    }
+
+    auth_url = f"{EPIC_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with Epic",
+        "redirect_uri": EPIC_REDIRECT_URI,
+        "client_id": EPIC_CLIENT_ID
+    }
+
+
+@app.get("/auth/epic/callback")
+async def epic_callback(code: str = None, state: str = None, error: str = None):
+    """
+    Epic OAuth2 callback - exchanges authorization code for access token.
+    """
+    if error:
+        return {"success": False, "error": error}
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            EPIC_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": EPIC_REDIRECT_URI,
+                "client_id": EPIC_CLIENT_ID,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["epic"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),  # Patient ID if launch context
+                "scope": token_data.get("scope"),
+            }
+
+            return {
+                "success": True,
+                "message": "Epic authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/epic/status")
+async def epic_auth_status():
+    """Check Epic authentication status"""
+    token_data = ehr_tokens.get("epic")
+
+    if not token_data:
+        return {
+            "authenticated": False,
+            "message": "Not authenticated with Epic. Use /auth/epic/authorize to start.",
+            "test_patients": EPIC_TEST_PATIENTS
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope"),
+        "test_patients": EPIC_TEST_PATIENTS if not is_valid else None
+    }
+
+
+@app.get("/api/v1/epic/test-patients")
+async def get_epic_test_patients():
+    """Get list of Epic sandbox test patients"""
+    return {
+        "ehr": "epic",
+        "sandbox_url": EPIC_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in EPIC_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=epic parameter"
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1845,16 +1979,53 @@ class ConsultNote(BaseModel):
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
 
-async def fetch_fhir(endpoint: str) -> dict:
-    """Fetch from Cerner FHIR API"""
+# In-memory token storage for EHR OAuth sessions
+ehr_tokens: Dict[str, Dict[str, Any]] = {}
+
+def get_ehr_base_url(ehr: str = "cerner") -> str:
+    """Get FHIR base URL for specified EHR"""
+    ehr_urls = {
+        "cerner": CERNER_BASE_URL,
+        "epic": EPIC_BASE_URL,
+        "veradigm": VERADIGM_BASE_URL,
+        "athena": ATHENA_BASE_URL,
+        "nextgen": NEXTGEN_BASE_URL,
+        "meditech": MEDITECH_BASE_URL,
+        "eclinicalworks": ECLINICALWORKS_BASE_URL,
+        "hapi": HAPI_FHIR_BASE_URL,
+    }
+    return ehr_urls.get(ehr.lower(), CERNER_BASE_URL)
+
+def get_ehr_headers(ehr: str = "cerner") -> dict:
+    """Get headers for specified EHR, including auth token if available"""
+    headers = {"Accept": "application/fhir+json"}
+
+    # Check for stored access token
+    token_data = ehr_tokens.get(ehr.lower())
+    if token_data and token_data.get("access_token"):
+        # Check if token is expired
+        expires_at = token_data.get("expires_at", 0)
+        if expires_at > datetime.now().timestamp():
+            headers["Authorization"] = f"Bearer {token_data['access_token']}"
+
+    return headers
+
+async def fetch_fhir(endpoint: str, ehr: str = "cerner") -> dict:
+    """Fetch from FHIR API - supports multiple EHRs"""
+    base_url = get_ehr_base_url(ehr)
+    headers = get_ehr_headers(ehr)
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.get(
-            f"{CERNER_BASE_URL}/{endpoint}",
-            headers=FHIR_HEADERS
+            f"{base_url}/{endpoint}",
+            headers=headers
         )
         if response.status_code == 200:
             return response.json()
-        print(f"⚠️ FHIR fetch failed for {endpoint}: status={response.status_code}")
+        elif response.status_code == 401:
+            print(f"⚠️ FHIR {ehr} auth required for {endpoint}: status=401")
+            return {"error": "auth_required", "ehr": ehr}
+        print(f"⚠️ FHIR {ehr} fetch failed for {endpoint}: status={response.status_code}")
         return {}
 
 
@@ -2517,9 +2688,11 @@ async def get_ehr_status():
             "name": "Epic",
             "configured": bool(EPIC_CLIENT_ID),
             "client_id": EPIC_CLIENT_ID[:8] + "..." if EPIC_CLIENT_ID else None,
-            "base_url": EPIC_BASE_URL if EPIC_CLIENT_ID else None,
+            "base_url": EPIC_BASE_URL,
             "market": "~35% hospitals",
-            "status": "ready" if EPIC_CLIENT_ID else "pending_credentials"
+            "status": "ready" if EPIC_CLIENT_ID else "pending_credentials",
+            "auth_url": "/auth/epic/authorize",
+            "test_patients": "/api/v1/epic/test-patients"
         },
         "veradigm": {
             "name": "Veradigm/Allscripts",
@@ -2618,8 +2791,13 @@ async def search_patients(name: str, request: Request):
 
 
 @app.get("/api/v1/patient/{patient_id}", response_model=PatientSummary)
-async def get_patient(patient_id: str, request: Request):
-    """Get patient summary by ID - optimized for AR glasses"""
+async def get_patient(patient_id: str, request: Request, ehr: str = "cerner"):
+    """Get patient summary by ID - optimized for AR glasses
+
+    Args:
+        patient_id: FHIR Patient ID
+        ehr: EHR system to query (cerner, epic, veradigm, athena, nextgen, meditech, eclinicalworks, hapi)
+    """
 
     # Get request context for audit
     ip_address = request.client.host if request.client else None
@@ -2628,9 +2806,17 @@ async def get_patient(patient_id: str, request: Request):
     user_name = request.headers.get("X-Clinician-Name")
 
     # Fetch patient demographics
-    patient_data = await fetch_fhir(f"Patient/{patient_id}")
+    patient_data = await fetch_fhir(f"Patient/{patient_id}", ehr=ehr)
+
+    # Check for auth required
+    if patient_data.get("error") == "auth_required":
+        raise HTTPException(
+            status_code=401,
+            detail=f"Authentication required for {ehr}. Use /auth/{ehr}/authorize to authenticate."
+        )
+
     if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
-        raise HTTPException(status_code=404, detail="Patient not found")
+        raise HTTPException(status_code=404, detail=f"Patient not found in {ehr}")
 
     # Extract basic info
     name = extract_patient_name(patient_data)
@@ -2639,28 +2825,28 @@ async def get_patient(patient_id: str, request: Request):
     photo_url = extract_patient_photo(patient_data)
 
     # Fetch vitals (50 for trend analysis)
-    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=50&_sort=-date")
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=50&_sort=-date", ehr=ehr)
     vitals = extract_vitals(vitals_bundle)
 
     # Fetch allergies
-    allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}&_count=10")
+    allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}&_count=10", ehr=ehr)
     allergies = extract_allergies(allergy_bundle)
 
     # Fetch medications
-    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=10")
+    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=10", ehr=ehr)
     medications = extract_medications(med_bundle)
 
     # Fetch lab results (50 for trend analysis)
-    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date")
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date", ehr=ehr)
     labs = extract_labs(lab_bundle)
 
     # Fetch procedures
-    proc_bundle = await fetch_fhir(f"Procedure?patient={patient_id}&_count=10")
+    proc_bundle = await fetch_fhir(f"Procedure?patient={patient_id}&_count=10", ehr=ehr)
     procedures = extract_procedures(proc_bundle)
 
     # Fetch immunizations (may not be available in all sandboxes)
     try:
-        imm_bundle = await fetch_fhir(f"Immunization?patient={patient_id}&_count=10")
+        imm_bundle = await fetch_fhir(f"Immunization?patient={patient_id}&_count=10", ehr=ehr)
         immunizations = extract_immunizations(imm_bundle)
     except Exception as e:
         print(f"⚠️ Could not fetch immunizations: {e}")
@@ -2668,34 +2854,34 @@ async def get_patient(patient_id: str, request: Request):
 
     # Fetch conditions/problems
     try:
-        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10")
-        print(f"🔍 Condition bundle type: {cond_bundle.get('resourceType', 'N/A')}, entries: {len(cond_bundle.get('entry', []))}")
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10", ehr=ehr)
+        print(f"🔍 [{ehr}] Condition bundle type: {cond_bundle.get('resourceType', 'N/A')}, entries: {len(cond_bundle.get('entry', []))}")
         conditions = extract_conditions(cond_bundle)
-        print(f"✓ Fetched {len(conditions)} conditions")
+        print(f"✓ [{ehr}] Fetched {len(conditions)} conditions")
     except Exception as e:
-        print(f"⚠️ Could not fetch conditions: {e}")
+        print(f"⚠️ [{ehr}] Could not fetch conditions: {e}")
         import traceback
         traceback.print_exc()
         conditions = []
 
     # Fetch care plans
     try:
-        care_plan_bundle = await fetch_fhir(f"CarePlan?patient={patient_id}&_count=10")
-        print(f"🔍 CarePlan bundle type: {care_plan_bundle.get('resourceType', 'N/A')}, entries: {len(care_plan_bundle.get('entry', []))}")
+        care_plan_bundle = await fetch_fhir(f"CarePlan?patient={patient_id}&_count=10", ehr=ehr)
+        print(f"🔍 [{ehr}] CarePlan bundle type: {care_plan_bundle.get('resourceType', 'N/A')}, entries: {len(care_plan_bundle.get('entry', []))}")
         care_plans = extract_care_plans(care_plan_bundle)
-        print(f"✓ Fetched {len(care_plans)} care plans")
+        print(f"✓ [{ehr}] Fetched {len(care_plans)} care plans")
     except Exception as e:
-        print(f"⚠️ Could not fetch care plans: {e}")
+        print(f"⚠️ [{ehr}] Could not fetch care plans: {e}")
         care_plans = []
 
     # Fetch clinical notes (DocumentReference)
     try:
-        doc_bundle = await fetch_fhir(f"DocumentReference?patient={patient_id}&_count=10")
-        print(f"🔍 DocumentReference bundle type: {doc_bundle.get('resourceType', 'N/A')}, entries: {len(doc_bundle.get('entry', []))}")
+        doc_bundle = await fetch_fhir(f"DocumentReference?patient={patient_id}&_count=10", ehr=ehr)
+        print(f"🔍 [{ehr}] DocumentReference bundle type: {doc_bundle.get('resourceType', 'N/A')}, entries: {len(doc_bundle.get('entry', []))}")
         clinical_notes = extract_clinical_notes(doc_bundle)
-        print(f"✓ Fetched {len(clinical_notes)} clinical notes")
+        print(f"✓ [{ehr}] Fetched {len(clinical_notes)} clinical notes")
     except Exception as e:
-        print(f"⚠️ Could not fetch clinical notes: {e}")
+        print(f"⚠️ [{ehr}] Could not fetch clinical notes: {e}")
         clinical_notes = []
 
     # Filter critical and abnormal vitals for safety alerts

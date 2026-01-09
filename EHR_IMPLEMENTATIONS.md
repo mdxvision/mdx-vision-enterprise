@@ -29,7 +29,7 @@
 
 | EHR | Status | Market Share | FHIR Base URL | Notes |
 |-----|--------|--------------|---------------|-------|
-| **Epic** | ✅ READY | ~35-38% | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | Dominant in large hospitals |
+| **Epic** | ✅ LIVE | ~35-38% | `fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4` | MdxClinicalStaff app registered Jan 2026 |
 | **Cerner/Oracle** | ✅ LIVE | ~25-28% | `fhir-open.cerner.com/r4/ec2458f2...` | Full read, demo write via HAPI |
 | **MEDITECH** | ✅ READY | ~15-20% | `greenfield.meditech.com/fhir/r4` | Community/rural hospitals |
 | **Veradigm** | ✅ READY | ~5-8% | `fhir.fhirpoint.open.allscripts.com/...` | Sunrise (hospital side) |
@@ -61,9 +61,10 @@
 ### Backend (`ehr-proxy/main.py`)
 
 ```python
-# Environment Variables (lines ~302-332)
+# Environment Variables (lines ~302-345)
 CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "0fab9b20-adc8-4940-bbf6-82034d1d39ab")
-EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "")
+EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "97fe3459-e967-4283-aa94-47ab0a85e93b")  # Non-Production
+EPIC_PROD_CLIENT_ID = os.getenv("EPIC_PROD_CLIENT_ID", "2ade3e6f-a7da-4c72-8548-9c0441072aa2")
 VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "11A47952-0F52-4936-A6A3-CF91FDFDDF14")
 ATHENA_CLIENT_ID = os.getenv("ATHENA_CLIENT_ID", "")
 NEXTGEN_CLIENT_ID = os.getenv("NEXTGEN_CLIENT_ID", "")
@@ -85,9 +86,10 @@ ECLINICALWORKS_BASE_URL = "https://fhir.eclinicalworks.com/fhir/r4"
 CERNER_CLIENT_ID=0fab9b20-adc8-4940-bbf6-82034d1d39ab
 CERNER_CLIENT_SECRET=
 
-# Epic
-EPIC_CLIENT_ID=
-EPIC_PRIVATE_KEY=
+# Epic (MdxClinicalStaff App - Registered Jan 2026)
+EPIC_CLIENT_ID=97fe3459-e967-4283-aa94-47ab0a85e93b
+EPIC_PROD_CLIENT_ID=2ade3e6f-a7da-4c72-8548-9c0441072aa2
+EPIC_REDIRECT_URI=http://localhost:8002/auth/epic/callback
 
 # athenahealth
 ATHENA_CLIENT_ID=
@@ -203,7 +205,7 @@ curl http://localhost:8002/api/v1/patient/{patient_id}?ehr=new_ehr
 ## Credentials Checklist
 
 ### Hospital EHRs
-- [x] Epic - Credentials in place (~35-38%)
+- [x] Epic - MdxClinicalStaff app registered, Non-Prod Client ID: 97fe3459... (~35-38%)
 - [x] Cerner/Oracle - Client ID configured (~25-28%)
 - [x] MEDITECH - Greenfield Workspace configured (~15-20%)
 - [x] Veradigm - Provider FHIR App configured (~5-8%)
