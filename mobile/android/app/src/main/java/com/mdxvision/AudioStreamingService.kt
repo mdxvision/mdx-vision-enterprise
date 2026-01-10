@@ -342,8 +342,8 @@ class AudioStreamingService(
                         }
 
                         // Apply software gain boost for Vuzix (low mic sensitivity)
-                        // Try moderate boost - 10x (~20dB) instead of 100x
-                        val gainFactor = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) 10 else 1
+                        // 50x boost (~34dB) - balance between too quiet and clipping
+                        val gainFactor = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) 50 else 1
 
                         // Convert shorts to bytes (little-endian PCM) with gain
                         val byteBuffer = ByteBuffer.allocate(readCount * 2)

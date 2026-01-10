@@ -23689,7 +23689,11 @@ SOFA Score: [X]
                 switchEhr(EHR_EPIC)
                 true
             }
-            lower.contains("switch to cerner") || lower.contains("use cerner") || lower.contains("cerner mode") -> {
+            // Cerner - with common mishearings (AssemblyAI transcribes as center, sink, sinner, colonial, corner)
+            lower.contains("switch to cerner") || lower.contains("use cerner") || lower.contains("cerner mode") ||
+            lower.contains("switch to center") || lower.contains("switch to sinner") || lower.contains("switch to sink") ||
+            lower.contains("switch to cenner") || lower.contains("to cerner") || lower.contains("colonial") ||
+            lower.contains("corner") -> {
                 switchEhr(EHR_CERNER)
                 true
             }
