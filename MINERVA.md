@@ -72,6 +72,7 @@ Minerva is the conversational AI assistant for MDx Vision - like Jarvis for Iron
 - [x] Shift handoff briefings
 - [x] "Got it, Minerva" acknowledgment command
 - [x] "Minerva is speaking" indicator
+- [x] Vuzix HUD integration (extends Feature #73) - alerts displayed on AR glasses
 
 ### Phase 4: Clinical Reasoning ← NEXT
 - [ ] "Minerva, what do you think?" - differential diagnosis

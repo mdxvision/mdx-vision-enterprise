@@ -650,6 +650,10 @@
   - [x] Dark theme (#0A1628) with high-contrast text
   - [x] Vuzix SDK integration (hud-actionmenu:2.9.0, hud-resources:2.3.0)
   - [x] Graceful fallback on non-Vuzix devices
+  - [x] **Minerva Alert Integration** (Phase 3): proactive alerts displayed on HUD
+    - Red border for critical alerts, amber for warnings
+    - Auto-expands HUD when alert arrives
+    - "Say 'Got it, Minerva' to acknowledge" hint
 
 - [x] Gesture Control (Feature #75)
   - [x] Head gesture recognition via gyroscope

@@ -612,7 +612,7 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 See `MINERVA.md` for full implementation checklist.
 
 ### Recently Completed
-- **Minerva Phase 3: Proactive Intelligence** (Jan 9, 2025) - Alerts on patient load, "Got it Minerva" acknowledgment
+- **Minerva Phase 3: Proactive Intelligence** (Jan 9, 2025) - Alerts on patient load, "Got it Minerva" acknowledgment, Vuzix HUD integration
 - **Feature #98: RNNoise Noise Cancellation** (Jan 9, 2025) - 15-20dB noise reduction
 
 ### EHR Integration Status (Jan 4, 2025)
