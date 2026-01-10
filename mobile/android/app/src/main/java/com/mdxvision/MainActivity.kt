@@ -2849,10 +2849,9 @@ SOFA Score: [X]
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                 0, 1f
             )
-            // Hide buttons on Vuzix - voice-first interface
-            if (isVuzixDevice()) {
-                visibility = android.view.View.GONE
-            }
+            // Show buttons on Vuzix - Vuzix speech service intercepts voice, so buttons needed
+            // Note: Vuzix's "Hello Blade" captures voice before Android SpeechRecognizer
+            // TODO: Integrate with Vuzix SDK VoiceActivity for proper voice commands
         }
 
         // Vuzix-specific: Add simple voice indicator
