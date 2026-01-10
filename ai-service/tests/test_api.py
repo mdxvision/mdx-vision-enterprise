@@ -293,7 +293,7 @@ class TestNotesRoutes:
                 "/v1/notes/generate",
                 json={
                     "encounterId": "test-123",
-                    "noteType": "Progress Note",
+                    "noteType": "SOAP",
                     "transcriptionText": "Follow up visit"
                 }
             )
