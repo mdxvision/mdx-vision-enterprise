@@ -5,7 +5,64 @@
 
 ---
 
-## Active Session: Minerva AI Assistant & EHR Completion (Jan 9, 2025)
+## Active Session: RNNoise & Planning System (Jan 9, 2025 - Continued)
+
+**Started:** 2025-01-09
+**Focus:** RNNoise noise cancellation, Manus-style planning setup, documentation updates
+
+### Session Summary (Latest)
+- **Feature #98: RNNoise Noise Cancellation** - Implemented Mozilla's open-source ML noise suppression (15-20dB reduction, free alternative to Krisp AI $8/mo)
+- **Minerva Phase 1-2 COMPLETE** - RAG chat endpoint, "Hey Minerva" wake word on Android
+- **Manus-Style Planning** - Implemented optional 3-file planning system (task_plan.md, findings.md, progress.md)
+- **Hooks Disabled** - Planning is now manual, not automatic (reduces overhead)
+- **Vuzix Testing** - Fixed IP issues with ADB reverse port forwarding, fixed punctuation in voice commands
+
+### Feature #98: RNNoise Noise Cancellation
+| Component | Status |
+|-----------|--------|
+| `noise_reduction.py` module | ✅ Complete |
+| WebSocket integration | ✅ Complete |
+| Sample rate conversion (16kHz ↔ 48kHz) | ✅ Complete |
+| Voice activity detection | ✅ Complete |
+| `?noise_reduction=true/false` param | ✅ Complete |
+| API endpoint `/api/v1/noise-reduction/status` | ✅ Complete |
+
+### Manus-Style Planning (Optional)
+Implemented 3-file planning system for complex features:
+- `task_plan.md` - Phase tracking with checkboxes
+- `findings.md` - Research notes
+- `progress.md` - Session logs
+
+**Decision:** Hooks disabled - use manually for major features only.
+
+### Minerva Status
+| Phase | Status |
+|-------|--------|
+| Phase 1: Foundation | ✅ COMPLETE |
+| Phase 2: Wake Word | ✅ COMPLETE |
+| Phase 3: Proactive | 🔄 IN PROGRESS (see task_plan.md) |
+
+### Git Commits (Today)
+| Commit | Description |
+|--------|-------------|
+| f8cfffb | feat: Minerva Phase 2 + Planning with Files skill |
+| bb0a6ab | feat: RNNoise noise cancellation for transcription (Feature #98) |
+
+### Files Created/Updated (Today)
+- **Created**: `ehr-proxy/noise_reduction.py` - RNNoise wrapper
+- **Created**: `task_plan.md` - Minerva Phase 3 planning
+- **Created**: `findings.md` - Phase 3 research notes
+- **Created**: `progress.md` - Session tracking
+- **Updated**: `ehr-proxy/main.py` - Noise reduction integration
+- **Updated**: `ehr-proxy/requirements.txt` - Added pyrnnoise
+- **Updated**: `CLAUDE.md` - Feature #98, planning docs, "Next Up"
+- **Updated**: `FEATURES.md` - Feature #98, Minerva Phase 1-2 checked
+- **Updated**: `MINERVA.md` - Phase 3 reference to task_plan.md
+- **Updated**: `.claude/settings.json` - Hooks disabled
+
+---
+
+## Previous Session: Minerva AI Assistant & EHR Completion (Jan 9, 2025)
 
 **Started:** 2025-01-09
 **Focus:** Minerva AI clinical assistant, Epic/Cerner EHR completion, token persistence
@@ -16,7 +73,8 @@
 - **EHR Voice Switching**: "Switch to Epic" / "Switch to Cerner" commands
 - **Token Persistence**: OAuth tokens persist across proxy restarts (.ehr_tokens.json)
 - **TTS Sanitization**: Fixed readback of JSON artifacts ("curly bracket" etc.)
-- **Minerva AI Planning**: Created MINERVA.md implementation plan
+- **Minerva Phase 1**: Created `/api/v1/minerva/chat` endpoint with RAG integration
+- **Minerva Phase 2**: "Hey Minerva" wake word detection on Android
 
 ### EHR Integration Status (Updated)
 | Platform | Status | Notes |
@@ -29,43 +87,12 @@
 | **MEDITECH** | Ready | OAuth configured |
 | **eClinicalWorks** | Ready | OAuth configured |
 
-### Token Persistence Implementation
-- Added `save_tokens()` and `load_tokens()` functions
-- Tokens saved to `ehr-proxy/.ehr_tokens.json`
-- Auto-loads on proxy startup
-- Saves after every OAuth callback (all 6 EHRs)
-- Demo-ready: no re-login needed after restart
-
-### Minerva AI Clinical Assistant (Feature #97)
-> Named in honor of Minerva Diaz
-
-Created `MINERVA.md` with:
-- Full architecture diagram
-- 6-phase implementation checklist
-- API endpoint specifications
-- Voice command definitions
-- RAG integration plan for hallucination prevention
-- Persona and speech patterns
-- Security and compliance considerations
-
-**Key Minerva Features:**
-- "Hey Minerva" wake word activation
-- RAG-grounded responses (citations from AHA, ADA, USPSTF)
-- Multi-turn conversation with patient context
-- Clinical reasoning modes (differential, teaching, challenge, clarify)
-- Proactive alerts and briefings
-
-### Files Created/Updated
-- **Created**: `MINERVA.md` - Full implementation plan
-- **Updated**: `CLAUDE.md` - Added Feature #97, updated Next Up section
-- **Updated**: `FEATURES.md` - Added Minerva checklist, updated EHR status
-- **Updated**: `README.md` - Jan 2025 status, 7 EHRs listed
-- **Updated**: `ehr-proxy/main.py` - Token persistence, save_tokens() calls
-- **Updated**: `MainActivity.kt` - EHR switching, TTS sanitization
-
 ### Git Commits
 1. `feat: EHR switching + token persistence for demos`
 2. `docs: update README with 7 EHR integrations and Jan 2025 status`
+3. `docs: Minerva AI Clinical Assistant implementation plan`
+4. `feat: Minerva AI Clinical Assistant Phase 1 (Feature #97)`
+5. `feat: Minerva Phase 2 + Planning with Files skill`
 
 ---
 
@@ -236,10 +263,11 @@ Vuzix Blade 2 has no working TTS engines despite PicoTTS being installed. Soluti
 ### Current State (January 2025)
 | Metric | Value |
 |--------|-------|
-| **Features Implemented** | 91 |
+| **Features Implemented** | 98 |
 | **Tests Passing** | 194 |
 | **Test Coverage** | 100% |
 | **Git Status** | Up to date with origin/main |
+| **Current Focus** | Minerva Phase 3 (Proactive Intelligence) |
 
 ### Technology Stack
 | Component | Technology | Port |
@@ -321,11 +349,19 @@ Vuzix Blade 2 has no working TTS engines despite PicoTTS being installed. Soluti
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | Development context for Claude Code |
-| `FEATURES.md` | Complete 91-feature checklist |
+| `FEATURES.md` | Complete 98-feature checklist |
 | `CONVERSATIONS.md` | This file - session history |
+| `MINERVA.md` | Minerva AI Assistant implementation plan |
 | `STRATEGIC_ROADMAP.md` | Product and business roadmap |
 | `VOICE_COMMANDS.md` | All 100+ voice commands |
 | `SALES_MATERIALS.md` | Index of investor/hospital decks |
+
+### Planning Files (Manus-Style)
+| File | Purpose |
+|------|---------|
+| `task_plan.md` | Current feature phase tracking |
+| `findings.md` | Research notes for current feature |
+| `progress.md` | Session logs for current feature |
 
 ### Research Documents
 | File | Purpose |
@@ -336,7 +372,8 @@ Vuzix Blade 2 has no working TTS engines despite PicoTTS being installed. Soluti
 ### Key Code Files
 | File | Purpose |
 |------|---------|
-| `ehr-proxy/main.py` | Core API (434KB) - SOAP notes, ICD-10/CPT, transcription |
+| `ehr-proxy/main.py` | Core API - SOAP notes, ICD-10/CPT, transcription, Minerva |
+| `ehr-proxy/noise_reduction.py` | RNNoise noise cancellation (Feature #98) |
 | `ehr-proxy/rag.py` | RAG clinical knowledge system |
 | `ehr-proxy/auth.py` | Multi-EHR auth + voiceprint verification |
 | `mobile/android/app/src/main/java/com/mdxvision/MainActivity.kt` | Android main activity |
@@ -362,9 +399,10 @@ POST /api/v1/notes/save
 
 ### Transcription
 ```
-WS   /ws/transcribe                # Real-time streaming
-WS   /ws/transcribe/{provider}     # Specific provider
+WS   /ws/transcribe                      # Real-time streaming (noise reduction default on)
+WS   /ws/transcribe?noise_reduction=false # Disable noise reduction
 GET  /api/v1/transcription/status
+GET  /api/v1/noise-reduction/status      # RNNoise status
 ```
 
 ### Health Equity
@@ -383,6 +421,14 @@ POST /api/v1/rag/initialize
 POST /api/v1/rag/query
 GET  /api/v1/updates/dashboard
 GET  /api/v1/updates/pending
+```
+
+### Minerva AI Assistant
+```
+POST /api/v1/minerva/chat                 # Conversational chat with RAG
+GET  /api/v1/minerva/context/{patient_id} # Patient context for Minerva
+POST /api/v1/minerva/proactive/{patient_id} # Proactive alerts (Phase 3)
+POST /api/v1/minerva/reason               # Clinical reasoning modes
 ```
 
 ---
@@ -483,4 +529,4 @@ See `EHR_ACCESS_GUIDE.md` for complete details:
 
 ---
 
-*Last updated: 2025-01-04*
+*Last updated: 2025-01-09*

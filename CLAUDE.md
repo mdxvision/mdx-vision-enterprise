@@ -28,9 +28,9 @@ MDx Vision is an AR smart glasses platform for healthcare documentation. It impl
 
 See [CONVERSATIONS.md](CONVERSATIONS.md) for session history, decisions, and progress tracking.
 
-## Planning with Files (Manus-Style)
+## Planning with Files (Manus-Style) - Optional
 
-For complex multi-phase tasks, use the **three-file planning system** inspired by Manus AI:
+For complex multi-phase tasks, the **three-file planning system** is available:
 
 ```
 task_plan.md   - Phase tracking with checkboxes, errors, decisions
@@ -38,22 +38,21 @@ findings.md    - Research discoveries, code snippets, technical decisions
 progress.md    - Session logs, test results, metrics
 ```
 
-**When to use:** Any task with 3+ phases, 5+ tool calls, or research requirements.
+**When to use:**
+- Major features with 3+ phases (e.g., Minerva Phase 3)
+- Multi-session work where context may be lost
+- Research-heavy tasks
 
-**Key Rules:**
-1. Create `task_plan.md` before starting complex work
-2. **2-Action Rule**: After every 2 search/browse operations, update `findings.md`
-3. Log ALL errors in both `task_plan.md` and `progress.md`
-4. Never repeat failed approaches - mutate strategy
-5. Re-read `task_plan.md` before major decisions
+**When NOT to use:**
+- Bug fixes
+- Single-file changes
+- Tasks where you know exactly what to do
+
+**Approach:** Manual, not automatic. No hooks - use planning files intentionally when needed.
 
 **Templates:** `.claude/skills/planning-with-files/templates/`
 
-**Hooks configured:**
-- PreToolUse: Re-reads task_plan.md before Write/Edit/Bash
-- Stop: Verifies all phases complete
-
-See `.claude/skills/planning-with-files/SKILL.md` for full documentation.
+**Current Planning:** See `task_plan.md` in project root (if exists)
 
 ## Sales & Marketing Materials
 
@@ -605,12 +604,17 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 |-------|--------|-------------|
 | Phase 1: Foundation | **COMPLETE** | RAG-integrated chat endpoint, conversation history |
 | Phase 2: Wake Word | **COMPLETE** | "Hey Minerva" activation on Android |
-| Phase 3: Proactive | **NEXT** | Proactive alerts via Minerva voice |
+| Phase 3: Proactive | **IN PROGRESS** | Proactive alerts via Minerva voice |
 | Phase 4: Reasoning | Pending | Differential, teaching, challenge modes |
 | Phase 5: Actions | Pending | Voice orders, documentation through Minerva |
 | Phase 6: Learning | Pending | Personalization, specialty responses |
 
+**Planning:** See `task_plan.md` for Phase 3 detailed tracking (Manus-style).
+
 See `MINERVA.md` for full implementation checklist.
+
+### Recently Completed
+- **Feature #98: RNNoise Noise Cancellation** (Jan 9, 2025) - 15-20dB noise reduction
 
 ### EHR Integration Status (Jan 4, 2025)
 

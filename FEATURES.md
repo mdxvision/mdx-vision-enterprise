@@ -1,7 +1,7 @@
 # MDx Vision - Complete Feature Checklist
 
-**Last Updated:** January 3, 2025
-**Total Features:** 91 Implemented
+**Last Updated:** January 9, 2025
+**Total Features:** 98 Implemented
 **Test Coverage:** 194 tests passing (100%)
 
 ---
@@ -62,6 +62,7 @@
 - [x] Specialty Vocabulary Auto-Load
 - [x] Auto-Scroll Transcription
 - [x] Transcript Preview Before Generate
+- [x] RNNoise Noise Cancellation (15-20dB reduction) - Feature #98
 
 ---
 
@@ -944,21 +945,21 @@
 
 > *Named in honor of Minerva Diaz*
 
-- [ ] **Phase 1: Foundation**
-  - [ ] Create `/api/v1/minerva/chat` endpoint with RAG integration
-  - [ ] Create `/api/v1/minerva/context` endpoint for patient context
-  - [ ] Add conversation history management (multi-turn)
-  - [ ] Implement citation injection from RAG
-  - [ ] Add HIPAA audit logging for Minerva interactions
+- [x] **Phase 1: Foundation** ✅ (Jan 9, 2025)
+  - [x] Create `/api/v1/minerva/chat` endpoint with RAG integration
+  - [x] Create `/api/v1/minerva/context` endpoint for patient context
+  - [x] Add conversation history management (multi-turn)
+  - [x] Implement citation injection from RAG
+  - [x] Add HIPAA audit logging for Minerva interactions
 
-- [ ] **Phase 2: Wake Word & Voice**
-  - [ ] Add "Hey Minerva" wake word detection (Android)
-  - [ ] Create Minerva voice activation mode
-  - [ ] Add TTS response with Minerva persona
-  - [ ] Implement conversation state management
-  - [ ] Add "Minerva, stop" / "Thank you, Minerva" to end conversation
+- [x] **Phase 2: Wake Word & Voice** ✅ (Jan 9, 2025)
+  - [x] Add "Hey Minerva" wake word detection (Android)
+  - [x] Create Minerva voice activation mode
+  - [x] Add TTS response with Minerva persona
+  - [x] Implement conversation state management
+  - [x] Add "Minerva, stop" / "Thank you, Minerva" to end conversation
 
-- [ ] **Phase 3: Proactive Intelligence**
+- [ ] **Phase 3: Proactive Intelligence** ← CURRENT (see `task_plan.md`)
   - [ ] Proactive alerts on patient load (extends Feature #92)
   - [ ] Critical value announcements via Minerva voice
   - [ ] Care gap reminders spoken proactively
@@ -985,6 +986,20 @@
   - [ ] Custom guideline ingestion per organization
 
 See `MINERVA.md` for full implementation details.
+
+---
+
+## RNNoise Noise Cancellation (Feature #98)
+
+- [x] **Core Implementation** ✅ (Jan 9, 2025)
+  - [x] Create `noise_reduction.py` module with NoiseReducer class
+  - [x] Integrate with WebSocket transcription endpoint
+  - [x] Sample rate conversion (16kHz ↔ 48kHz)
+  - [x] Voice activity detection with speech probability
+  - [x] Session-level statistics
+  - [x] `?noise_reduction=true/false` query parameter
+  - [x] API endpoint `GET /api/v1/noise-reduction/status`
+  - [x] Graceful fallback when pyrnnoise unavailable
 
 ---
 

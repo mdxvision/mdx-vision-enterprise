@@ -62,7 +62,9 @@ Minerva is the conversational AI assistant for MDx Vision - like Jarvis for Iron
 - [x] Implement conversation state management
 - [x] Add "Minerva, stop" / "Thank you, Minerva" to end conversation
 
-### Phase 3: Proactive Intelligence
+### Phase 3: Proactive Intelligence ← CURRENT
+> **Planning:** See `task_plan.md` for detailed implementation tracking
+
 - [ ] Proactive alerts on patient load (extends Feature #92)
 - [ ] Critical value announcements via Minerva voice
 - [ ] Care gap reminders spoken proactively
