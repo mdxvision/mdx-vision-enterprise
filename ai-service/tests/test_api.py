@@ -283,7 +283,7 @@ class TestNotesRoutes:
         """Should generate generic note for other types"""
         mock_response = Mock()
         mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = "Progress note content"
+        mock_response.choices[0].message.content = '{"subjective": "Patient reports follow up", "objective": "Vitals stable", "assessment": "Condition stable", "plan": "Continue current treatment"}'
         mock_openai_clients.chat.completions.create.return_value = mock_response
 
         from app.main import app
