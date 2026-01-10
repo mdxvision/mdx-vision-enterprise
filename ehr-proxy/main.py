@@ -42,6 +42,20 @@ from medical_vocabulary import (
 # Import HIPAA audit logging
 from audit import audit_logger, AuditAction
 
+# Import noise reduction (RNNoise - Krisp AI alternative)
+try:
+    from noise_reduction import (
+        create_noise_reduction_session, is_noise_reduction_available,
+        NoiseReductionSession, NOISE_REDUCTION_ENABLED
+    )
+    NOISE_REDUCTION_AVAILABLE = is_noise_reduction_available()
+    if NOISE_REDUCTION_AVAILABLE:
+        print("✅ RNNoise noise reduction available")
+except ImportError as e:
+    print(f"⚠️ Noise reduction not available: {e}")
+    NOISE_REDUCTION_AVAILABLE = False
+    NOISE_REDUCTION_ENABLED = False
+
 # Import RAG system (Feature #88)
 try:
     from rag import (
@@ -14403,7 +14417,41 @@ async def transcription_status():
         "features": {
             "speaker_diarization": True,
             "medical_vocabulary": True,
-            "specialty_auto_detection": True
+            "specialty_auto_detection": True,
+            "noise_reduction": NOISE_REDUCTION_AVAILABLE
+        }
+    }
+
+
+@app.get("/api/v1/noise-reduction/status")
+async def noise_reduction_status():
+    """
+    Check RNNoise noise reduction status and configuration.
+
+    RNNoise is Mozilla's open-source ML noise suppression,
+    providing 15-20dB noise reduction (similar to Krisp AI but free).
+
+    Returns:
+        Status and configuration of noise reduction
+    """
+    return {
+        "available": NOISE_REDUCTION_AVAILABLE,
+        "enabled_by_default": NOISE_REDUCTION_AVAILABLE,
+        "technology": "RNNoise (Mozilla ML noise suppression)",
+        "noise_reduction_db": "15-20dB",
+        "features": {
+            "voice_activity_detection": True,
+            "speech_probability": True,
+            "real_time_processing": True,
+            "sample_rate_conversion": "16kHz <-> 48kHz"
+        },
+        "usage": {
+            "enable": "ws://localhost:8002/ws/transcribe?noise_reduction=true",
+            "disable": "ws://localhost:8002/ws/transcribe?noise_reduction=false"
+        },
+        "comparison": {
+            "krisp_ai": "$8/month per user",
+            "rnnoise": "Free, open-source"
         }
     }
 
@@ -14447,17 +14495,19 @@ async def detect_specialty(request: SpecialtyDetectionRequest):
 
 
 @app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
+async def websocket_transcribe(websocket: WebSocket, specialties: str = None, noise_reduction: bool = True):
     """
-    Real-time transcription WebSocket endpoint
+    Real-time transcription WebSocket endpoint with RNNoise noise reduction
 
     Query Parameters:
     - specialties: Comma-separated list of specialties (cardiology, pulmonology, orthopedics, neurology, pediatrics)
       Example: /ws/transcribe?specialties=cardiology,pulmonology
+    - noise_reduction: Enable RNNoise noise cancellation (default: true)
+      Example: /ws/transcribe?noise_reduction=false
 
     Protocol:
-    1. Client connects (optionally with ?specialties=cardiology,pulmonology)
-    2. Server sends: {"type": "connected", "session_id": "...", "provider": "...", "specialties": [...]}
+    1. Client connects (optionally with ?specialties=cardiology,pulmonology&noise_reduction=true)
+    2. Server sends: {"type": "connected", "session_id": "...", "provider": "...", "specialties": [...], "noise_reduction": true/false}
     3. Client optionally sends speaker context:
        {"type": "speaker_context", "clinician": "Dr. Smith", "patient": "John Doe", "others": [...]}
     4. Client optionally sends patient context for specialty detection (informational):
@@ -14466,7 +14516,7 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
     6. Server sends transcription results:
        {"type": "transcript", "text": "...", "is_final": true/false, "speaker": "Dr. Smith"}
     7. Client sends: {"type": "stop"} to end session
-    8. Server sends: {"type": "ended", "full_transcript": "..."}
+    8. Server sends: {"type": "ended", "full_transcript": "...", "noise_reduction_stats": {...}}
     """
     await websocket.accept()
     print(f"🔗 WebSocket accepted from client")
@@ -14476,6 +14526,7 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
     print(f"🎤 Session ID: {session_id}")
     session = None
     detected_specialties = []
+    nr_session = None  # Noise reduction session
 
     # Parse specialties from query parameter
     specialty_list = None
@@ -14485,6 +14536,18 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
         specialty_list = [s for s in specialty_list if s in valid_specialties]
         if specialty_list:
             print(f"📚 Specialty vocabulary requested: {specialty_list}")
+
+    # Setup noise reduction if enabled and available
+    nr_enabled = noise_reduction and NOISE_REDUCTION_AVAILABLE
+    if nr_enabled:
+        try:
+            nr_session = create_noise_reduction_session(session_id)
+            print(f"🔇 RNNoise noise reduction enabled for session {session_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to create noise reduction session: {e}")
+            nr_enabled = False
+    elif noise_reduction and not NOISE_REDUCTION_AVAILABLE:
+        print(f"⚠️ Noise reduction requested but RNNoise not available")
 
     try:
         # Create transcription session
@@ -14497,10 +14560,12 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
             "type": "connected",
             "session_id": session_id,
             "provider": TRANSCRIPTION_PROVIDER,
-            "specialties": specialty_list or []
+            "specialties": specialty_list or [],
+            "noise_reduction": nr_enabled
         })
+        nr_info = " + RNNoise" if nr_enabled else ""
         specialty_info = f" with specialties {specialty_list}" if specialty_list else ""
-        print(f"🎤 Transcription session started: {session_id} ({TRANSCRIPTION_PROVIDER}){specialty_info}")
+        print(f"🎤 Transcription session started: {session_id} ({TRANSCRIPTION_PROVIDER}{nr_info}){specialty_info}")
 
         # Task to forward transcriptions to client
         async def forward_transcriptions():
@@ -14528,8 +14593,19 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
                     break
 
                 if "bytes" in message:
-                    # Binary audio data
-                    await session.send_audio(message["bytes"])
+                    # Binary audio data - apply noise reduction if enabled
+                    audio_data = message["bytes"]
+                    if nr_session and nr_enabled:
+                        try:
+                            denoised_audio, speech_prob = nr_session.process(audio_data)
+                            if denoised_audio:  # Only send if we have complete frames
+                                await session.send_audio(denoised_audio)
+                        except Exception as e:
+                            # On error, fall back to original audio
+                            print(f"⚠️ Noise reduction error: {e}")
+                            await session.send_audio(audio_data)
+                    else:
+                        await session.send_audio(audio_data)
 
                 elif "text" in message:
                     # JSON control message
@@ -14576,13 +14652,23 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
         forward_task.cancel()
         full_transcript = await end_session(session_id)
 
-        # Send final transcript
+        # Get noise reduction stats before cleanup
+        nr_stats = None
+        if nr_session:
+            nr_stats = nr_session.get_stats()
+            nr_session.close()
+            print(f"🔇 Noise reduction stats: {nr_stats.get('avg_speech_probability', 0):.2f} avg speech prob, {nr_stats.get('chunk_count', 0)} chunks")
+
+        # Send final transcript with noise reduction stats
         try:
-            await websocket.send_json({
+            response = {
                 "type": "ended",
                 "session_id": session_id,
                 "full_transcript": full_transcript
-            })
+            }
+            if nr_stats:
+                response["noise_reduction_stats"] = nr_stats
+            await websocket.send_json(response)
         except:
             pass
 
@@ -14599,6 +14685,8 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
             pass
         if session:
             await end_session(session_id)
+        if nr_session:
+            nr_session.close()
 
     finally:
         try:
