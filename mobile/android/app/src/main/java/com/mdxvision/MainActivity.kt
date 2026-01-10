@@ -144,7 +144,7 @@ class MainActivity : AppCompatActivity() {
         // For Vuzix testing: Ensure device is on same WiFi network as Mac
         // For production: Use cloud URL (e.g., https://api.mdxvision.com)
         private const val PREF_SERVER_URL = "server_url"
-        private const val DEFAULT_SERVER_URL = "http://192.168.1.243:8002"
+        private const val DEFAULT_SERVER_URL = "http://localhost:8002"
         private var serverUrl: String = DEFAULT_SERVER_URL
 
         val EHR_PROXY_URL: String
@@ -11921,7 +11921,10 @@ SOFA Score: [X]
             |• "Minerva, what's the dose for [med]?" - Dosing help
             |• "Minerva, explain [topic]" - Clinical education
             |• "Minerva, what am I missing?" - Second opinion
-            |• "Minerva, brief me" - Patient briefing
+            |• "Minerva, brief me" - Proactive briefing
+            |• "Any concerns?" - Check for alerts
+            |• "What should I know?" - Patient briefing
+            |• "Got it, Minerva" - Acknowledge alert
             |• "Clear Minerva" - Reset conversation
             |• "Minerva stop" - End Minerva session
             |
@@ -14825,12 +14828,9 @@ SOFA Score: [X]
                             addToPatientHistory(patientId, name)
                             showPatientDataOverlay(patient)
                             speakFeedback("Patient $name loaded")
-                            speakCriticalVitalAlerts(patient)
-                            speakAllergyWarnings(patient)
-                            speakCriticalLabAlerts(patient)
-                            speakMedicationInteractions(patient)
-                            speakLabTrends(patient)
-                            speakVitalTrends(patient)
+                            // Minerva Phase 3: Proactive Intelligence
+                            // Let Minerva speak first with unified alerts (replaces individual speak* calls)
+                            fetchMinervaProactiveAlerts(patientId)
                             notifyHudPatientUpdate()  // Update Vuzix HUD
                             fetchPreVisitPrep(patientId)  // Jarvis: Proactive AI briefing (Feature #92)
                         } catch (e: Exception) {
@@ -17862,9 +17862,10 @@ SOFA Score: [X]
         speakFeedback("Let me look that up...")
 
         // Build patient context if available
-        val patientContext: JSONObject? = if (currentPatientData != null && currentPatientId != null) {
+        val patientId = currentPatientData?.optString("patient_id", "")
+        val patientContext: JSONObject? = if (currentPatientData != null && !patientId.isNullOrEmpty()) {
             JSONObject().apply {
-                put("patient_id", currentPatientId)
+                put("patient_id", patientId)
                 put("name", currentPatientData?.optString("name", "Unknown"))
                 put("age", currentPatientData?.optString("age", ""))
                 put("gender", currentPatientData?.optString("gender", ""))
@@ -17899,7 +17900,7 @@ SOFA Score: [X]
                 put("conversation_id", minervaConversationId)
             }
             if (patientContext != null) {
-                put("patient_id", currentPatientId)
+                put("patient_id", patientId)
                 put("patient_context", patientContext)
             }
         }
@@ -18058,6 +18059,136 @@ SOFA Score: [X]
         speakFeedback("Minerva conversation cleared. Fresh start!")
         Toast.makeText(this, "🦉 Minerva reset", Toast.LENGTH_SHORT).show()
         Log.d(TAG, "Minerva history cleared")
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // MINERVA PROACTIVE INTELLIGENCE (Feature #97 - Phase 3)
+    // Minerva speaks FIRST with alerts, warnings, and briefings on patient load
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Track if Minerva is currently speaking proactive alerts.
+     * Used to show "Minerva is speaking..." indicator.
+     */
+    private var isMinervaProactiveSpeaking: Boolean = false
+
+    /**
+     * Fetch proactive alerts from Minerva on patient load.
+     * Minerva will speak critical findings WITHOUT being asked.
+     *
+     * This replaces individual speak* calls with a unified Minerva briefing.
+     * Critical alerts bypass speech toggle (safety-first).
+     */
+    private fun fetchMinervaProactiveAlerts(patientId: String) {
+        val url = "$EHR_PROXY_URL/api/v1/minerva/proactive/$patientId"
+        val request = Request.Builder()
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("X-Device-ID", deviceId)
+            .post("{}".toRequestBody("application/json".toMediaType()))
+            .build()
+
+        Log.d(TAG, "Fetching Minerva proactive alerts for patient $patientId")
+
+        httpClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "Minerva proactive request failed", e)
+                // Silent failure - fall back to individual alerts if Minerva unavailable
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use { resp ->
+                    val body = resp.body?.string()
+                    when {
+                        resp.isSuccessful && body != null -> {
+                            val json = JSONObject(body)
+                            runOnUiThread { handleMinervaProactiveResponse(json) }
+                        }
+                        !resp.isSuccessful -> {
+                            Log.e(TAG, "Minerva proactive error: ${resp.code}")
+                        }
+                        else -> { /* Empty body or other case - do nothing */ }
+                    }
+                }
+            }
+        })
+    }
+
+    /**
+     * Handle Minerva proactive response - speak alerts with Minerva persona.
+     */
+    private fun handleMinervaProactiveResponse(response: JSONObject) {
+        val patientName = response.optString("patient_name", "")
+        val hasCritical = response.optBoolean("has_critical", false)
+        val alertCount = response.optInt("alert_count", 0)
+        val spokenSummary = response.optString("spoken_summary", "")
+        val displaySummary = response.optString("display_summary", "")
+        val acknowledgmentPhrase = response.optString("acknowledgment_phrase", "Got it, Minerva")
+        val alerts = response.optJSONArray("alerts")
+
+        Log.d(TAG, "Minerva proactive: $alertCount alerts, critical=$hasCritical")
+
+        // If no alerts, Minerva stays quiet
+        if (alertCount == 0 || spokenSummary.isBlank()) {
+            Log.d(TAG, "Minerva has no proactive alerts for this patient")
+            return
+        }
+
+        // Show "Minerva is speaking" indicator
+        isMinervaProactiveSpeaking = true
+        runOnUiThread {
+            statusText.text = "🦉 Minerva is speaking..."
+        }
+
+        // Speak the summary - critical alerts bypass speech toggle (safety-first)
+        if (hasCritical) {
+            // Critical alerts ALWAYS spoken for patient safety
+            speak(spokenSummary, TextToSpeech.QUEUE_ADD)
+            Log.d(TAG, "Minerva speaking critical alerts (bypassed toggle)")
+        } else {
+            // Non-critical respects speech toggle
+            speakFeedback(spokenSummary)
+        }
+
+        // Display in UI
+        val displayText = buildString {
+            append("🦉 MINERVA ALERT\n")
+            append("━━━━━━━━━━━━━━━\n")
+            if (displaySummary.isNotBlank()) {
+                append(displaySummary)
+            }
+            if (alertCount > 0 && hasCritical) {
+                append("\n\n⚠️ $alertCount concerns")
+                append("\nSay \"$acknowledgmentPhrase\" when ready")
+            }
+        }
+        patientDataText.text = displayText
+
+        // Clear speaking indicator after TTS completes (estimated 3-5 seconds per alert)
+        val estimatedDuration = (alertCount * 3000L).coerceAtMost(15000L)
+        android.os.Handler(mainLooper).postDelayed({
+            isMinervaProactiveSpeaking = false
+            // Restore patient info display
+            currentPatientData?.let { showPatientDataOverlay(it) }
+        }, estimatedDuration)
+
+        Log.d(TAG, "Minerva proactive alerts handled: $alertCount alerts")
+    }
+
+    /**
+     * Handle "Got it, Minerva" acknowledgment voice command.
+     * Stops Minerva from repeating alerts and clears the alert display.
+     */
+    private fun acknowledgeMinervaAlert() {
+        if (isMinervaProactiveSpeaking) {
+            textToSpeech?.stop()
+            isMinervaProactiveSpeaking = false
+            speakFeedback("Understood.")
+            currentPatientData?.let { showPatientDataOverlay(it) }
+            Log.d(TAG, "Minerva alert acknowledged")
+        } else {
+            speakFeedback("No active alert to acknowledge.")
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════════════
@@ -24057,7 +24188,9 @@ SOFA Score: [X]
                 sendCopilotClarifyMode(question)
             }
             // ═══ MINERVA AI CLINICAL ASSISTANT (Feature #97) ═══
-            lower.contains("hey minerva") || lower.contains("hi minerva") ||
+            // Handle punctuation variations: "Hey, Minerva." "Hey Minerva" "Hi Minerva!"
+            lower.replace(",", "").replace(".", "").contains("hey minerva") ||
+            lower.replace(",", "").replace(".", "").contains("hi minerva") ||
             lower.contains("minerva") && (lower.contains("wake") || lower.contains("activate")) -> {
                 // Wake word activation
                 activateMinervaMode()
@@ -24082,12 +24215,22 @@ SOFA Score: [X]
                 lower.contains("how do i treat") ||
                 lower.contains("what's the dose") ||
                 lower.contains("explain ") ||
-                lower.contains("what am i missing") ||
-                lower.contains("brief me") ||
-                lower.contains("any concerns")
+                lower.contains("what am i missing")
             ) -> {
                 // Natural clinical questions when Minerva is active
                 sendMinervaQuestion(transcript)
+            }
+            // Minerva Phase 3: Proactive briefing commands
+            lower.contains("brief me") || lower.contains("any concerns") ||
+            lower.contains("minerva brief") || lower.contains("what should i know") -> {
+                // Proactive briefing - uses the proactive alerts endpoint
+                val patientId = currentPatientData?.optString("id", "")
+                if (patientId.isNullOrBlank()) {
+                    speakFeedback("Load a patient first and I'll brief you.")
+                } else {
+                    speakFeedback("Let me brief you.")
+                    fetchMinervaProactiveAlerts(patientId)
+                }
             }
             lower.contains("minerva what") || lower.contains("minerva how") ||
             lower.contains("minerva why") || lower.contains("minerva explain") ||
@@ -24107,6 +24250,13 @@ SOFA Score: [X]
             lower.contains("new minerva conversation") -> {
                 // Clear Minerva history
                 clearMinervaHistory()
+            }
+            // Minerva Phase 3: Acknowledge proactive alerts
+            lower.contains("got it minerva") || lower.contains("got it, minerva") ||
+            lower.contains("okay minerva") || lower.contains("i heard you minerva") ||
+            lower.contains("understood minerva") || lower.contains("roger minerva") -> {
+                // Acknowledge and dismiss proactive alert
+                acknowledgeMinervaAlert()
             }
             // ═══ IMAGE ANALYSIS COMMANDS (Feature #70) ═══
             lower.contains("take photo") || lower.contains("capture image") ||

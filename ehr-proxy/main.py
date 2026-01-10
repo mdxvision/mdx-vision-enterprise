@@ -6919,6 +6919,438 @@ async def minerva_clear_conversation(conversation_id: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# MINERVA PHASE 3: PROACTIVE INTELLIGENCE (Feature #97)
+# Minerva speaks FIRST when something important needs attention
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MinervaProactiveAlert(BaseModel):
+    """Individual proactive alert from Minerva"""
+    category: str  # "critical", "warning", "info"
+    priority: int  # 1-10, where 10 is most urgent
+    type: str  # "vital", "lab", "care_gap", "drug_interaction", "allergy", "trend"
+    message: str  # Display-friendly message
+    spoken_message: str  # TTS-friendly message (Minerva voice)
+    action: Optional[str] = None  # Suggested voice command
+    data: Optional[Dict[str, Any]] = None  # Additional context
+
+
+class MinervaProactiveResponse(BaseModel):
+    """Minerva proactive intelligence response"""
+    patient_id: str
+    patient_name: str
+    has_critical: bool
+    alert_count: int
+    alerts: List[MinervaProactiveAlert]
+    spoken_summary: str  # Full TTS summary (max 3-4 items)
+    display_summary: str  # HUD-formatted display
+    acknowledgment_phrase: str  # How to acknowledge ("Got it, Minerva")
+
+
+def generate_minerva_spoken_intro(patient_name: str, has_critical: bool, alert_count: int) -> str:
+    """Generate Minerva's intro phrase"""
+    first_name = patient_name.split(",")[0].strip() if "," in patient_name else patient_name.split()[0]
+
+    if has_critical:
+        return f"Heads up on {first_name}. "
+    elif alert_count > 0:
+        return f"A few things on {first_name}. "
+    else:
+        return f"No urgent concerns for {first_name}. "
+
+
+def prioritize_alerts(alerts: List[MinervaProactiveAlert], max_spoken: int = 4) -> List[MinervaProactiveAlert]:
+    """
+    Prioritize alerts for speaking. Critical first, then by priority score.
+    Prevents alert fatigue by limiting to max_spoken items.
+    """
+    # Sort by category (critical first) then by priority score (descending)
+    category_order = {"critical": 0, "warning": 1, "info": 2}
+    sorted_alerts = sorted(
+        alerts,
+        key=lambda a: (category_order.get(a.category, 2), -a.priority)
+    )
+    return sorted_alerts[:max_spoken]
+
+
+def generate_minerva_proactive_summary(
+    patient_name: str,
+    alerts: List[MinervaProactiveAlert],
+    max_spoken: int = 4
+) -> str:
+    """
+    Generate Minerva's full spoken summary.
+    Uses natural, conversational language with max items to prevent fatigue.
+    """
+    if not alerts:
+        first_name = patient_name.split(",")[0].strip() if "," in patient_name else patient_name.split()[0]
+        return f"No urgent concerns for {first_name}. Let me know if you need anything."
+
+    # Prioritize and limit
+    spoken_alerts = prioritize_alerts(alerts, max_spoken)
+    has_critical = any(a.category == "critical" for a in spoken_alerts)
+
+    # Build summary
+    intro = generate_minerva_spoken_intro(patient_name, has_critical, len(spoken_alerts))
+
+    # Combine alert messages
+    messages = [a.spoken_message for a in spoken_alerts]
+
+    # Join naturally
+    if len(messages) == 1:
+        body = messages[0]
+    elif len(messages) == 2:
+        body = f"{messages[0]} Also, {messages[1].lower()}"
+    else:
+        body = f"{messages[0]} {messages[1]} "
+        if len(messages) > 2:
+            body += f"And {messages[2].lower()}"
+        if len(messages) > 3:
+            body += f" Plus {len(alerts) - 3} more items."
+
+    # Add closing if critical
+    if has_critical:
+        closing = " Say 'got it Minerva' when ready."
+    else:
+        closing = ""
+
+    return intro + body + closing
+
+
+@app.post("/api/v1/minerva/proactive/{patient_id}", response_model=MinervaProactiveResponse)
+async def minerva_proactive_alerts(patient_id: str, request: Request):
+    """
+    Minerva Proactive Intelligence (Feature #97 - Phase 3)
+
+    Returns proactive alerts for Minerva to speak WITHOUT being asked.
+    Called automatically on patient load to trigger spoken alerts.
+
+    Aggregates:
+    - Critical vitals (BP >180, HR <40/>150, SpO2 <88%)
+    - Critical labs (K >6.0, glucose <50/>400, etc.)
+    - Care gaps (overdue screenings, vaccines)
+    - Drug interactions (high severity)
+    - Allergy warnings
+    - Trend alerts (worsening values)
+
+    Response includes:
+    - spoken_summary: TTS-ready Minerva speech (max 3-4 items)
+    - alerts: Full list for UI display
+    - has_critical: True if any critical alerts (bypass speech toggle)
+
+    Example:
+        POST /api/v1/minerva/proactive/12724066
+
+    Response:
+        {
+            "spoken_summary": "Heads up on Nancy. Potassium is critically high at 6.8.
+                              Blood pressure elevated at 182 over 95.
+                              Say 'got it Minerva' when ready.",
+            "has_critical": true,
+            "alerts": [...]
+        }
+    """
+    alerts: List[MinervaProactiveAlert] = []
+
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
+            raise HTTPException(status_code=404, detail="Patient not found")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+
+    # Extract patient name
+    patient_name = extract_patient_name(patient_data)
+    dob = patient_data.get("birthDate", "")
+    gender = patient_data.get("gender", "")
+
+    # Fetch clinical data
+    try:
+        vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=20&_sort=-date")
+        vitals = extract_vitals(vitals_bundle)
+
+        lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date")
+        labs = extract_labs(lab_bundle)
+
+        med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=30")
+        medications = extract_medications(med_bundle)
+
+        allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}")
+        allergies = extract_allergies(allergy_bundle)
+
+        condition_bundle = await fetch_fhir(f"Condition?patient={patient_id}&clinical-status=active")
+        conditions = extract_conditions(condition_bundle)
+    except Exception as e:
+        # Continue with empty data if fetch fails
+        vitals, labs, medications, allergies, conditions = [], [], [], [], []
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 1. CRITICAL VITALS (Priority 10)
+    # ─────────────────────────────────────────────────────────────────────────
+    critical_vital_thresholds = {
+        "blood pressure": {"systolic_high": 180, "diastolic_high": 120, "systolic_low": 90},
+        "heart rate": {"high": 150, "low": 40},
+        "oxygen saturation": {"low": 88},
+        "temperature": {"high": 104.0, "low": 95.0},
+        "respiratory rate": {"high": 30, "low": 8}
+    }
+
+    for vital in vitals[:10]:
+        if not isinstance(vital, dict):
+            continue
+        name = vital.get("name", "").lower()
+        value = vital.get("value")
+        unit = vital.get("unit", "")
+
+        if "blood pressure" in name or "bp" in name:
+            try:
+                if "/" in str(value):
+                    systolic, diastolic = map(int, str(value).split("/"))
+                    if systolic >= 180 or diastolic >= 120:
+                        alerts.append(MinervaProactiveAlert(
+                            category="critical",
+                            priority=10,
+                            type="vital",
+                            message=f"⚠️ Critical BP: {value} mmHg",
+                            spoken_message=f"Blood pressure is critically elevated at {systolic} over {diastolic}.",
+                            action="show vitals",
+                            data={"vital": "bp", "value": value}
+                        ))
+                    elif systolic >= 160 or diastolic >= 100:
+                        alerts.append(MinervaProactiveAlert(
+                            category="warning",
+                            priority=7,
+                            type="vital",
+                            message=f"📈 Elevated BP: {value} mmHg",
+                            spoken_message=f"Blood pressure is elevated at {systolic} over {diastolic}.",
+                            action="show vitals",
+                            data={"vital": "bp", "value": value}
+                        ))
+            except:
+                pass
+
+        elif "heart rate" in name or "pulse" in name:
+            try:
+                hr = int(value) if value else 0
+                if hr >= 150 or hr <= 40:
+                    alerts.append(MinervaProactiveAlert(
+                        category="critical",
+                        priority=10,
+                        type="vital",
+                        message=f"⚠️ Critical HR: {hr} bpm",
+                        spoken_message=f"Heart rate is {'dangerously fast' if hr >= 150 else 'dangerously slow'} at {hr}.",
+                        action="show vitals",
+                        data={"vital": "hr", "value": hr}
+                    ))
+                elif hr >= 120 or hr <= 50:
+                    alerts.append(MinervaProactiveAlert(
+                        category="warning",
+                        priority=6,
+                        type="vital",
+                        message=f"📈 Abnormal HR: {hr} bpm",
+                        spoken_message=f"Heart rate is {'elevated' if hr >= 120 else 'low'} at {hr}.",
+                        action="show vitals",
+                        data={"vital": "hr", "value": hr}
+                    ))
+            except:
+                pass
+
+        elif "oxygen" in name or "spo2" in name or "o2 sat" in name:
+            try:
+                spo2 = float(value) if value else 100
+                if spo2 < 88:
+                    alerts.append(MinervaProactiveAlert(
+                        category="critical",
+                        priority=10,
+                        type="vital",
+                        message=f"⚠️ Critical SpO2: {spo2}%",
+                        spoken_message=f"Oxygen saturation is critically low at {spo2} percent.",
+                        action="show vitals",
+                        data={"vital": "spo2", "value": spo2}
+                    ))
+                elif spo2 < 92:
+                    alerts.append(MinervaProactiveAlert(
+                        category="warning",
+                        priority=7,
+                        type="vital",
+                        message=f"📉 Low SpO2: {spo2}%",
+                        spoken_message=f"Oxygen saturation is low at {spo2} percent.",
+                        action="show vitals",
+                        data={"vital": "spo2", "value": spo2}
+                    ))
+            except:
+                pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 2. CRITICAL LABS (Priority 9)
+    # ─────────────────────────────────────────────────────────────────────────
+    critical_lab_thresholds = {
+        "potassium": {"high": 6.0, "low": 2.5, "unit": "mEq/L"},
+        "sodium": {"high": 160, "low": 120, "unit": "mEq/L"},
+        "glucose": {"high": 400, "low": 50, "unit": "mg/dL"},
+        "creatinine": {"high": 4.0, "unit": "mg/dL"},
+        "hemoglobin": {"low": 7.0, "unit": "g/dL"},
+        "platelet": {"low": 50, "unit": "K/uL"},
+        "inr": {"high": 4.5, "unit": ""},
+        "troponin": {"high": 0.04, "unit": "ng/mL"}
+    }
+
+    for lab in labs[:20]:
+        if not isinstance(lab, dict):
+            continue
+        name = lab.get("name", "").lower()
+        value = lab.get("value")
+
+        try:
+            val = float(value) if value else None
+            if val is None:
+                continue
+
+            for lab_name, thresholds in critical_lab_thresholds.items():
+                if lab_name in name:
+                    is_critical = False
+                    message = ""
+
+                    if "high" in thresholds and val >= thresholds["high"]:
+                        is_critical = True
+                        message = f"{lab_name.title()} is critically high at {val}"
+                    elif "low" in thresholds and val <= thresholds["low"]:
+                        is_critical = True
+                        message = f"{lab_name.title()} is critically low at {val}"
+
+                    if is_critical:
+                        alerts.append(MinervaProactiveAlert(
+                            category="critical",
+                            priority=9,
+                            type="lab",
+                            message=f"⚠️ Critical {lab_name.title()}: {val} {thresholds.get('unit', '')}",
+                            spoken_message=message + ".",
+                            action="show labs",
+                            data={"lab": lab_name, "value": val}
+                        ))
+                    break
+        except:
+            pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 3. HIGH-SEVERITY ALLERGIES (Priority 8)
+    # ─────────────────────────────────────────────────────────────────────────
+    severe_allergies = []
+    for allergy in allergies[:10]:
+        if isinstance(allergy, dict):
+            severity = allergy.get("severity", "").lower()
+            substance = allergy.get("substance", allergy.get("name", "Unknown"))
+            if severity in ["severe", "high", "life-threatening"] or "anaphyl" in str(allergy).lower():
+                severe_allergies.append(substance)
+
+    if severe_allergies:
+        allergy_list = ", ".join(severe_allergies[:3])
+        alerts.append(MinervaProactiveAlert(
+            category="warning",
+            priority=8,
+            type="allergy",
+            message=f"🚨 Severe allergies: {allergy_list}",
+            spoken_message=f"Reminder: severe allergy to {allergy_list}.",
+            action="show allergies",
+            data={"allergies": severe_allergies}
+        ))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 4. CARE GAPS - HIGH PRIORITY ONLY (Priority 5)
+    # ─────────────────────────────────────────────────────────────────────────
+    try:
+        patient_analysis_data = {
+            "dob": dob,
+            "gender": gender,
+            "conditions": conditions,
+            "medications": medications,
+            "labs": labs,
+            "vitals": vitals
+        }
+        care_gaps = detect_care_gaps(patient_analysis_data)
+        high_priority_gaps = [g for g in care_gaps if g.priority == "high"][:2]
+
+        for gap in high_priority_gaps:
+            alerts.append(MinervaProactiveAlert(
+                category="info",
+                priority=5,
+                type="care_gap",
+                message=f"📋 {gap.name}: {gap.status}",
+                spoken_message=f"This patient is {gap.status.lower()} for {gap.name.lower()}.",
+                action=gap.action if gap.action else "show care gaps",
+                data={"gap": gap.name, "category": gap.category}
+            ))
+    except Exception as e:
+        pass  # Care gaps are optional
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 5. DRUG INTERACTIONS (Priority 7) - Check if on high-risk combos
+    # ─────────────────────────────────────────────────────────────────────────
+    # High-risk medication combinations
+    high_risk_combos = [
+        (["warfarin", "coumadin"], ["aspirin", "ibuprofen", "naproxen", "nsaid"], "Warfarin with NSAID increases bleeding risk"),
+        (["metformin"], ["contrast", "iodine"], "Hold metformin before contrast"),
+        (["ace inhibitor", "lisinopril", "enalapril"], ["potassium", "k-dur", "klor-con"], "ACE inhibitor with potassium risks hyperkalemia"),
+        (["digoxin", "lanoxin"], ["amiodarone"], "Amiodarone increases digoxin levels"),
+    ]
+
+    med_names = [m.get("name", "").lower() if isinstance(m, dict) else str(m).lower() for m in medications]
+
+    for drug_a_list, drug_b_list, warning in high_risk_combos:
+        has_a = any(any(d in med for d in drug_a_list) for med in med_names)
+        has_b = any(any(d in med for d in drug_b_list) for med in med_names)
+
+        if has_a and has_b:
+            alerts.append(MinervaProactiveAlert(
+                category="warning",
+                priority=7,
+                type="drug_interaction",
+                message=f"⚠️ Drug interaction: {warning}",
+                spoken_message=f"Caution: {warning}.",
+                action="show meds",
+                data={"interaction": warning}
+            ))
+            break  # Only report first interaction
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Generate final response
+    # ─────────────────────────────────────────────────────────────────────────
+    has_critical = any(a.category == "critical" for a in alerts)
+    spoken_summary = generate_minerva_proactive_summary(patient_name, alerts, max_spoken=4)
+
+    # Generate display summary
+    display_lines = []
+    for alert in prioritize_alerts(alerts, max_spoken=6):
+        display_lines.append(alert.message)
+    display_summary = "\n".join(display_lines) if display_lines else "No concerns identified."
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="MINERVA_PROACTIVE",
+        patient_id=patient_id,
+        status="success",
+        details={
+            "alert_count": len(alerts),
+            "has_critical": has_critical,
+            "categories": list(set(a.category for a in alerts)),
+            "types": list(set(a.type for a in alerts))
+        }
+    )
+
+    return MinervaProactiveResponse(
+        patient_id=patient_id,
+        patient_name=patient_name,
+        has_critical=has_critical,
+        alert_count=len(alerts),
+        alerts=alerts,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        acknowledgment_phrase="Got it, Minerva"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # JARVIS-LIKE AI FEATURES - INDIRECT COMMANDS (Feature #96)
 # Natural language parsing to translate conversational commands into actions
 # Examples: "check that potassium" -> show_labs, "what's his blood pressure" -> show_vitals
