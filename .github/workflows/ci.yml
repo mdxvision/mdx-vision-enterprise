@@ -191,7 +191,6 @@ jobs:
         continue-on-error: true
 
       - name: Run AssemblyAI Integration Tests
-        if: ${{ secrets.ASSEMBLYAI_API_KEY != '' }}
         env:
           ASSEMBLYAI_API_KEY: ${{ secrets.ASSEMBLYAI_API_KEY }}
         run: |
@@ -215,7 +214,7 @@ jobs:
           echo "- ✅ Cerner FHIR Sandbox (public)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Epic FHIR Sandbox (public)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ ChromaDB Vector Database" >> $GITHUB_STEP_SUMMARY
-          echo "- ${{ secrets.ASSEMBLYAI_API_KEY != '' && '✅' || '⏭️' }} AssemblyAI Transcription" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ AssemblyAI Transcription" >> $GITHUB_STEP_SUMMARY
 
   # Summary job that requires all tests to pass
   test-summary:
