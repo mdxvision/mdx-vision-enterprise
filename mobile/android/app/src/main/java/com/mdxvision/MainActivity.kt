@@ -160,7 +160,7 @@ class MainActivity : AppCompatActivity() {
             // Also configure AudioStreamingService WebSocket URL
             val wsUrl = url.replace("http://", "ws://")
                           .replace("https://", "wss://")
-                          .trimEnd('/') + "/ws/transcribe"
+                          .trimEnd('/') + "/ws/transcribe?noise_reduction=true"
             AudioStreamingService.setDeviceUrl(wsUrl)
             Log.d(TAG, "Server URL configured: HTTP=$serverUrl, WS=$wsUrl")
         }
@@ -23904,33 +23904,7 @@ SOFA Score: [X]
         }
 
         when {
-            hasPatient && lower.contains("load") -> {
-                // Extract patient ID if mentioned, otherwise use current EHR's test patient
-                val words = transcript.split(" ")
-                val idIndex = words.indexOfFirst { it.all { c -> c.isDigit() } }
-                if (idIndex >= 0) {
-                    fetchPatientData(words[idIndex])
-                } else {
-                    loadCurrentEhrTestPatient()  // Uses Epic or Cerner test patient based on currentEhr
-                }
-            }
-            (hasPatient && lower.contains("find")) || lower.contains("search") -> {
-                // Patient search by name
-                val name = transcript.replace(Regex("(?i)(find|search|patient|patine|patience)"), "").trim()
-                if (name.isNotEmpty()) {
-                    searchPatients(name)
-                }
-            }
-            // ═══ EHR SELECTION COMMANDS ═══
-            lower.contains("switch to epic") || lower.contains("use epic") || lower.contains("epic mode") -> {
-                switchEhr(EHR_EPIC)
-            }
-            lower.contains("switch to cerner") || lower.contains("use cerner") || lower.contains("cerner mode") -> {
-                switchEhr(EHR_CERNER)
-            }
-            lower.contains("which ehr") || lower.contains("ehr status") || lower.contains("current ehr") -> {
-                showEhrStatus()
-            }
+            // NOTE: load patient, find/search, EHR switching already handled by processEssentialCommands
             lower.contains("epic patient") || lower.contains("epic test") -> {
                 // Load Epic test patient (switches to Epic if not already)
                 if (currentEhr != EHR_EPIC) switchEhr(EHR_EPIC)
