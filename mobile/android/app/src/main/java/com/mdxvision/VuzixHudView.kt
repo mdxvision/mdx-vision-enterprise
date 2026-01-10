@@ -51,6 +51,10 @@ class VuzixHudView(context: Context, private var isExpanded: Boolean = false) : 
     private var medsDetailText: TextView? = null
     private var vitalsDetailText: TextView? = null
 
+    // Minerva alert overlay
+    private var minervaAlertLayout: LinearLayout? = null
+    private var minervaAlertText: TextView? = null
+
     init {
         setupView()
     }
@@ -504,5 +508,93 @@ class VuzixHudView(context: Context, private var isExpanded: Boolean = false) : 
             dp,
             context.resources.displayMetrics
         )
+    }
+
+    // ========== Minerva Alert Display ==========
+
+    /**
+     * Show Minerva alert prominently on the HUD.
+     * Critical alerts have red border, non-critical have amber.
+     */
+    fun showMinervaAlert(alertText: String, isCritical: Boolean) {
+        // Remove existing alert if any
+        clearMinervaAlert()
+
+        // Create alert layout with colored border
+        val borderColor = if (isCritical) TEXT_CRITICAL else TEXT_WARNING
+
+        minervaAlertLayout = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LayoutParams(
+                LayoutParams.MATCH_PARENT,
+                LayoutParams.WRAP_CONTENT
+            )
+            setPadding(dpToPx(10f).toInt(), dpToPx(8f).toInt(), dpToPx(10f).toInt(), dpToPx(8f).toInt())
+
+            // Create background with colored border
+            val alertBackground = GradientDrawable().apply {
+                setColor(0xDD1E293B.toInt())  // Darker background for alert
+                cornerRadius = dpToPx(8f)
+                setStroke(dpToPx(2f).toInt(), borderColor)
+            }
+            background = alertBackground
+        }
+
+        // Minerva header
+        val headerText = createTextView(
+            text = "🦉 MINERVA ALERT",
+            sizeSp = 16f,
+            color = borderColor,
+            bold = true
+        )
+        minervaAlertLayout?.addView(headerText)
+
+        // Alert content
+        minervaAlertText = createTextView(
+            text = alertText,
+            sizeSp = 14f,
+            color = TEXT_PRIMARY,
+            bold = false
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(4f).toInt()
+            }
+        }
+        minervaAlertLayout?.addView(minervaAlertText)
+
+        // Acknowledgment hint for critical alerts
+        if (isCritical) {
+            val hintText = createTextView(
+                text = "Say \"Got it, Minerva\" to acknowledge",
+                sizeSp = 12f,
+                color = TEXT_SECONDARY,
+                bold = false
+            ).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dpToPx(6f).toInt()
+                }
+            }
+            minervaAlertLayout?.addView(hintText)
+        }
+
+        // Add alert at the top of content layout
+        contentLayout.addView(minervaAlertLayout, 0)
+    }
+
+    /**
+     * Clear Minerva alert from the HUD.
+     */
+    fun clearMinervaAlert() {
+        minervaAlertLayout?.let { layout ->
+            contentLayout.removeView(layout)
+        }
+        minervaAlertLayout = null
+        minervaAlertText = null
     }
 }

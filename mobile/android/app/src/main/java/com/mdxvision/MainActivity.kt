@@ -18164,6 +18164,15 @@ SOFA Score: [X]
         }
         patientDataText.text = displayText
 
+        // Update Vuzix HUD with Minerva alert (Feature #73 + #97)
+        if (isVuzixDevice()) {
+            val intent = Intent(VuzixHudService.ACTION_MINERVA_ALERT).apply {
+                putExtra(VuzixHudService.EXTRA_MINERVA_ALERT, displaySummary)
+                putExtra(VuzixHudService.EXTRA_MINERVA_CRITICAL, hasCritical)
+            }
+            LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        }
+
         // Clear speaking indicator after TTS completes (estimated 3-5 seconds per alert)
         val estimatedDuration = (alertCount * 3000L).coerceAtMost(15000L)
         android.os.Handler(mainLooper).postDelayed({

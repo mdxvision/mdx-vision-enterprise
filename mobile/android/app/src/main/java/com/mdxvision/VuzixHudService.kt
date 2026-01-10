@@ -45,9 +45,12 @@ class VuzixHudService : Service() {
         const val ACTION_MINIMIZE = "com.mdxvision.HUD_MINIMIZE"
         const val ACTION_TOGGLE = "com.mdxvision.HUD_TOGGLE"
         const val ACTION_UPDATE_PATIENT = "com.mdxvision.PATIENT_UPDATE"
+        const val ACTION_MINERVA_ALERT = "com.mdxvision.MINERVA_ALERT"
 
         // Extra keys
         const val EXTRA_PATIENT_DATA = "patient_data"
+        const val EXTRA_MINERVA_ALERT = "minerva_alert"
+        const val EXTRA_MINERVA_CRITICAL = "minerva_critical"
     }
 
     enum class HudState {
@@ -60,6 +63,8 @@ class VuzixHudService : Service() {
     private var hudView: VuzixHudView? = null
     private var currentState = HudState.HIDDEN
     private var currentPatientData: JSONObject? = null
+    private var currentMinervaAlert: String? = null
+    private var isMinervaAlertCritical: Boolean = false
 
     // Broadcast receiver for patient updates and HUD commands
     private val hudReceiver = object : BroadcastReceiver() {
@@ -75,6 +80,11 @@ class VuzixHudService : Service() {
                             Log.e(TAG, "Error parsing patient data: ${e.message}")
                         }
                     }
+                }
+                ACTION_MINERVA_ALERT -> {
+                    val alertText = intent.getStringExtra(EXTRA_MINERVA_ALERT)
+                    val isCritical = intent.getBooleanExtra(EXTRA_MINERVA_CRITICAL, false)
+                    showMinervaAlert(alertText, isCritical)
                 }
                 ACTION_SHOW -> showHud()
                 ACTION_HIDE -> hideHud()
@@ -95,6 +105,7 @@ class VuzixHudService : Service() {
         // Register broadcast receiver
         val filter = IntentFilter().apply {
             addAction(ACTION_UPDATE_PATIENT)
+            addAction(ACTION_MINERVA_ALERT)
             addAction(ACTION_SHOW)
             addAction(ACTION_HIDE)
             addAction(ACTION_EXPAND)
@@ -128,6 +139,11 @@ class VuzixHudService : Service() {
                             Log.e(TAG, "Error parsing patient data: ${e.message}")
                         }
                     }
+                }
+                ACTION_MINERVA_ALERT -> {
+                    val alertText = intent.getStringExtra(EXTRA_MINERVA_ALERT)
+                    val isCritical = intent.getBooleanExtra(EXTRA_MINERVA_CRITICAL, false)
+                    showMinervaAlert(alertText, isCritical)
                 }
             }
         }
@@ -223,6 +239,45 @@ class VuzixHudService : Service() {
             HudState.COMPACT -> expandHud()
             HudState.EXPANDED -> hideHud()
         }
+    }
+
+    /**
+     * Show Minerva alert on the HUD - expands HUD and displays alert prominently.
+     * Critical alerts are shown with red border, non-critical with amber.
+     */
+    private fun showMinervaAlert(alertText: String?, isCritical: Boolean) {
+        if (alertText.isNullOrBlank()) {
+            currentMinervaAlert = null
+            isMinervaAlertCritical = false
+            updateHudContent()
+            return
+        }
+
+        currentMinervaAlert = alertText
+        isMinervaAlertCritical = isCritical
+
+        // Auto-expand HUD to show full alert
+        if (currentState == HudState.HIDDEN) {
+            currentState = HudState.EXPANDED
+            createHudView()
+        } else if (currentState == HudState.COMPACT) {
+            currentState = HudState.EXPANDED
+            updateHudLayout()
+        }
+
+        // Update HUD with Minerva alert
+        hudView?.showMinervaAlert(alertText, isCritical)
+        Log.d(TAG, "Minerva alert shown on HUD: critical=$isCritical")
+    }
+
+    /**
+     * Clear Minerva alert from the HUD.
+     */
+    fun clearMinervaAlert() {
+        currentMinervaAlert = null
+        isMinervaAlertCritical = false
+        hudView?.clearMinervaAlert()
+        Log.d(TAG, "Minerva alert cleared from HUD")
     }
 
     // ========== HUD View Management ==========
