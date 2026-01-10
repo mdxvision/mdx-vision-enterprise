@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Requ
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from enum import Enum
 import uvicorn
 import os
@@ -10744,7 +10744,7 @@ class AuditLogEntry(BaseModel):
     patient_id: Optional[str] = None
     patient_name: Optional[str] = None
     status: Optional[str] = None
-    details: Optional[str] = None
+    details: Optional[Any] = None  # Can be str or dict
     user_id: Optional[str] = None
     user_name: Optional[str] = None
     ip_address: Optional[str] = None
