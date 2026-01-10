@@ -125,7 +125,11 @@ class AssemblyAIProvider(TranscriptionProvider):
         print(f"🔌 AssemblyAI: Connecting with diarization={self.enable_diarization}{vocab_status}...")
 
         try:
-            self.websocket = await websockets.connect(url, additional_headers=headers)
+            # Add 10-second timeout to prevent hanging
+            self.websocket = await asyncio.wait_for(
+                websockets.connect(url, additional_headers=headers),
+                timeout=10.0
+            )
             print("✅ AssemblyAI: WebSocket connected!")
 
             # Note: word_boost for AssemblyAI real-time must be sent via URL params
@@ -140,8 +144,11 @@ class AssemblyAIProvider(TranscriptionProvider):
             self._receive_task = asyncio.create_task(self._receive_loop())
             print("AssemblyAI: Connected with medical vocabulary boost")
             return True
+        except asyncio.TimeoutError:
+            print(f"❌ AssemblyAI connection timeout (10s) - check API key and network")
+            return False
         except Exception as e:
-            print(f"AssemblyAI connection error: {e}")
+            print(f"❌ AssemblyAI connection error: {e}")
             return False
 
     async def _receive_loop(self):
@@ -151,9 +158,24 @@ class AssemblyAIProvider(TranscriptionProvider):
                 data = json.loads(message)
                 msg_type = data.get("message_type", "")
 
+                # Debug: log ALL message types
+                print(f"📩 AssemblyAI message: {msg_type} - {str(data)[:200]}")
+
+                if msg_type == "SessionBegins":
+                    session_id = data.get("session_id", "unknown")
+                    print(f"AssemblyAI session started: {session_id} (diarization enabled)")
+                elif msg_type == "SessionTerminated":
+                    print("AssemblyAI: Session terminated")
+                elif msg_type == "Error":
+                    error = data.get("error", "Unknown error")
+                    print(f"❌ AssemblyAI error: {error}")
+
                 if msg_type == "PartialTranscript":
+                    text = data.get("text", "")
+                    if text:
+                        print(f"📝 Partial: {text[:50]}...")
                     result = TranscriptionResult(
-                        text=data.get("text", ""),
+                        text=text,
                         is_final=False,
                         confidence=data.get("confidence", 0.0),
                         speaker=self._current_speaker  # Use last known speaker
@@ -178,19 +200,17 @@ class AssemblyAIProvider(TranscriptionProvider):
                             "speaker": word_speaker
                         })
 
+                    text = data.get("text", "")
+                    if text:
+                        print(f"✅ Final: {text[:80]}")
                     result = TranscriptionResult(
-                        text=data.get("text", ""),
+                        text=text,
                         is_final=True,
                         confidence=data.get("confidence", 0.0),
                         words=words,
                         speaker=speaker or self._current_speaker
                     )
                     await self._transcript_queue.put(result)
-
-                elif msg_type == "SessionBegins":
-                    session_id = data.get('session_id')
-                    expires = data.get('expires_at')
-                    print(f"AssemblyAI session started: {session_id} (diarization enabled)")
 
                 elif msg_type == "SessionTerminated":
                     print("AssemblyAI session ended")

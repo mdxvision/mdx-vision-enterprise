@@ -143,8 +143,9 @@ class MainActivity : AppCompatActivity() {
         // For local dev: Your Mac's IP (check with `ifconfig | grep inet`)
         // For Vuzix testing: Ensure device is on same WiFi network as Mac
         // For production: Use cloud URL (e.g., https://api.mdxvision.com)
+        // Development: Use Mac IP on same network as Vuzix glasses
         private const val PREF_SERVER_URL = "server_url"
-        private const val DEFAULT_SERVER_URL = "http://localhost:8002"
+        private const val DEFAULT_SERVER_URL = "http://192.168.1.243:8002"
         private var serverUrl: String = DEFAULT_SERVER_URL
 
         val EHR_PROXY_URL: String
@@ -352,7 +353,7 @@ class MainActivity : AppCompatActivity() {
 
     // Gesture Control (Feature #75) - Head nod (yes), shake (no), touchpad navigation
     private var headGestureDetector: HeadGestureDetector? = null
-    private var isGestureControlEnabled: Boolean = true
+    private var isGestureControlEnabled: Boolean = false  // Disabled - wink detection interfering with voice
 
     // Multi-language support (English, Spanish, Mandarin, Portuguese, Russian)
     private var currentLanguage: String = LANG_ENGLISH
@@ -23401,11 +23402,11 @@ SOFA Score: [X]
             transcriptText.text = "Just speak naturally"
             startVoiceRecognition()
         } else {
-            // Fallback to WebSocket transcription for Vuzix/devices without Google Speech
-            Log.w(TAG, "Google Speech not available - using WebSocket fallback")
+            // Fallback to WebSocket transcription for devices without Google Speech
+            Log.w(TAG, "Using WebSocket fallback - no native speech recognition")
             useWebSocketForCommands = true
             isContinuousListening = true
-            statusText.text = "Connecting..."
+            statusText.text = "Listening..."
             transcriptText.text = "Using cloud speech recognition"
             startWebSocketCommandListening()
         }
@@ -23659,6 +23660,94 @@ SOFA Score: [X]
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 
+    /**
+     * Process essential commands first (split from main processTranscript to avoid JIT limit)
+     * Returns true if command was handled
+     */
+    private fun processEssentialCommands(lower: String, transcript: String): Boolean {
+        Log.d(TAG, "processEssentialCommands: checking '$lower'")
+        val hasPatient = lower.contains("patient") || lower.contains("patine") ||
+                         lower.contains("patience") || lower.contains("patent")
+
+        val handled = when {
+            // Load patient
+            hasPatient && lower.contains("load") -> {
+                val words = transcript.split(" ")
+                val idIndex = words.indexOfFirst { it.all { c -> c.isDigit() } }
+                if (idIndex >= 0) fetchPatientData(words[idIndex])
+                else loadCurrentEhrTestPatient()
+                true
+            }
+            // Search patient
+            (hasPatient && lower.contains("find")) || lower.contains("search") -> {
+                val name = transcript.replace(Regex("(?i)(find|search|patient|patine|patience)"), "").trim()
+                if (name.isNotEmpty()) searchPatients(name)
+                true
+            }
+            // EHR switching
+            lower.contains("switch to epic") || lower.contains("use epic") || lower.contains("epic mode") -> {
+                switchEhr(EHR_EPIC)
+                true
+            }
+            lower.contains("switch to cerner") || lower.contains("use cerner") || lower.contains("cerner mode") -> {
+                switchEhr(EHR_CERNER)
+                true
+            }
+            lower.contains("which ehr") || lower.contains("ehr status") || lower.contains("current ehr") -> {
+                showEhrStatus()
+                true
+            }
+            // Help - with common mishearings
+            lower.contains("help") || lower.contains("what can i say") || lower.contains("voice commands") ||
+            lower == "hello" || lower == "health" || lower.contains("help me") -> {
+                showVoiceCommandHelp()
+                true
+            }
+            // Clinical data
+            lower.contains("show vitals") || lower.contains("vitals") && !lower.contains("push") -> {
+                fetchPatientSection("vitals")
+                true
+            }
+            lower.contains("show allergies") || lower.contains("allergies") && !lower.contains("add") -> {
+                fetchPatientSection("allergies")
+                true
+            }
+            lower.contains("show meds") || lower.contains("show medications") || lower.contains("medications") -> {
+                fetchPatientSection("medications")
+                true
+            }
+            lower.contains("show labs") || lower.contains("lab results") -> {
+                fetchPatientSection("labs")
+                true
+            }
+            lower.contains("show conditions") || lower.contains("diagnoses") -> {
+                fetchPatientSection("conditions")
+                true
+            }
+            // Minerva - with common mishearings (AssemblyAI transcribes as murder, marvel, etc.)
+            lower.replace(",", "").replace(".", "").contains("hey minerva") ||
+            lower.replace(",", "").replace(".", "").contains("hi minerva") ||
+            lower.contains("minerva") || lower.contains("marvel") || lower.contains("menurva") ||
+            lower.contains("murder") || lower.contains("minerba") || lower.contains("minurva") ||
+            lower.contains("hey min") || lower.contains("a minerva") -> {
+                activateMinervaMode()
+                true
+            }
+            // Live transcription
+            lower.contains("live transcribe") || lower.contains("start transcription") || lower.contains("transcribe") -> {
+                startLiveTranscription()
+                true
+            }
+            lower.contains("stop transcription") || lower.contains("end transcription") -> {
+                stopLiveTranscription()
+                true
+            }
+            else -> false
+        }
+        if (handled) Log.d(TAG, "processEssentialCommands: HANDLED '$lower'")
+        return handled
+    }
+
     private fun processTranscript(transcript: String) {
         // If in documentation mode, collect transcripts
         if (isDocumentationMode) {
@@ -23678,6 +23767,12 @@ SOFA Score: [X]
         // Parse voice commands for patient lookup
         val lower = translatedTranscript.lowercase()
         val originalLower = transcript.lowercase()  // Keep original for language detection
+
+        // Try essential commands first (separate method to avoid JIT compiler limit)
+        if (processEssentialCommands(lower, transcript)) {
+            if (!useWebSocketForCommands) startVoiceRecognition()
+            return
+        }
 
         // ═══ LANGUAGE SWITCHING (works in any language) ═══
         when {

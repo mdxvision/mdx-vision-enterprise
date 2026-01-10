@@ -14927,7 +14927,7 @@ async def detect_specialty(request: SpecialtyDetectionRequest):
 
 
 @app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket, specialties: str = None, noise_reduction: bool = True):
+async def websocket_transcribe(websocket: WebSocket, specialties: str = None, noise_reduction: bool = False):
     """
     Real-time transcription WebSocket endpoint with RNNoise noise reduction
 
