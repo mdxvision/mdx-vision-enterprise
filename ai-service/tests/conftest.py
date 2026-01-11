@@ -1,29 +1,91 @@
 """
 Pytest configuration for AI Service tests
+
+This file patches OpenAI clients before any test modules import the app,
+ensuring that services are created with mocked clients.
 """
 
 import pytest
 from unittest.mock import Mock, MagicMock, AsyncMock, patch
 import asyncio
+import sys
+
+# ============================================================================
+# CRITICAL: Patch OpenAI before any imports
+# This must happen at module load time, before pytest collects tests
+# ============================================================================
+
+# Create mock clients that will be used by all services
+_mock_nlp_client = Mock()
+_mock_nlp_client.chat = Mock()
+_mock_nlp_client.chat.completions = Mock()
+_mock_nlp_client.chat.completions.create = Mock()
+
+_mock_drug_client = Mock()
+_mock_drug_client.chat = Mock()
+_mock_drug_client.chat.completions = Mock()
+_mock_drug_client.chat.completions.create = Mock()
+
+# Patch OpenAI and AzureOpenAI classes before any imports
+_openai_patch = patch('openai.OpenAI', return_value=_mock_drug_client)
+_azure_openai_patch = patch('openai.AzureOpenAI', return_value=_mock_nlp_client)
+
+# Start patches immediately at module load
+_openai_patch.start()
+_azure_openai_patch.start()
 
 
-@pytest.fixture
+def pytest_configure(config):
+    """Called after command line options have been parsed and all plugins loaded."""
+    pass  # Patches already started above
+
+
+def pytest_unconfigure(config):
+    """Called before test process is exited."""
+    _openai_patch.stop()
+    _azure_openai_patch.stop()
+
+
+# ============================================================================
+# Fixtures for accessing mock clients in tests
+# ============================================================================
+
+@pytest.fixture(scope="session")
 def mock_openai_client():
-    """Mock OpenAI client for testing"""
-    client = Mock()
-    client.chat = Mock()
-    client.chat.completions = Mock()
-    return client
+    """Get the mock OpenAI client used by drug interaction service"""
+    return _mock_drug_client
+
+
+@pytest.fixture(scope="session")
+def mock_azure_openai_client():
+    """Get the mock Azure OpenAI client used by NLP service"""
+    return _mock_nlp_client
 
 
 @pytest.fixture
-def mock_azure_openai_client():
-    """Mock Azure OpenAI client for testing"""
-    client = Mock()
-    client.chat = Mock()
-    client.chat.completions = Mock()
-    return client
+def drug_mock():
+    """Get the mock drug service client - resets call history between tests"""
+    _mock_drug_client.reset_mock()
+    return _mock_drug_client
 
+
+@pytest.fixture
+def nlp_mock():
+    """Get the mock NLP service client - resets call history between tests"""
+    _mock_nlp_client.reset_mock()
+    return _mock_nlp_client
+
+
+@pytest.fixture
+def app_client():
+    """Get the FastAPI app after OpenAI is mocked"""
+    from app.main import app
+    return app
+
+
+# ============================================================================
+# Sample data fixtures
+# ============================================================================
 
 @pytest.fixture
 def sample_transcription():

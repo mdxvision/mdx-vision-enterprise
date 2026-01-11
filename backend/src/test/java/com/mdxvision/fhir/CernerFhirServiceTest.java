@@ -174,11 +174,13 @@ class CernerFhirServiceTest {
 
         @SuppressWarnings("unchecked")
         private void setupSearchMock(Bundle bundle) {
+            IQuery<Bundle> bundleQuery = mock(IQuery.class);
+
             when(fhirClient.search()).thenReturn(searchOperation);
             when(searchOperation.forResource(Patient.class)).thenReturn(patientQuery);
             when(patientQuery.where(any(ICriterion.class))).thenReturn(conditionedQuery);
-            when(conditionedQuery.returnBundle(Bundle.class)).thenReturn(mock(IQuery.class));
-            // Would need more complex mock setup for full execution
+            when(conditionedQuery.returnBundle(Bundle.class)).thenReturn(bundleQuery);
+            when(bundleQuery.execute()).thenReturn(bundle);
         }
     }
 

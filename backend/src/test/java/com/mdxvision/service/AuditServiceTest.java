@@ -268,26 +268,24 @@ class AuditServiceTest {
         }
 
         @Test
-        @DisplayName("Should be async to not block main thread")
-        void shouldBeAsyncToNotBlockMainThread() {
-            // Arrange
-            when(auditLogRepository.save(any(AuditLog.class))).thenAnswer(invocation -> {
-                Thread.sleep(100); // Simulate slow DB
-                return invocation.getArgument(0);
-            });
+        @DisplayName("Should be marked as async with @Async annotation")
+        void shouldBeMarkedAsAsyncWithAnnotation() throws NoSuchMethodException {
+            // Verify that the log() method has the @Async annotation
+            // Note: Actual async behavior requires Spring context (integration test)
+            var logMethod = AuditService.class.getMethod(
+                "log",
+                AuditLog.AuditAction.class,
+                String.class,
+                String.class,
+                java.util.UUID.class,
+                String.class
+            );
 
-            long startTime = System.currentTimeMillis();
+            boolean hasAsyncAnnotation = logMethod.isAnnotationPresent(
+                org.springframework.scheduling.annotation.Async.class
+            );
 
-            // Act
-            auditService.log(AuditAction.VIEW_PHI, "Patient", "123", testPatientId, "View");
-
-            long endTime = System.currentTimeMillis();
-
-            // Assert - should return immediately (< 50ms) due to async
-            assertTrue(endTime - startTime < 50, "log() should be async and return immediately");
-
-            // Wait for async to complete
-            verify(auditLogRepository, timeout(1000)).save(any(AuditLog.class));
+            assertTrue(hasAsyncAnnotation, "log() method should have @Async annotation for non-blocking behavior");
         }
     }
 }

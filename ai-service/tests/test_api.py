@@ -2,56 +2,17 @@
 Tests for AI Service FastAPI API Routes
 
 Tests all API endpoints with mocked services for full coverage.
+Uses fixtures from conftest.py for OpenAI mocking.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 from httpx import AsyncClient, ASGITransport
 import json
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-
-# Module-level patches to mock OpenAI before any imports
-@pytest.fixture(scope="module")
-def mock_openai():
-    """Mock OpenAI at module level before any imports"""
-    with patch('app.services.clinical_nlp_service.OpenAI') as mock_nlp, \
-         patch('app.services.clinical_nlp_service.AzureOpenAI') as mock_azure_nlp, \
-         patch('app.services.drug_interaction_service.OpenAI') as mock_drug, \
-         patch('app.services.drug_interaction_service.AzureOpenAI') as mock_azure_drug:
-        # Create mock clients
-        mock_nlp_client = Mock()
-        mock_drug_client = Mock()
-        mock_nlp.return_value = mock_nlp_client
-        mock_azure_nlp.return_value = mock_nlp_client
-        mock_drug.return_value = mock_drug_client
-        mock_azure_drug.return_value = mock_drug_client
-        yield {
-            'nlp': mock_nlp_client,
-            'drug': mock_drug_client
-        }
-
-
-@pytest.fixture
-def app_client(mock_openai):
-    """Get the FastAPI app after OpenAI is mocked"""
-    from app.main import app
-    return app
-
-
-@pytest.fixture
-def drug_mock(mock_openai):
-    """Get the drug service mock client"""
-    return mock_openai['drug']
-
-
-@pytest.fixture
-def nlp_mock(mock_openai):
-    """Get the NLP service mock client"""
-    return mock_openai['nlp']
 
 
 class TestHealthEndpoint:
@@ -165,8 +126,6 @@ class TestDrugInteractionRoutes:
             )
 
         assert response.status_code == 200
-        # Reset side_effect for other tests
-        drug_mock.chat.completions.create.side_effect = None
 
     @pytest.mark.asyncio
     async def test_extract_medications_endpoint(self, app_client, drug_mock):
@@ -259,7 +218,6 @@ class TestNotesRoutes:
     @pytest.mark.asyncio
     async def test_generate_nine_line_endpoint(self, app_client, nlp_mock):
         """Should generate 9-Line report (returns SOAP format due to response_model)"""
-        # Note: Endpoint uses response_model=SOAPNote, so NINE_LINE also returns SOAP format
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = json.dumps({
@@ -394,7 +352,7 @@ class TestConfigSettings:
         assert settings.environment == "development"
         assert settings.debug is True
 
-    def test_get_settings_cached(self, mock_openai):
+    def test_get_settings_cached(self):
         """Should cache settings with lru_cache"""
         from app.config import get_settings
 
@@ -423,9 +381,6 @@ class TestErrorHandling:
         data = response.json()
         assert data["interactions"] == []
 
-        # Reset side_effect
-        drug_mock.chat.completions.create.side_effect = None
-
     @pytest.mark.asyncio
     async def test_note_generation_error_handling(self, app_client, nlp_mock):
         """Should handle note generation errors"""
@@ -441,6 +396,3 @@ class TestErrorHandling:
             )
 
         assert response.status_code == 500
-
-        # Reset side_effect
-        nlp_mock.chat.completions.create.side_effect = None
