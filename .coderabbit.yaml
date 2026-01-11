@@ -1,0 +1,65 @@
+# CodeRabbit Configuration
+# https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: "en-US"
+
+reviews:
+  # Enable auto-review on PRs
+  auto_review:
+    enabled: true
+    # Don't review drafts
+    drafts: false
+    # Review base branches
+    base_branches:
+      - main
+      - develop
+
+  # Review profile
+  profile: "assertive"
+  
+  # Request changes vs comment
+  request_changes_workflow: true
+  
+  # High-level summary
+  high_level_summary: true
+  
+  # Poem in summary (fun touch)
+  poem: false
+  
+  # Review status in summary
+  review_status: true
+  
+  # Collapse walkthrough after certain lines
+  collapse_walkthrough: 100
+
+  # Path filters - ignore certain paths
+  path_filters:
+    - "!**/*.lock"
+    - "!**/node_modules/**"
+    - "!**/.gradle/**"
+    - "!**/build/**"
+    - "!**/.next/**"
+    - "!**/venv/**"
+    - "!**/__pycache__/**"
+
+  # Path instructions - specific guidance per path
+  path_instructions:
+    - path: "backend/**/*.java"
+      instructions: "Focus on Spring Boot best practices, FHIR R4 compliance, and HIPAA security considerations."
+    - path: "ehr-proxy/**/*.py"
+      instructions: "Check for FastAPI best practices, async patterns, and medical data handling safety."
+    - path: "mobile/android/**/*.kt"
+      instructions: "Review for Kotlin idioms, Android lifecycle handling, and Vuzix AR glasses compatibility."
+    - path: "web/**/*.tsx"
+      instructions: "Check React/Next.js 14 patterns, TypeScript types, and accessibility."
+    - path: "ai-service/**/*.py"
+      instructions: "Focus on AI/ML patterns, OpenAI API usage, and clinical NLP accuracy."
+
+chat:
+  # Enable chat in PR comments
+  auto_reply: true
+
+# Knowledge base (learns from your codebase)
+knowledge_base:
+  learnings:
+    scope: "auto"
