@@ -19,10 +19,13 @@ import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfi
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mdxvision.config.SecurityConfig;
 import com.mdxvision.dto.SessionDTO;
 import com.mdxvision.entity.Session;
 import com.mdxvision.service.SessionService;
@@ -38,7 +41,11 @@ import com.mdxvision.service.SessionService;
     excludeAutoConfiguration = {
         SecurityAutoConfiguration.class,
         OAuth2ResourceServerAutoConfiguration.class
-    }
+    },
+    excludeFilters = @ComponentScan.Filter(
+        type = FilterType.ASSIGNABLE_TYPE,
+        classes = SecurityConfig.class
+    )
 )
 @AutoConfigureMockMvc(addFilters = false)
 @DisplayName("SessionController Tests")
