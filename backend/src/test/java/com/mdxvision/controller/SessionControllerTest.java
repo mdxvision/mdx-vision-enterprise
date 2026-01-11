@@ -13,19 +13,23 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration;
-import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.context.annotation.ComponentScan;
-import org.springframework.context.annotation.FilterType;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.support.WebDataBinderFactory;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.method.support.HandlerMethodArgumentResolver;
+import org.springframework.web.method.support.ModelAndViewContainer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mdxvision.config.SecurityConfig;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mdxvision.dto.SessionDTO;
 import com.mdxvision.entity.Session;
 import com.mdxvision.service.SessionService;
@@ -33,40 +37,69 @@ import com.mdxvision.service.SessionService;
 /**
  * Controller tests for SessionController
  *
+ * Uses standalone MockMvc setup to avoid Spring Security context issues.
  * Tests REST API endpoints for recording session management.
- * Security is disabled for unit testing - use integration tests for auth testing.
  */
-@WebMvcTest(
-    controllers = SessionController.class,
-    excludeAutoConfiguration = {
-        SecurityAutoConfiguration.class,
-        OAuth2ResourceServerAutoConfiguration.class
-    },
-    excludeFilters = @ComponentScan.Filter(
-        type = FilterType.ASSIGNABLE_TYPE,
-        classes = SecurityConfig.class
-    )
-)
-@AutoConfigureMockMvc(addFilters = false)
+@ExtendWith(MockitoExtension.class)
 @DisplayName("SessionController Tests")
 class SessionControllerTest {
 
-    @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @Mock
     private SessionService sessionService;
+
+    @InjectMocks
+    private SessionController sessionController;
 
     private UUID testUserId;
     private UUID testSessionId;
+    private Jwt mockJwt;
 
     @BeforeEach
     void setUp() {
         testUserId = UUID.randomUUID();
         testSessionId = UUID.randomUUID();
+
+        // Create mock JWT
+        mockJwt = Jwt.withTokenValue("test-token")
+                .header("alg", "RS256")
+                .claim("sub", testUserId.toString())
+                .build();
+
+        // Configure ObjectMapper with Java 8 time support
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+
+        // Setup standalone MockMvc with custom argument resolver for JWT
+        mockMvc = MockMvcBuilders.standaloneSetup(sessionController)
+                .setCustomArgumentResolvers(new JwtArgumentResolver(mockJwt))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .build();
+    }
+
+    /**
+     * Custom argument resolver that injects a mock JWT for @AuthenticationPrincipal
+     */
+    private static class JwtArgumentResolver implements HandlerMethodArgumentResolver {
+        private final Jwt jwt;
+
+        JwtArgumentResolver(Jwt jwt) {
+            this.jwt = jwt;
+        }
+
+        @Override
+        public boolean supportsParameter(MethodParameter parameter) {
+            return parameter.getParameterType().equals(Jwt.class);
+        }
+
+        @Override
+        public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer,
+                NativeWebRequest webRequest, WebDataBinderFactory binderFactory) {
+            return jwt;
+        }
     }
 
     @Nested
