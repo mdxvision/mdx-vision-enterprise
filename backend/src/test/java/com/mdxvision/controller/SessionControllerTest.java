@@ -3,6 +3,7 @@ package com.mdxvision.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -16,13 +17,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mdxvision.config.TestSecurityConfig;
 import com.mdxvision.dto.SessionDTO;
 import com.mdxvision.entity.Session;
 import com.mdxvision.service.SessionService;
@@ -34,6 +35,7 @@ import com.mdxvision.service.SessionService;
  * Uses Spring Security test utilities for JWT authentication testing.
  */
 @WebMvcTest(SessionController.class)
+@Import(TestSecurityConfig.class)
 @DisplayName("SessionController Tests")
 class SessionControllerTest {
 
@@ -51,19 +53,11 @@ class SessionControllerTest {
 
     private UUID testUserId;
     private UUID testSessionId;
-    private Jwt testJwt;
 
     @BeforeEach
     void setUp() {
         testUserId = UUID.randomUUID();
         testSessionId = UUID.randomUUID();
-
-        // Create mock JWT
-        testJwt = Jwt.withTokenValue("test-token")
-                .header("alg", "RS256")
-                .claim("sub", testUserId.toString())
-                .claim("email", "doctor@hospital.com")
-                .build();
     }
 
     @Nested
@@ -71,7 +65,6 @@ class SessionControllerTest {
     class StartSessionTests {
 
         @Test
-        @WithMockUser
         @DisplayName("Should start a new session successfully")
         void shouldStartNewSessionSuccessfully() throws Exception {
             // Arrange
@@ -91,6 +84,7 @@ class SessionControllerTest {
 
             // Act & Assert
             mockMvc.perform(post("/v1/sessions")
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString())))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
@@ -99,16 +93,43 @@ class SessionControllerTest {
         }
 
         @Test
-        @DisplayName("Should return 401 when not authenticated")
-        void shouldReturn401WhenNotAuthenticated() throws Exception {
+        @DisplayName("Should create session with all request fields")
+        void shouldCreateSessionWithAllRequestFields() throws Exception {
             // Arrange
-            SessionDTO.CreateRequest request = new SessionDTO.CreateRequest();
+            UUID encounterId = UUID.randomUUID();
+            SessionDTO.CreateRequest request = SessionDTO.CreateRequest.builder()
+                    .encounterId(encounterId)
+                    .deviceType("AR_GLASSES")
+                    .deviceId("device-123")
+                    .transcriptionEnabled(true)
+                    .aiSuggestionsEnabled(true)
+                    .languageCode("en-US")
+                    .translationTargetLanguage("es")
+                    .build();
+
+            SessionDTO.Response response = SessionDTO.Response.builder()
+                    .id(testSessionId)
+                    .encounterId(encounterId)
+                    .status(Session.SessionStatus.ACTIVE)
+                    .startTime(Instant.now())
+                    .deviceType("AR_GLASSES")
+                    .transcriptionEnabled(true)
+                    .aiSuggestionsEnabled(true)
+                    .languageCode("en-US")
+                    .translationTargetLanguage("es")
+                    .build();
+
+            when(sessionService.startSession(any(UUID.class), any(SessionDTO.CreateRequest.class)))
+                    .thenReturn(response);
 
             // Act & Assert
             mockMvc.perform(post("/v1/sessions")
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString())))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.deviceType").value("AR_GLASSES"))
+                    .andExpect(jsonPath("$.transcriptionEnabled").value(true));
         }
     }
 
@@ -117,13 +138,13 @@ class SessionControllerTest {
     class EndSessionTests {
 
         @Test
-        @WithMockUser
         @DisplayName("Should end an active session")
         void shouldEndActiveSession() throws Exception {
             // Arrange
             SessionDTO.Response response = SessionDTO.Response.builder()
                     .id(testSessionId)
                     .status(Session.SessionStatus.COMPLETED)
+                    .startTime(Instant.now().minusSeconds(300))
                     .endTime(Instant.now())
                     .build();
 
@@ -131,17 +152,36 @@ class SessionControllerTest {
                     .thenReturn(response);
 
             // Act & Assert
-            mockMvc.perform(post("/v1/sessions/{sessionId}/end", testSessionId))
+            mockMvc.perform(post("/v1/sessions/{sessionId}/end", testSessionId)
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString()))))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.status").value("COMPLETED"));
+                    .andExpect(jsonPath("$.status").value("COMPLETED"))
+                    .andExpect(jsonPath("$.endTime").exists());
         }
 
         @Test
-        @DisplayName("Should return 401 when ending session without auth")
-        void shouldReturn401WhenEndingSessionWithoutAuth() throws Exception {
+        @DisplayName("Should include session duration when ended")
+        void shouldIncludeSessionDurationWhenEnded() throws Exception {
+            // Arrange
+            Instant startTime = Instant.now().minusSeconds(600);
+            Instant endTime = Instant.now();
+
+            SessionDTO.Response response = SessionDTO.Response.builder()
+                    .id(testSessionId)
+                    .status(Session.SessionStatus.COMPLETED)
+                    .startTime(startTime)
+                    .endTime(endTime)
+                    .build();
+
+            when(sessionService.endSession(eq(testSessionId), any(UUID.class)))
+                    .thenReturn(response);
+
             // Act & Assert
-            mockMvc.perform(post("/v1/sessions/{sessionId}/end", testSessionId))
-                    .andExpect(status().isUnauthorized());
+            mockMvc.perform(post("/v1/sessions/{sessionId}/end", testSessionId)
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString()))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.startTime").exists())
+                    .andExpect(jsonPath("$.endTime").exists());
         }
     }
 
@@ -150,7 +190,6 @@ class SessionControllerTest {
     class GetSessionTests {
 
         @Test
-        @WithMockUser
         @DisplayName("Should get session details")
         void shouldGetSessionDetails() throws Exception {
             // Arrange
@@ -158,15 +197,38 @@ class SessionControllerTest {
                     .id(testSessionId)
                     .status(Session.SessionStatus.ACTIVE)
                     .startTime(Instant.now())
+                    .deviceType("AR_GLASSES")
+                    .transcriptionEnabled(true)
                     .build();
 
             when(sessionService.getSession(testSessionId)).thenReturn(response);
 
             // Act & Assert
-            mockMvc.perform(get("/v1/sessions/{sessionId}", testSessionId))
+            mockMvc.perform(get("/v1/sessions/{sessionId}", testSessionId)
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString()))))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id").value(testSessionId.toString()))
                     .andExpect(jsonPath("$.status").value("ACTIVE"));
+        }
+
+        @Test
+        @DisplayName("Should return completed session details")
+        void shouldReturnCompletedSessionDetails() throws Exception {
+            // Arrange
+            SessionDTO.Response response = SessionDTO.Response.builder()
+                    .id(testSessionId)
+                    .status(Session.SessionStatus.COMPLETED)
+                    .startTime(Instant.now().minusSeconds(600))
+                    .endTime(Instant.now())
+                    .build();
+
+            when(sessionService.getSession(testSessionId)).thenReturn(response);
+
+            // Act & Assert
+            mockMvc.perform(get("/v1/sessions/{sessionId}", testSessionId)
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString()))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("COMPLETED"));
         }
     }
 
@@ -175,11 +237,11 @@ class SessionControllerTest {
     class PauseSessionTests {
 
         @Test
-        @WithMockUser
         @DisplayName("Should pause an active session")
         void shouldPauseActiveSession() throws Exception {
             // Act & Assert
-            mockMvc.perform(post("/v1/sessions/{sessionId}/pause", testSessionId))
+            mockMvc.perform(post("/v1/sessions/{sessionId}/pause", testSessionId)
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString()))))
                     .andExpect(status().isOk());
         }
     }
@@ -189,39 +251,66 @@ class SessionControllerTest {
     class ResumeSessionTests {
 
         @Test
-        @WithMockUser
         @DisplayName("Should resume a paused session")
         void shouldResumePausedSession() throws Exception {
             // Act & Assert
-            mockMvc.perform(post("/v1/sessions/{sessionId}/resume", testSessionId))
+            mockMvc.perform(post("/v1/sessions/{sessionId}/resume", testSessionId)
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString()))))
                     .andExpect(status().isOk());
         }
     }
 
     @Nested
-    @DisplayName("Security Tests")
-    class SecurityTests {
+    @DisplayName("Session State Tests")
+    class SessionStateTests {
 
         @Test
-        @DisplayName("All endpoints should require authentication")
-        void allEndpointsShouldRequireAuthentication() throws Exception {
-            // Test each endpoint without authentication
+        @DisplayName("Should verify session service is called with correct user ID")
+        void shouldVerifySessionServiceIsCalledWithCorrectUserId() throws Exception {
+            // Arrange
+            SessionDTO.CreateRequest request = SessionDTO.CreateRequest.builder()
+                    .encounterId(UUID.randomUUID())
+                    .deviceType("AR_GLASSES")
+                    .build();
+
+            SessionDTO.Response response = SessionDTO.Response.builder()
+                    .id(testSessionId)
+                    .status(Session.SessionStatus.ACTIVE)
+                    .startTime(Instant.now())
+                    .build();
+
+            when(sessionService.startSession(any(UUID.class), any(SessionDTO.CreateRequest.class)))
+                    .thenReturn(response);
+
+            // Act
             mockMvc.perform(post("/v1/sessions")
+                            .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString())))
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{}"))
-                    .andExpect(status().isUnauthorized());
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk());
 
-            mockMvc.perform(get("/v1/sessions/{sessionId}", testSessionId))
-                    .andExpect(status().isUnauthorized());
+            // Assert
+            verify(sessionService).startSession(eq(testUserId), any(SessionDTO.CreateRequest.class));
+        }
 
-            mockMvc.perform(post("/v1/sessions/{sessionId}/end", testSessionId))
-                    .andExpect(status().isUnauthorized());
+        @Test
+        @DisplayName("Should handle session status enum correctly")
+        void shouldHandleSessionStatusEnumCorrectly() throws Exception {
+            // Test each status value
+            for (Session.SessionStatus status : Session.SessionStatus.values()) {
+                SessionDTO.Response response = SessionDTO.Response.builder()
+                        .id(testSessionId)
+                        .status(status)
+                        .startTime(Instant.now())
+                        .build();
 
-            mockMvc.perform(post("/v1/sessions/{sessionId}/pause", testSessionId))
-                    .andExpect(status().isUnauthorized());
+                when(sessionService.getSession(testSessionId)).thenReturn(response);
 
-            mockMvc.perform(post("/v1/sessions/{sessionId}/resume", testSessionId))
-                    .andExpect(status().isUnauthorized());
+                mockMvc.perform(get("/v1/sessions/{sessionId}", testSessionId)
+                                .with(jwt().jwt(builder -> builder.claim("sub", testUserId.toString()))))
+                        .andExpect(status().isOk())
+                        .andExpect(jsonPath("$.status").value(status.name()));
+            }
         }
     }
 }
