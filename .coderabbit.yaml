@@ -30,7 +30,7 @@ reviews:
   review_status: true
   
   # Collapse walkthrough after certain lines
-  collapse_walkthrough: 100
+  collapse_walkthrough: true
 
   # Path filters - ignore certain paths
   path_filters:
