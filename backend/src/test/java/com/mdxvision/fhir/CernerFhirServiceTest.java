@@ -47,13 +47,16 @@ class CernerFhirServiceTest {
     private IReadExecutable<Patient> patientReadExecutable;
 
     @Mock
-    private IUntypedQuery<Bundle> searchOperation;
+    @SuppressWarnings("rawtypes")
+    private IUntypedQuery searchOperation;
 
     @Mock
-    private IQuery<Bundle> patientQuery;
+    @SuppressWarnings("rawtypes")
+    private IQuery patientQuery;
 
     @Mock
-    private IQuery<Bundle> conditionedQuery;
+    @SuppressWarnings("rawtypes")
+    private IQuery conditionedQuery;
 
     private CernerFhirService cernerFhirService;
 
@@ -169,10 +172,11 @@ class CernerFhirServiceTest {
             assertTrue(results.isEmpty());
         }
 
+        @SuppressWarnings("unchecked")
         private void setupSearchMock(Bundle bundle) {
             when(fhirClient.search()).thenReturn(searchOperation);
             when(searchOperation.forResource(Patient.class)).thenReturn(patientQuery);
-            when(patientQuery.where(any())).thenReturn(conditionedQuery);
+            when(patientQuery.where(any(ICriterion.class))).thenReturn(conditionedQuery);
             when(conditionedQuery.returnBundle(Bundle.class)).thenReturn(mock(IQuery.class));
             // Would need more complex mock setup for full execution
         }

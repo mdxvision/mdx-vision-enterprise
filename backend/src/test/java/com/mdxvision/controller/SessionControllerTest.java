@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdxvision.dto.SessionDTO;
+import com.mdxvision.entity.Session;
 import com.mdxvision.service.SessionService;
 
 /**
@@ -74,14 +75,16 @@ class SessionControllerTest {
         @DisplayName("Should start a new session successfully")
         void shouldStartNewSessionSuccessfully() throws Exception {
             // Arrange
-            SessionDTO.CreateRequest request = new SessionDTO.CreateRequest();
-            request.setPatientId(UUID.randomUUID());
-            request.setEncounterType("OUTPATIENT");
+            SessionDTO.CreateRequest request = SessionDTO.CreateRequest.builder()
+                    .encounterId(UUID.randomUUID())
+                    .deviceType("AR_GLASSES")
+                    .build();
 
-            SessionDTO.Response response = new SessionDTO.Response();
-            response.setSessionId(testSessionId);
-            response.setStatus("ACTIVE");
-            response.setStartedAt(Instant.now());
+            SessionDTO.Response response = SessionDTO.Response.builder()
+                    .id(testSessionId)
+                    .status(Session.SessionStatus.ACTIVE)
+                    .startTime(Instant.now())
+                    .build();
 
             when(sessionService.startSession(any(UUID.class), any(SessionDTO.CreateRequest.class)))
                     .thenReturn(response);
@@ -91,7 +94,7 @@ class SessionControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.sessionId").exists())
+                    .andExpect(jsonPath("$.id").exists())
                     .andExpect(jsonPath("$.status").value("ACTIVE"));
         }
 
@@ -118,10 +121,11 @@ class SessionControllerTest {
         @DisplayName("Should end an active session")
         void shouldEndActiveSession() throws Exception {
             // Arrange
-            SessionDTO.Response response = new SessionDTO.Response();
-            response.setSessionId(testSessionId);
-            response.setStatus("COMPLETED");
-            response.setEndedAt(Instant.now());
+            SessionDTO.Response response = SessionDTO.Response.builder()
+                    .id(testSessionId)
+                    .status(Session.SessionStatus.COMPLETED)
+                    .endTime(Instant.now())
+                    .build();
 
             when(sessionService.endSession(eq(testSessionId), any(UUID.class)))
                     .thenReturn(response);
@@ -150,17 +154,18 @@ class SessionControllerTest {
         @DisplayName("Should get session details")
         void shouldGetSessionDetails() throws Exception {
             // Arrange
-            SessionDTO.Response response = new SessionDTO.Response();
-            response.setSessionId(testSessionId);
-            response.setStatus("ACTIVE");
-            response.setStartedAt(Instant.now());
+            SessionDTO.Response response = SessionDTO.Response.builder()
+                    .id(testSessionId)
+                    .status(Session.SessionStatus.ACTIVE)
+                    .startTime(Instant.now())
+                    .build();
 
             when(sessionService.getSession(testSessionId)).thenReturn(response);
 
             // Act & Assert
             mockMvc.perform(get("/v1/sessions/{sessionId}", testSessionId))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.sessionId").value(testSessionId.toString()))
+                    .andExpect(jsonPath("$.id").value(testSessionId.toString()))
                     .andExpect(jsonPath("$.status").value("ACTIVE"));
         }
     }
