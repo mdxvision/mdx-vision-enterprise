@@ -90,6 +90,8 @@ dependencies {
     // Unit Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
+    testImplementation("org.mockito:mockito-core:5.8.0")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.8.0")
 
     // Instrumented Testing (Espresso)
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
