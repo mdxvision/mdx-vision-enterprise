@@ -40,7 +40,7 @@ from medical_vocabulary import (
 )
 
 # Import HIPAA audit logging
-from audit import audit_logger, AuditAction
+from audit import audit_logger, AuditAction, log_audit_event, log_phi_access
 
 # Import noise reduction (RNNoise - Krisp AI alternative)
 try:
@@ -15233,7 +15233,7 @@ class AuditLogEntry(BaseModel):
     patient_id: Optional[str] = None
     patient_name: Optional[str] = None
     status: Optional[str] = None
-    details: Optional[str] = None
+    details: Optional[Any] = None  # Can be str or dict
     user_id: Optional[str] = None
     user_name: Optional[str] = None
     ip_address: Optional[str] = None

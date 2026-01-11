@@ -29,6 +29,7 @@ npm-debug.log*
 
 # Testing
 coverage/
+.coverage
 .pytest_cache/
 __pycache__/
 *.pyc
@@ -51,3 +52,10 @@ temp/
 *.pem
 *.key
 secrets/
+
+# Runtime data
+data/
+data/
+
+# Runtime data
+data/

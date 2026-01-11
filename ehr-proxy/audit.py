@@ -18,6 +18,7 @@ from typing import Optional
 class AuditAction:
     """Audit action types for HIPAA compliance tracking"""
     # PHI Access
+    PHI_ACCESS = "PHI_ACCESS"
     VIEW_PATIENT = "VIEW_PATIENT"
     SEARCH_PATIENT = "SEARCH_PATIENT"
     LOOKUP_MRN = "LOOKUP_MRN"
@@ -100,6 +101,33 @@ class AuditLogger:
             self.logger.addHandler(file_handler)
 
         print(f"📋 HIPAA Audit Logger initialized: {log_path}")
+
+    def log(
+        self,
+        action: str,
+        patient_id: Optional[str] = None,
+        details: Optional[dict] = None,
+        **kwargs
+    ) -> None:
+        """
+        Generic log method for audit events.
+
+        Args:
+            action: Action from AuditAction class
+            patient_id: Patient identifier
+            details: Additional details dict
+            **kwargs: Extra fields
+        """
+        self._log_event(
+            event_type="AUDIT",
+            action=action,
+            patient_id=patient_id,
+            details=details,
+            **kwargs
+        )
+        detail_str = f" - {details.get('endpoint', '')}" if details else ""
+        patient_str = f" - Patient {patient_id}" if patient_id else ""
+        print(f"📋 AUDIT: {action}{patient_str}{detail_str}")
 
     def _log_event(self, event_type: str, action: str, **kwargs) -> None:
         """
@@ -290,3 +318,69 @@ class AuditLogger:
 
 # Global audit logger instance
 audit_logger = AuditLogger()
+
+
+def log_audit_event(
+    event_type: str,
+    action: str,
+    patient_id: Optional[str] = None,
+    details: Optional[dict] = None,
+    **kwargs
+) -> None:
+    """
+    Convenience function to log audit events using the global audit_logger.
+
+    This provides a simplified interface for logging various event types
+    without needing to call specific methods on the AuditLogger instance.
+
+    Args:
+        event_type: Category of event (e.g., "implicit_bias_check", "maternal_health_assessment")
+        action: Specific action being performed
+        patient_id: Patient identifier (optional)
+        details: Dictionary of additional details
+        **kwargs: Additional fields to include in the log
+    """
+    audit_logger._log_event(
+        event_type=event_type,
+        action=action,
+        patient_id=patient_id,
+        details=details,
+        **kwargs
+    )
+
+    # Console output for visibility
+    detail_str = f" - {action}" if action else ""
+    patient_str = f" - Patient {patient_id}" if patient_id else ""
+    print(f"📋 AUDIT: {event_type}{detail_str}{patient_str}")
+
+
+def log_phi_access(
+    action: str,
+    patient_id: str,
+    patient_name: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    status: str = "success",
+    details: Optional[str] = None,
+    **kwargs
+) -> None:
+    """
+    Convenience function to log PHI access using the global audit_logger.
+
+    Args:
+        action: Type of access (VIEW_PATIENT, SEARCH_PATIENT, etc.)
+        patient_id: Patient identifier accessed
+        patient_name: Patient name (for audit trail)
+        endpoint: API endpoint accessed
+        status: success or failure
+        details: Additional context
+        **kwargs: Extra fields
+    """
+    audit_logger.log_phi_access(
+        action=action,
+        patient_id=patient_id,
+        patient_name=patient_name,
+        endpoint=endpoint,
+        status=status,
+        details=details,
+        **kwargs
+    )

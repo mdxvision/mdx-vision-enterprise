@@ -189,7 +189,7 @@ public class EpicFhirService {
             note.getValueStringType().setValue(noteText);
 
             // Create in Epic
-            return fhirClient.create()
+            return (Observation) fhirClient.create()
                     .resource(note)
                     .execute()
                     .getResource();

@@ -4,7 +4,7 @@ Clinical note generation router using Azure OpenAI
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Union, Dict, Any
 import structlog
 
 from app.services.clinical_nlp_service import ClinicalNLPService
@@ -47,9 +47,9 @@ class NineLineReport(BaseModel):
     line9_terrain: str  # NBC contamination
 
 
-@router.post("/generate", response_model=SOAPNote)
+@router.post("/generate", response_model=Union[SOAPNote, Dict[str, Any]])
 async def generate_clinical_note(request: NoteGenerationRequest):
-    """Generate a clinical note from transcription"""
+    """Generate a clinical note from transcription (SOAP, NINE_LINE, or generic)"""
     try:
         logger.info("Generating clinical note", 
                    encounter_id=request.encounterId,

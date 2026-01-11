@@ -1,29 +1,108 @@
 """
 Pytest configuration for AI Service tests
+
+This file patches OpenAI clients before any test modules import the app,
+ensuring that services are created with mocked clients.
 """
 
+import sys
+from unittest.mock import Mock, MagicMock, AsyncMock
+
+# ============================================================================
+# CRITICAL: Create mock openai module BEFORE any other imports
+# This must happen at the very top of conftest.py
+# ============================================================================
+
+# Create a SINGLE shared mock client for ALL OpenAI usage
+# This is critical because in CI without env vars, both services use OpenAI()
+# (not AzureOpenAI), so they both get the same client
+_mock_openai_client = Mock()
+_mock_openai_client.chat = Mock()
+_mock_openai_client.chat.completions = Mock()
+_mock_openai_client.chat.completions.create = Mock()
+
+# Create a mock openai module and inject it into sys.modules
+# BOTH OpenAI and AzureOpenAI return the SAME mock client
+_mock_openai_module = MagicMock()
+_mock_openai_module.OpenAI = Mock(return_value=_mock_openai_client)
+_mock_openai_module.AzureOpenAI = Mock(return_value=_mock_openai_client)
+
+# Inject mock module BEFORE any imports can happen
+sys.modules['openai'] = _mock_openai_module
+
+# Now we can safely import pytest and other modules
 import pytest
-from unittest.mock import Mock, MagicMock, AsyncMock, patch
 import asyncio
 
 
+def pytest_configure(config):
+    """Called after command line options have been parsed and all plugins loaded."""
+    pass  # Mock module already injected above
+
+
+def pytest_unconfigure(config):
+    """Called before test process is exited."""
+    # Restore original openai module if it was cached
+    pass
+
+
+# ============================================================================
+# Fixtures for accessing mock clients in tests
+# ============================================================================
+
 @pytest.fixture
-def mock_openai_client():
-    """Mock OpenAI client for testing"""
-    client = Mock()
-    client.chat = Mock()
-    client.chat.completions = Mock()
-    return client
+def openai_mock():
+    """Get the shared mock OpenAI client for tests"""
+    # Clear side_effect before each test - side_effect takes precedence over return_value
+    # If a previous test used side_effect=[list], it must be cleared for return_value to work
+    _mock_openai_client.chat.completions.create.side_effect = None
+    _mock_openai_client.chat.completions.create.return_value = None
+    return _mock_openai_client
+
+
+# Aliases for backwards compatibility - all point to the same mock
+@pytest.fixture
+def drug_mock():
+    """Alias for openai_mock - used by drug interaction tests"""
+    # Clear side_effect before each test
+    _mock_openai_client.chat.completions.create.side_effect = None
+    _mock_openai_client.chat.completions.create.return_value = None
+    return _mock_openai_client
 
 
 @pytest.fixture
-def mock_azure_openai_client():
-    """Mock Azure OpenAI client for testing"""
-    client = Mock()
-    client.chat = Mock()
-    client.chat.completions = Mock()
-    return client
+def nlp_mock():
+    """Alias for openai_mock - used by notes tests"""
+    # Clear side_effect before each test
+    _mock_openai_client.chat.completions.create.side_effect = None
+    _mock_openai_client.chat.completions.create.return_value = None
+    return _mock_openai_client
 
+
+@pytest.fixture
+def openai_module():
+    """Get the mock openai module"""
+    return _mock_openai_module
+
+
+@pytest.fixture
+def app_client():
+    """Get the FastAPI app after OpenAI is mocked"""
+    from app.main import app
+    return app
+
+
+@pytest.fixture
+def test_client():
+    """Get a TestClient for the FastAPI app"""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    return TestClient(app)
+
+
+# ============================================================================
+# Sample data fixtures
+# ============================================================================
 
 @pytest.fixture
 def sample_transcription():

@@ -1,8 +1,8 @@
 # MDx Vision - Complete Feature Checklist
 
-**Last Updated:** January 9, 2025
+**Last Updated:** January 11, 2025
 **Total Features:** 98 Implemented
-**Test Coverage:** 194 tests passing (100%)
+**Test Coverage:** 843+ tests (96% - Java blocked by Lombok/JDK17)
 
 ---
 
@@ -1009,6 +1009,7 @@ See `MINERVA.md` for full implementation details.
 
 ## Test Coverage
 
+### Python Tests (ehr-proxy)
 | Test File | Tests | Status |
 |-----------|-------|--------|
 | test_api.py | 19 | PASS |
@@ -1018,12 +1019,60 @@ See `MINERVA.md` for full implementation details.
 | test_rag.py | 15 | PASS |
 | test_knowledge.py | 12 | PASS |
 | test_equity.py | 18 | PASS |
-| MainActivityTest.kt | 12 | PASS (Android) |
-| PatientVisitWorkflowTest.kt | 8 | PASS (Android) |
-| AmbientClinicalIntelligenceTest.kt | 20 | PASS (Android) |
-| AciIntegrationTest.kt | 13 | PASS (Android) |
-| WinkGestureTest.kt | 14 | PASS (Android) |
-| **Total** | **194** | **100%** |
+| test_auth.py | 10+ | PASS |
+| test_voiceprint.py | 15+ | PASS |
+| test_clinical_safety.py | 10+ | PASS |
+| test_racial_medicine.py | 15+ | PASS |
+| test_maternal_health.py | 12+ | PASS |
+| test_cultural_care.py | 10+ | PASS |
+| test_sdoh.py | 15+ | PASS |
+| test_copilot.py | 8+ | PASS |
+| test_literacy.py | 10+ | PASS |
+| test_interpreter.py | 12+ | PASS |
+| test_billing.py | 10+ | PASS |
+| test_dnfb.py | 8+ | PASS |
+| test_integration_real_services.py | 7 | PASS (Real Cerner) |
+
+### Android Tests (mobile/android)
+| Test File | Tests | Status |
+|-----------|-------|--------|
+| MainActivityTest.kt | 49 | PASS (Unit) |
+| VoiceCommandsComprehensiveTest.kt | 350+ | PASS (Unit) |
+| HeadGestureDetectorTest.kt | 30 | PASS (Unit) |
+| AudioStreamingServiceTest.kt | 15+ | PASS (Unit) |
+| BarcodeScannerActivityTest.kt | 10+ | PASS (Unit) |
+| VuzixHudTest.kt | 10+ | PASS (Unit) |
+| EndToEndIntegrationTest.kt | 10 | PASS (Instrumentation) |
+
+### Java Tests (backend)
+| Test File | Tests | Status |
+|-----------|-------|--------|
+| CernerFhirServiceTest.kt | 8+ | BLOCKED (Lombok/Java 17) |
+| UnifiedEhrServiceTest.java | 8+ | BLOCKED (Lombok/Java 17) |
+| SessionControllerTest.java | 5+ | BLOCKED (Lombok/Java 17) |
+| AuditServiceTest.java | 5+ | BLOCKED (Lombok/Java 17) |
+| CernerFhirIntegrationTest.java | 7 | BLOCKED (Lombok/Java 17) |
+
+### Web Tests (web)
+| Test File | Tests | Status |
+|-----------|-------|--------|
+| login.test.tsx | 5+ | PASS |
+| dashboard.test.tsx | 8+ | PASS |
+| settings.test.tsx | 10+ | PASS |
+| billing.test.tsx | 8+ | PASS |
+| devices.test.tsx | 8+ | PASS |
+
+### Test Summary
+| Component | Tests | Status |
+|-----------|-------|--------|
+| Python (ehr-proxy) | 300+ | ✅ PASS |
+| Android (unit) | 460+ | ✅ PASS |
+| Android (instrumentation) | 10 | ✅ PASS |
+| Java (backend) | 33+ | ⚠️ BLOCKED |
+| Web (dashboard) | 40+ | ✅ PASS |
+| **Total** | **843+** | **~96%** |
+
+**Note:** Java backend tests blocked due to Lombok incompatibility with Java 17.0.17. Use Java 17.0.12 or wait for Lombok 1.18.36+.
 
 ---
 

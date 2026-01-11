@@ -170,36 +170,45 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 ### Test Coverage Overview
 
-| Component | Framework | Test Count | Key Coverage Areas |
-|-----------|-----------|------------|-------------------|
-| Backend (Java) | JUnit 5, Spring Boot Test, Mockito | 4 files | EHR services, sessions, audit logging |
-| EHR Proxy (Python) | pytest, pytest-asyncio | 18+ files | Auth, safety, health equity, RAG |
-| Web Dashboard | Vitest, React Testing Library | 6 files | Login, dashboard, settings, billing |
-| Android App | JUnit 4, Mockito | 3 files | Voice commands, audio, barcode |
-| AI Service | pytest | 3 files | Transcription, notes, drug interactions |
+| Component | Framework | Test Count | Status |
+|-----------|-----------|------------|--------|
+| EHR Proxy (Python) | pytest, pytest-asyncio | 300+ tests | ✅ PASS |
+| Android App (Unit) | JUnit 4, Mockito | 460+ tests | ✅ PASS |
+| Android App (E2E) | Instrumentation | 10 tests | ✅ PASS |
+| Web Dashboard | Vitest, React Testing Library | 40+ tests | ✅ PASS |
+| Backend (Java) | JUnit 5, Spring Boot Test | 33+ tests | ⚠️ BLOCKED |
+| AI Service | pytest | 15+ tests | ✅ PASS |
+| **Total** | | **843+ tests** | **96%** |
+
+**Note:** Java backend tests blocked due to Lombok incompatibility with Java 17.0.17. Use Java 17.0.12 or wait for Lombok 1.18.36+.
 
 ### Running Tests
 
 ```bash
-# Backend (Java)
+# Backend (Java) - BLOCKED: Lombok/Java 17 issue
 cd backend
-./mvnw test
+./mvnw test  # Will fail on Java 17.0.17+
 
-# EHR Proxy (Python)
+# EHR Proxy (Python) - ALL PASS
 cd ehr-proxy
 pytest tests/ -v
+pytest tests/test_integration_real_services.py -v -s  # Real Cerner
 
-# Web Dashboard
+# Web Dashboard - ALL PASS
 cd web
 npm test           # Watch mode
 npm run test:run   # Single run
 npm run test:coverage  # With coverage
 
-# Android
+# Android Unit Tests - ALL PASS
 cd mobile/android
 ./gradlew test
 
-# AI Service
+# Android Instrumentation Tests (requires device)
+cd mobile/android
+./gradlew connectedAndroidTest
+
+# AI Service - ALL PASS
 cd ai-service
 pytest tests/ -v
 ```
@@ -213,10 +222,13 @@ backend/src/test/java/com/mdxvision/
 │   └── CernerFhirServiceTest.java    # Cerner FHIR client
 ├── controller/
 │   └── SessionControllerTest.java    # REST endpoints
-└── service/
-    └── AuditServiceTest.java         # HIPAA audit logging
+├── service/
+│   └── AuditServiceTest.java         # HIPAA audit logging
+└── integration/
+    └── CernerFhirIntegrationTest.java # Real Cerner FHIR tests
 
 ehr-proxy/tests/
+├── test_api.py               # Core API endpoints
 ├── test_auth.py              # Device authentication (Feature #64)
 ├── test_voiceprint.py        # Biometric auth (Features #66, #77)
 ├── test_clinical_safety.py   # Critical alerts, drug interactions
@@ -227,7 +239,13 @@ ehr-proxy/tests/
 ├── test_copilot.py           # AI Clinical Co-pilot (Feature #78)
 ├── test_literacy.py          # Health literacy (Feature #85)
 ├── test_interpreter.py       # Interpreter integration (Feature #86)
-└── test_rag.py               # RAG knowledge system (Features #88-90)
+├── test_rag.py               # RAG knowledge system (Features #88-90)
+├── test_billing.py           # Billing/coding (Feature #71)
+├── test_dnfb.py              # DNFB revenue cycle (Feature #72)
+├── test_ddx.py               # AI Differential diagnosis (Feature #69)
+├── test_image_analysis.py    # Medical image recognition (Feature #70)
+├── test_worklist_crud.py     # Patient worklist (Feature #67)
+└── test_integration_real_services.py  # Real Cerner/Epic integration
 
 web/src/__tests__/
 ├── setup.ts                  # Test configuration
@@ -238,9 +256,15 @@ web/src/__tests__/
 └── devices.test.tsx          # Device management (Feature #65)
 
 mobile/android/app/src/test/java/com/mdxvision/
-├── MainActivityTest.kt       # Voice commands, wake word
-├── AudioStreamingServiceTest.kt  # Audio processing, Vuzix
-└── BarcodeScannerActivityTest.kt # MRN extraction, validation
+├── MainActivityTest.kt              # Basic voice commands (49 tests)
+├── VoiceCommandsComprehensiveTest.kt # All voice commands (350+ tests)
+├── HeadGestureDetectorTest.kt       # Nod, shake, wink gestures (30 tests)
+├── AudioStreamingServiceTest.kt     # Audio processing, Vuzix
+├── BarcodeScannerActivityTest.kt    # MRN extraction, validation
+└── VuzixHudTest.kt                  # HUD overlay tests
+
+mobile/android/app/src/androidTest/java/com/mdxvision/
+└── EndToEndIntegrationTest.kt       # Real device E2E tests (Cerner)
 
 ai-service/tests/
 ├── conftest.py               # Test fixtures

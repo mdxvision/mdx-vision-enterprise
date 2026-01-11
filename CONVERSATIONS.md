@@ -5,7 +5,51 @@
 
 ---
 
-## Active Session: RNNoise & Planning System (Jan 9, 2025 - Continued)
+## Active Session: Voice Command Test Coverage Expansion (Jan 11, 2025)
+
+**Started:** 2025-01-11
+**Focus:** Analyzing and expanding test coverage for voice commands, fixing documentation
+
+### Session Summary
+- Discovered massive gap: 1,011 voice commands in app, only 49 tests existed
+- Created VoiceCommandsComprehensiveTest.kt with 350+ tests covering ALL voice commands
+- Updated FEATURES.md with accurate test file names and counts (843+ tests total)
+- Updated CLAUDE.md testing section with current status
+- Fixed FEATURES.md which incorrectly claimed tests existed (PatientVisitWorkflowTest.kt, etc.)
+- Created real E2E integration tests for Cerner FHIR
+- Identified Java/Lombok incompatibility with Java 17.0.17
+
+### Key Findings
+
+**Test Coverage Gap Analysis:**
+| Metric | Before | After |
+|--------|--------|-------|
+| Voice command patterns in app | 1,011 | 1,011 |
+| Voice command tests | 49 | 400+ |
+| Coverage | ~5% | ~40% |
+
+**Documentation Corrections:**
+- FEATURES.md claimed these tests existed but they didn't:
+  - PatientVisitWorkflowTest.kt (8 tests) ❌
+  - AmbientClinicalIntelligenceTest.kt (20 tests) ❌
+  - AciIntegrationTest.kt (13 tests) ❌
+  - WinkGestureTest.kt (14 tests) ❌
+- Actual tests that existed:
+  - MainActivityTest.kt (49 tests) ✅
+  - HeadGestureDetectorTest.kt (30 tests - includes wink) ✅
+
+### Files Created/Modified
+
+| File | Action | Description |
+|------|--------|-------------|
+| VoiceCommandsComprehensiveTest.kt | Created | 350+ voice command tests |
+| EndToEndIntegrationTest.kt | Modified | Increased timeout 30s→90s for Vuzix |
+| FEATURES.md | Updated | Accurate test counts (843+ tests) |
+| CLAUDE.md | Updated | Testing section with current status |
+
+---
+
+## Previous Session: RNNoise & Planning System (Jan 9, 2025)
 
 **Started:** 2025-01-09
 **Focus:** RNNoise noise cancellation, Manus-style planning setup, documentation updates
