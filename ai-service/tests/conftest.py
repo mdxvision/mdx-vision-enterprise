@@ -13,22 +13,19 @@ from unittest.mock import Mock, MagicMock, AsyncMock
 # This must happen at the very top of conftest.py
 # ============================================================================
 
-# Create mock OpenAI clients
-_mock_nlp_client = Mock()
-_mock_nlp_client.chat = Mock()
-_mock_nlp_client.chat.completions = Mock()
-_mock_nlp_client.chat.completions.create = Mock()
-
-_mock_drug_client = Mock()
-_mock_drug_client.chat = Mock()
-_mock_drug_client.chat.completions = Mock()
-_mock_drug_client.chat.completions.create = Mock()
+# Create a SINGLE shared mock client for ALL OpenAI usage
+# This is critical because in CI without env vars, both services use OpenAI()
+# (not AzureOpenAI), so they both get the same client
+_mock_openai_client = Mock()
+_mock_openai_client.chat = Mock()
+_mock_openai_client.chat.completions = Mock()
+_mock_openai_client.chat.completions.create = Mock()
 
 # Create a mock openai module and inject it into sys.modules
-# This ensures any import of openai gets our mock
+# BOTH OpenAI and AzureOpenAI return the SAME mock client
 _mock_openai_module = MagicMock()
-_mock_openai_module.OpenAI = Mock(return_value=_mock_drug_client)
-_mock_openai_module.AzureOpenAI = Mock(return_value=_mock_nlp_client)
+_mock_openai_module.OpenAI = Mock(return_value=_mock_openai_client)
+_mock_openai_module.AzureOpenAI = Mock(return_value=_mock_openai_client)
 
 # Inject mock module BEFORE any imports can happen
 sys.modules['openai'] = _mock_openai_module
@@ -53,30 +50,26 @@ def pytest_unconfigure(config):
 # Fixtures for accessing mock clients in tests
 # ============================================================================
 
-@pytest.fixture(scope="session")
-def mock_openai_client():
-    """Get the mock OpenAI client used by drug interaction service"""
-    return _mock_drug_client
+@pytest.fixture
+def openai_mock():
+    """Get the shared mock OpenAI client - resets call history between tests"""
+    _mock_openai_client.reset_mock()
+    return _mock_openai_client
 
 
-@pytest.fixture(scope="session")
-def mock_azure_openai_client():
-    """Get the mock Azure OpenAI client used by NLP service"""
-    return _mock_nlp_client
-
-
+# Aliases for backwards compatibility - all point to the same mock
 @pytest.fixture
 def drug_mock():
-    """Get the mock drug service client - resets call history between tests"""
-    _mock_drug_client.reset_mock()
-    return _mock_drug_client
+    """Alias for openai_mock - used by drug interaction tests"""
+    _mock_openai_client.reset_mock()
+    return _mock_openai_client
 
 
 @pytest.fixture
 def nlp_mock():
-    """Get the mock NLP service client - resets call history between tests"""
-    _mock_nlp_client.reset_mock()
-    return _mock_nlp_client
+    """Alias for openai_mock - used by notes tests"""
+    _mock_openai_client.reset_mock()
+    return _mock_openai_client
 
 
 @pytest.fixture
