@@ -14,11 +14,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
-import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,7 +33,13 @@ import com.mdxvision.service.SessionService;
  * Tests REST API endpoints for recording session management.
  * Security is disabled for unit testing - use integration tests for auth testing.
  */
-@WebMvcTest(SessionController.class)
+@WebMvcTest(
+    controllers = SessionController.class,
+    excludeAutoConfiguration = {
+        SecurityAutoConfiguration.class,
+        OAuth2ResourceServerAutoConfiguration.class
+    }
+)
 @AutoConfigureMockMvc(addFilters = false)
 @DisplayName("SessionController Tests")
 class SessionControllerTest {
@@ -45,9 +52,6 @@ class SessionControllerTest {
 
     @MockBean
     private SessionService sessionService;
-
-    @MockBean
-    private JwtDecoder jwtDecoder;
 
     private UUID testUserId;
     private UUID testSessionId;

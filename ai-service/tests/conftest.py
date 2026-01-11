@@ -5,17 +5,15 @@ This file patches OpenAI clients before any test modules import the app,
 ensuring that services are created with mocked clients.
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, AsyncMock, patch
-import asyncio
 import sys
+from unittest.mock import Mock, MagicMock, AsyncMock
 
 # ============================================================================
-# CRITICAL: Patch OpenAI before any imports
-# This must happen at module load time, before pytest collects tests
+# CRITICAL: Create mock openai module BEFORE any other imports
+# This must happen at the very top of conftest.py
 # ============================================================================
 
-# Create mock clients that will be used by all services
+# Create mock OpenAI clients
 _mock_nlp_client = Mock()
 _mock_nlp_client.chat = Mock()
 _mock_nlp_client.chat.completions = Mock()
@@ -26,24 +24,29 @@ _mock_drug_client.chat = Mock()
 _mock_drug_client.chat.completions = Mock()
 _mock_drug_client.chat.completions.create = Mock()
 
-# Patch OpenAI and AzureOpenAI classes before any imports
-_openai_patch = patch('openai.OpenAI', return_value=_mock_drug_client)
-_azure_openai_patch = patch('openai.AzureOpenAI', return_value=_mock_nlp_client)
+# Create a mock openai module and inject it into sys.modules
+# This ensures any import of openai gets our mock
+_mock_openai_module = MagicMock()
+_mock_openai_module.OpenAI = Mock(return_value=_mock_drug_client)
+_mock_openai_module.AzureOpenAI = Mock(return_value=_mock_nlp_client)
 
-# Start patches immediately at module load
-_openai_patch.start()
-_azure_openai_patch.start()
+# Inject mock module BEFORE any imports can happen
+sys.modules['openai'] = _mock_openai_module
+
+# Now we can safely import pytest and other modules
+import pytest
+import asyncio
 
 
 def pytest_configure(config):
     """Called after command line options have been parsed and all plugins loaded."""
-    pass  # Patches already started above
+    pass  # Mock module already injected above
 
 
 def pytest_unconfigure(config):
     """Called before test process is exited."""
-    _openai_patch.stop()
-    _azure_openai_patch.stop()
+    # Restore original openai module if it was cached
+    pass
 
 
 # ============================================================================
@@ -77,10 +80,24 @@ def nlp_mock():
 
 
 @pytest.fixture
+def openai_module():
+    """Get the mock openai module"""
+    return _mock_openai_module
+
+
+@pytest.fixture
 def app_client():
     """Get the FastAPI app after OpenAI is mocked"""
     from app.main import app
     return app
+
+
+@pytest.fixture
+def test_client():
+    """Get a TestClient for the FastAPI app"""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    return TestClient(app)
 
 
 # ============================================================================
