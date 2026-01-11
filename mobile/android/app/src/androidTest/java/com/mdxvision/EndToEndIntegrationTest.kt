@@ -47,10 +47,11 @@ class EndToEndIntegrationTest {
     @Before
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
+        // Use longer timeouts for AR glasses (Vuzix network can be slower)
         httpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(90, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .writeTimeout(90, TimeUnit.SECONDS)
             .build()
     }
 
