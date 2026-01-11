@@ -49,7 +49,7 @@ class AudioStreamingService(
         // For physical devices: Set via SharedPreferences or use cloud URL
         // Local development: Your Mac's IP on the network
         // Production: Use cloud endpoint (e.g., wss://api.mdxvision.com/ws/transcribe)
-        private var wsUrlDevice: String = "ws://192.168.1.243:8002/ws/transcribe"
+        private var wsUrlDevice: String = "ws://192.168.1.243:8002/ws/transcribe?noise_reduction=true"
 
         /**
          * Configure the WebSocket URL for physical devices
@@ -342,8 +342,8 @@ class AudioStreamingService(
                         }
 
                         // Apply software gain boost for Vuzix (low mic sensitivity)
-                        // Boost by ~20dB (10x) to bring levels up to usable range
-                        val gainFactor = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) 10 else 1
+                        // 50x boost (~34dB) - balance between too quiet and clipping
+                        val gainFactor = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) 50 else 1
 
                         // Convert shorts to bytes (little-endian PCM) with gain
                         val byteBuffer = ByteBuffer.allocate(readCount * 2)

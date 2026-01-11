@@ -3,6 +3,7 @@ package com.mdxvision
 import org.junit.Before
 import org.junit.Test
 import org.junit.Assert.*
+import kotlinx.coroutines.runBlocking
 
 /**
  * Unit tests for MainActivity
@@ -421,6 +422,59 @@ class MainActivityTest {
         val match = regex.find(cmd.lowercase())
         return match?.groupValues?.get(1)?.toIntOrNull()
     }
+
+    /**
+     * Multi-intent parsing and execution tests
+     */
+    class VoiceIntentParsingTests {
+
+        @Test
+        fun `should parse multi-intent voice command in order`() {
+            val command = "open John Doe's chart and show last vitals and labs and read it back"
+
+            val intents = parseVoiceIntents(command)
+
+            val expected = listOf(
+                VoiceIntent.LoadPatient("John Doe"),
+                VoiceIntent.ShowVitals,
+                VoiceIntent.ShowLabs,
+                VoiceIntent.SpeakSummary,
+            )
+            assertEquals(expected, intents)
+        }
+
+        @Test
+        fun `should execute intents in sequence`() = runBlocking {
+            val calls = mutableListOf<String>()
+            val executor = VoiceIntentExecutor(
+                loadPatient = { name -> calls.add("load:$name") },
+                showVitals = { calls.add("vitals") },
+                showLabs = { calls.add("labs") },
+                speakSummary = { calls.add("speak") },
+                interIntentDelayMillis = 0,
+                postLoadDelayMillis = 0,
+            )
+
+            executor.execute(
+                listOf(
+                    VoiceIntent.LoadPatient("John Doe"),
+                    VoiceIntent.ShowVitals,
+                    VoiceIntent.ShowLabs,
+                    VoiceIntent.SpeakSummary,
+                )
+            )
+
+            assertEquals(
+                listOf("load:John Doe", "vitals", "labs", "speak"),
+                calls
+            )
+        }
+    }
+
+    /**
+     * Patient Data Display Tests
+     */
+    class PatientDisplayTests {
 
     private fun isOrderLabCommand(cmd: String): Boolean {
         val lower = cmd.lowercase()

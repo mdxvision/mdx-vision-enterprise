@@ -7,14 +7,18 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 
 **Patent:** US 15/237,980 - Voice-activated AR glasses for healthcare documentation
 
-## Current Status (Dec 2024)
+## Current Status (Jan 2025)
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Android/Vuzix App | **Working** | 30+ voice commands, patient lookup, live transcription |
-| Cerner Integration | **Working** | Live sandbox data |
-| Epic Integration | Pending | Credentials needed |
-| Veradigm Integration | Ready | Service implemented |
+| Android/Vuzix App | **Working** | 100+ voice commands, patient lookup, live transcription |
+| Cerner Integration | **Working** | Live sandbox - SMARTS SR., NANCYS II |
+| Epic Integration | **Working** | Live sandbox - Camila Maria Lopez |
+| Veradigm Integration | **Ready** | OAuth configured, awaiting approval |
+| athenahealth | **Ready** | OAuth configured |
+| NextGen | **Ready** | OAuth configured |
+| MEDITECH | **Ready** | OAuth configured |
+| eClinicalWorks | **Ready** | OAuth configured |
 | Real-time Transcription | **Working** | AssemblyAI/Deepgram with speaker diarization |
 | AI Clinical Notes | **Working** | SOAP, Progress, H&P, Consult notes with preview |
 | Medical Coding | **Working** | ICD-10 (90+) & CPT (100+) with modifiers |
@@ -29,6 +33,7 @@ Real-time AI-powered clinical documentation system with AR smart glasses integra
 ### Voice Commands (100+)
 - **Wake Word**: "Hey MDx" for hands-free activation
 - **12-Button Grid**: Tap or speak commands for all functions
+- **EHR Switching**: "Switch to Epic", "Switch to Cerner" - voice-controlled EHR selection
 - **Patient Data**: Load, search, scan wristband
 - **Clinical**: Show vitals/meds/allergies/labs/conditions/care plans/notes
 - **Documentation**: Start note, live transcribe, generate, save
@@ -409,15 +414,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 ```
 
-## EHR Systems Supported
+## EHR Systems Supported (7 Configured)
 
 | EHR | Status | Sandbox URL |
 |-----|--------|-------------|
 | Cerner (Oracle Health) | **Working** | fhir-open.cerner.com |
-| Epic | Ready | fhir.epic.com |
+| Epic | **Working** | fhir.epic.com |
 | Veradigm (Allscripts) | Ready | fhir.fhirpoint.open.allscripts.com |
-| MEDITECH | Planned | - |
-| athenahealth | Planned | - |
+| athenahealth | Ready | api.platform.athenahealth.com |
+| NextGen | Ready | fhir.nextgen.com |
+| MEDITECH | Ready | greenfield-prod-apis.meditech.com |
+| eClinicalWorks | Ready | fhir.eclinicalworks.com |
+
+**Token Persistence**: OAuth tokens persist across proxy restarts for demo simplicity.
 
 ## API Endpoints
 

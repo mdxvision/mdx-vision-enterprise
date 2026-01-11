@@ -47,137 +47,165 @@
 | FEATURES.md | Updated | Accurate test counts (843+ tests) |
 | CLAUDE.md | Updated | Testing section with current status |
 
-### Voice Command Categories Tested
+---
 
-All 91 features now have voice command test coverage:
-- Core Patient Commands (Features #1-10)
-- Documentation Mode (Features #11-20)
-- Patient Summary & Briefing (Features #22-23)
-- Voice Note Editing (Feature #39)
-- Voice Navigation (Feature #40)
-- Voice Dictation Mode (Feature #41)
-- Voice Templates (Feature #42)
-- Voice Orders (Feature #43)
-- Encounter Timer (Feature #44)
-- Order Sets (Feature #45)
-- Voice Vitals Entry (Feature #46)
-- Custom Voice Commands (Feature #48)
-- Medical Calculator (Feature #49)
-- SBAR Handoff (Feature #50)
-- Discharge Summary (Feature #51)
-- Procedure Checklists (Feature #52)
-- Clinical Reminders (Feature #53)
-- Medication Reconciliation (Feature #54)
-- Referral Tracking (Feature #55)
-- Specialty Templates (Feature #56)
-- Note Versioning (Feature #57)
-- Data Encryption (Feature #60)
-- Multi-Language (Feature #61)
-- Ambient Clinical Intelligence (Feature #62)
-- CRUD Write-Back (Feature #63)
-- Device Authentication (Feature #64)
-- Voiceprint Recognition (Feature #66)
-- Patient Worklist (Feature #67)
-- Order Update/Modify (Feature #68)
-- AI Differential Diagnosis (Feature #69)
-- Medical Image Recognition (Feature #70)
-- Billing/Coding (Feature #71)
-- DNFB (Feature #72)
-- HUD Commands (Feature #73)
-- Gesture Control (Feature #75)
-- Wink Gesture (Feature #76)
-- Continuous Auth (Feature #77)
-- AI Copilot (Feature #78)
-- Racial Medicine (Feature #79)
-- Cultural Care (Feature #80)
-- Implicit Bias (Feature #81)
-- Maternal Health (Feature #82)
-- SDOH (Feature #84)
-- Health Literacy (Feature #85)
-- Interpreter Integration (Feature #86)
+## Previous Session: RNNoise & Planning System (Jan 9, 2025)
 
-### Known Issues
+**Started:** 2025-01-09
+**Focus:** RNNoise noise cancellation, Manus-style planning setup, documentation updates
 
-1. **Java/Lombok Incompatibility**: Backend tests blocked on Java 17.0.17
-   - Solution: Use Java 17.0.12 or wait for Lombok 1.18.36+
+### Session Summary (Latest)
+- **Feature #98: RNNoise Noise Cancellation** - Implemented Mozilla's open-source ML noise suppression (15-20dB reduction, free alternative to Krisp AI $8/mo)
+- **Minerva Phase 1-2 COMPLETE** - RAG chat endpoint, "Hey Minerva" wake word on Android
+- **Manus-Style Planning** - Implemented optional 3-file planning system (task_plan.md, findings.md, progress.md)
+- **Hooks Disabled** - Planning is now manual, not automatic (reduces overhead)
+- **Vuzix Testing** - Fixed IP issues with ADB reverse port forwarding, fixed punctuation in voice commands
 
-2. **Old UI Tests Referenced**: Documentation referenced Espresso tests that never existed
-   - The app uses voice-first interface, not button taps
-   - Fixed by updating documentation to reflect reality
+### Feature #98: RNNoise Noise Cancellation
+| Component | Status |
+|-----------|--------|
+| `noise_reduction.py` module | ✅ Complete |
+| WebSocket integration | ✅ Complete |
+| Sample rate conversion (16kHz ↔ 48kHz) | ✅ Complete |
+| Voice activity detection | ✅ Complete |
+| `?noise_reduction=true/false` param | ✅ Complete |
+| API endpoint `/api/v1/noise-reduction/status` | ✅ Complete |
+
+### Manus-Style Planning (Optional)
+Implemented 3-file planning system for complex features:
+- `task_plan.md` - Phase tracking with checkboxes
+- `findings.md` - Research notes
+- `progress.md` - Session logs
+
+**Decision:** Hooks disabled - use manually for major features only.
+
+### Minerva Status
+| Phase | Status |
+|-------|--------|
+| Phase 1: Foundation | ✅ COMPLETE |
+| Phase 2: Wake Word | ✅ COMPLETE |
+| Phase 3: Proactive | 🔄 IN PROGRESS (see task_plan.md) |
+
+### Git Commits (Today)
+| Commit | Description |
+|--------|-------------|
+| f8cfffb | feat: Minerva Phase 2 + Planning with Files skill |
+| bb0a6ab | feat: RNNoise noise cancellation for transcription (Feature #98) |
+
+### Files Created/Updated (Today)
+- **Created**: `ehr-proxy/noise_reduction.py` - RNNoise wrapper
+- **Created**: `task_plan.md` - Minerva Phase 3 planning
+- **Created**: `findings.md` - Phase 3 research notes
+- **Created**: `progress.md` - Session tracking
+- **Updated**: `ehr-proxy/main.py` - Noise reduction integration
+- **Updated**: `ehr-proxy/requirements.txt` - Added pyrnnoise
+- **Updated**: `CLAUDE.md` - Feature #98, planning docs, "Next Up"
+- **Updated**: `FEATURES.md` - Feature #98, Minerva Phase 1-2 checked
+- **Updated**: `MINERVA.md` - Phase 3 reference to task_plan.md
+- **Updated**: `.claude/settings.json` - Hooks disabled
 
 ---
 
-## Previous Session: Comprehensive Test Coverage Implementation (Jan 5, 2025)
+## Previous Session: Minerva AI Assistant & EHR Completion (Jan 9, 2025)
 
-**Started:** 2025-01-05
-**Focus:** Implementing comprehensive test coverage across all components
+**Started:** 2025-01-09
+**Focus:** Minerva AI clinical assistant, Epic/Cerner EHR completion, token persistence
 
 ### Session Summary
-- Analyzed test coverage gaps across all 5 components (Backend, EHR Proxy, Web, Android, AI Service)
-- Created TEST_COVERAGE_PLAN.md with full implementation checklist
-- Implemented 28+ new test files with 300+ test cases
+- **Epic OAuth WORKING**: Full OAuth2 flow with token persistence
+- **Cerner FHIR WORKING**: Live sandbox connection
+- **EHR Voice Switching**: "Switch to Epic" / "Switch to Cerner" commands
+- **Token Persistence**: OAuth tokens persist across proxy restarts (.ehr_tokens.json)
+- **TTS Sanitization**: Fixed readback of JSON artifacts ("curly bracket" etc.)
+- **Minerva Phase 1**: Created `/api/v1/minerva/chat` endpoint with RAG integration
+- **Minerva Phase 2**: "Hey Minerva" wake word detection on Android
 
-### Test Files Created
+### EHR Integration Status (Updated)
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **Cerner/Oracle** | **WORKING** | SMARTS SR., NANCYS II |
+| **Epic** | **WORKING** | Camila Maria Lopez (FHIRTWO/EpicFhir11!) |
+| **Veradigm** | Ready | Awaiting approval |
+| **athenahealth** | Ready | OAuth configured |
+| **NextGen** | Ready | OAuth configured |
+| **MEDITECH** | Ready | OAuth configured |
+| **eClinicalWorks** | Ready | OAuth configured |
 
-| Component | Files Created | Test Count |
-|-----------|---------------|------------|
-| Backend (Java) | 4 files | 40+ tests |
-| EHR Proxy (Python) | 11 files | 100+ tests |
-| Web (Vitest) | 6 files | 60+ tests |
-| Android (Kotlin) | 3 files | 50+ tests |
-| AI Service (Python) | 4 files | 50+ tests |
+### Git Commits
+1. `feat: EHR switching + token persistence for demos`
+2. `docs: update README with 7 EHR integrations and Jan 2025 status`
+3. `docs: Minerva AI Clinical Assistant implementation plan`
+4. `feat: Minerva AI Clinical Assistant Phase 1 (Feature #97)`
+5. `feat: Minerva Phase 2 + Planning with Files skill`
 
-### Key Coverage Areas
+---
 
-**Backend Java (JUnit 5 + Spring Boot Test)**
-- UnifiedEhrServiceTest.java - Multi-EHR abstraction layer
-- CernerFhirServiceTest.java - FHIR R4 client operations
-- SessionControllerTest.java - REST endpoints with security
-- AuditServiceTest.java - HIPAA audit logging
+## Previous Session: C-Suite Demo & EHR Integration (Jan 4, 2025)
 
-**EHR Proxy Python (pytest)**
-- test_auth.py - Device authentication (Feature #64)
-- test_voiceprint.py - Biometric auth (Features #66, #77)
-- test_clinical_safety.py - Critical alerts, medication interactions
-- test_racial_medicine.py - Health equity (Feature #79)
-- test_maternal_health.py - OB monitoring (Feature #82)
-- test_cultural_care.py - Religious/cultural preferences (Feature #80)
-- test_sdoh.py - Social determinants (Feature #84)
-- test_copilot.py - AI Clinical Co-pilot (Feature #78)
-- test_literacy.py - Health literacy (Feature #85)
-- test_interpreter.py - Interpreter integration (Feature #86)
-- test_rag.py - RAG knowledge system (Features #88-90)
+**Started:** 2025-01-04
+**Focus:** C-suite hospital demo creation, EHR integration research, expanded TTS features
 
-**Web Dashboard (Vitest + React Testing Library)**
-- vitest.config.ts - Test configuration
-- setup.ts - Next.js/next-auth mocks
-- login.test.tsx - Authentication flow
-- dashboard.test.tsx - Main dashboard components
-- settings.test.tsx - Settings + Health Equity tab (Feature #83)
-- billing.test.tsx - Billing/coding (Feature #71)
-- devices.test.tsx - Device management (Feature #65)
+### Session Summary
+- **Server-side TTS expanded**: All 7 TTS speak functions now use server fallback for Vuzix
+- **C-Suite Demo Guide**: Created comprehensive DEMO_CSUITE.md (575 lines) for hospital presentations
+- **Competitor Research**: DAX ($600/mo), Augmedix ($2,000/mo), Suki ($299-399/mo) - no AR, no equity
+- **EHR Integration Research**: Researched access for 7 EHR platforms
+- **Cerner Registration**: Guided user through Oracle Health Code Console registration
+- **Feature Audit**: 8.5/10 demo-ready score with identified gaps
 
-**Android App (JUnit 4 + Mockito)**
-- MainActivityTest.kt - Voice commands, wake word, multi-language
-- AudioStreamingServiceTest.kt - Audio processing, Vuzix gain
-- BarcodeScannerActivityTest.kt - MRN extraction, barcode formats
+### Server-Side TTS Expansion
+Updated 7 speak* functions to use server TTS fallback (Vuzix has no local TTS engines):
+1. `speakFeedback()` - General action confirmations
+2. `speakAllergyWarnings()` - Critical allergy alerts
+3. `speakCriticalLabAlerts()` - Dangerous lab values
+4. `speakLabTrends()` - Lab trend changes
+5. `speakVitalTrends()` - Vital sign trends
+6. `speakCriticalVitalAlerts()` - Dangerous vital values
+7. `speakMedicationInteractions()` - Drug-drug interactions
 
-**AI Service (pytest)**
-- conftest.py - Shared fixtures
-- test_transcription_service.py - Real-time transcription, AssemblyAI
-- test_notes_service.py - SOAP note generation, ICD-10/CPT
-- test_drug_interaction.py - Drug interaction checking
+### C-Suite Demo Guide Created
+`DEMO_CSUITE.md` includes:
+- Executive summary with competitor pricing comparison
+- Feature readiness audit (8.5/10 score)
+- 3 demo scripts: 5-minute, 15-minute, 30-minute deep dive
+- Competitor analysis (DAX, Augmedix, Suki)
+- Objection handling responses
+- Technical setup checklist
+- Fallback plans for demo failures
 
-### Documentation Updates
-- Updated CLAUDE.md with comprehensive Testing section
-- Added test running commands for all components
-- Documented test patterns for each framework
+### EHR Integration Research Summary
+| Platform | Access | Cost | Notes |
+|----------|--------|------|-------|
+| **Cerner/Oracle** | READY | $0 | Client ID: `0fab9b20-adc8-4940-bbf6-82034d1d39ab` |
+| **Epic** | Pending | TBD | User has credentials |
+| **Veradigm** | Pending | $99/mo | User has credentials |
+| **athenahealth** | FREE | $0 | Self-service sandbox |
+| **eClinicalWorks** | FREE | $0 | FHIR APIs available |
+| **NextGen** | FREE | $0 | Developer program |
+| **MEDITECH** | FREE | $0 | Greenfield Workspace |
+
+**Total platforms researched:** 29 (see EHR_ACCESS_GUIDE.md)
+
+### Cerner Registration Guidance
+Provided recommendations for Oracle Health Code Console form:
+- Application Type: Provider
+- Type of Access: Offline
+- Application Privacy: Confidential
+- SMART Version: v2
+- Intended Users: Clinical Team, Healthcare Administrator
+- Intended Purposes: Clinical Tools, Administrative Tasks, Patient-Provider Communication
+- Recommended APIs: Oracle Health EHR APIs + FHIR R4 APIs
+
+### Commits This Session
+| Commit | Description |
+|--------|-------------|
+| TBD | Extended server TTS to all voice features |
+| TBD | Create C-suite demo guide |
 
 ---
 
 ## Previous Session: Vuzix Microphone & Ambient Mode Fix (Jan 4, 2025)
 
-**Started:** 2025-01-04
 **Focus:** Fixing Vuzix Blade 2 microphone sensitivity, ambient mode, UI visibility, and crash fixes
 
 ### Session Summary
@@ -279,10 +307,11 @@ Vuzix Blade 2 has no working TTS engines despite PicoTTS being installed. Soluti
 ### Current State (January 2025)
 | Metric | Value |
 |--------|-------|
-| **Features Implemented** | 91 |
+| **Features Implemented** | 98 |
 | **Tests Passing** | 194 |
 | **Test Coverage** | 100% |
 | **Git Status** | Up to date with origin/main |
+| **Current Focus** | Minerva Phase 3 (Proactive Intelligence) |
 
 ### Technology Stack
 | Component | Technology | Port |
@@ -364,11 +393,19 @@ Vuzix Blade 2 has no working TTS engines despite PicoTTS being installed. Soluti
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | Development context for Claude Code |
-| `FEATURES.md` | Complete 91-feature checklist |
+| `FEATURES.md` | Complete 98-feature checklist |
 | `CONVERSATIONS.md` | This file - session history |
+| `MINERVA.md` | Minerva AI Assistant implementation plan |
 | `STRATEGIC_ROADMAP.md` | Product and business roadmap |
 | `VOICE_COMMANDS.md` | All 100+ voice commands |
 | `SALES_MATERIALS.md` | Index of investor/hospital decks |
+
+### Planning Files (Manus-Style)
+| File | Purpose |
+|------|---------|
+| `task_plan.md` | Current feature phase tracking |
+| `findings.md` | Research notes for current feature |
+| `progress.md` | Session logs for current feature |
 
 ### Research Documents
 | File | Purpose |
@@ -379,7 +416,8 @@ Vuzix Blade 2 has no working TTS engines despite PicoTTS being installed. Soluti
 ### Key Code Files
 | File | Purpose |
 |------|---------|
-| `ehr-proxy/main.py` | Core API (434KB) - SOAP notes, ICD-10/CPT, transcription |
+| `ehr-proxy/main.py` | Core API - SOAP notes, ICD-10/CPT, transcription, Minerva |
+| `ehr-proxy/noise_reduction.py` | RNNoise noise cancellation (Feature #98) |
 | `ehr-proxy/rag.py` | RAG clinical knowledge system |
 | `ehr-proxy/auth.py` | Multi-EHR auth + voiceprint verification |
 | `mobile/android/app/src/main/java/com/mdxvision/MainActivity.kt` | Android main activity |
@@ -405,9 +443,10 @@ POST /api/v1/notes/save
 
 ### Transcription
 ```
-WS   /ws/transcribe                # Real-time streaming
-WS   /ws/transcribe/{provider}     # Specific provider
+WS   /ws/transcribe                      # Real-time streaming (noise reduction default on)
+WS   /ws/transcribe?noise_reduction=false # Disable noise reduction
 GET  /api/v1/transcription/status
+GET  /api/v1/noise-reduction/status      # RNNoise status
 ```
 
 ### Health Equity
@@ -426,6 +465,14 @@ POST /api/v1/rag/initialize
 POST /api/v1/rag/query
 GET  /api/v1/updates/dashboard
 GET  /api/v1/updates/pending
+```
+
+### Minerva AI Assistant
+```
+POST /api/v1/minerva/chat                 # Conversational chat with RAG
+GET  /api/v1/minerva/context/{patient_id} # Patient context for Minerva
+POST /api/v1/minerva/proactive/{patient_id} # Proactive alerts (Phase 3)
+POST /api/v1/minerva/reason               # Clinical reasoning modes
 ```
 
 ---
@@ -482,14 +529,23 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 ## Next Steps (Backlog)
 
+### EHR Integration (Active - Jan 4, 2025)
+- [x] Cerner/Oracle - Code Console registration COMPLETE
+- [ ] Cerner - Receive Client ID and configure integration
+- [ ] Epic - Receive credentials from user and configure
+- [ ] Veradigm - Configure Silver plan credentials
+
+### Free EHR Sandboxes Available
+See `EHR_ACCESS_GUIDE.md` for complete details:
+- athenahealth - FREE self-service
+- eClinicalWorks - FREE FHIR APIs
+- NextGen - FREE developer program
+- MEDITECH - FREE Greenfield Workspace
+
 ### Production Readiness
 - [ ] HIPAA compliance documentation
 - [ ] SOC 2 Type II audit
 - [ ] Cloud deployment (AWS/GCP/Azure with HIPAA BAA)
-
-### EHR Integration
-- [ ] Epic live integration (needs OAuth credentials)
-- [ ] Veradigm live integration (needs credentials)
 
 ### Hardware
 - [x] Vuzix Blade 2 physical device testing (completed Jan 4, 2025 - mic sensitivity fix)
@@ -517,4 +573,4 @@ adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
 
 ---
 
-*Last updated: 2025-01-04*
+*Last updated: 2025-01-09*

@@ -42,6 +42,20 @@ from medical_vocabulary import (
 # Import HIPAA audit logging
 from audit import audit_logger, AuditAction, log_audit_event, log_phi_access
 
+# Import noise reduction (RNNoise - Krisp AI alternative)
+try:
+    from noise_reduction import (
+        create_noise_reduction_session, is_noise_reduction_available,
+        NoiseReductionSession, NOISE_REDUCTION_ENABLED
+    )
+    NOISE_REDUCTION_AVAILABLE = is_noise_reduction_available()
+    if NOISE_REDUCTION_AVAILABLE:
+        print("✅ RNNoise noise reduction available")
+except ImportError as e:
+    print(f"⚠️ Noise reduction not available: {e}")
+    NOISE_REDUCTION_AVAILABLE = False
+    NOISE_REDUCTION_ENABLED = False
+
 # Import RAG system (Feature #88)
 try:
     from rag import (
@@ -299,14 +313,987 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cerner Open Sandbox (no auth required)
-CERNER_BASE_URL = "https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d"
+# EHR Configuration (from environment)
+CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "")
+CERNER_APPLICATION_ID = os.getenv("CERNER_APPLICATION_ID", "")
+CERNER_BASE_URL = os.getenv("CERNER_BASE_URL", "https://fhir-open.cerner.com/r4/ec2458f2-1e24-41c8-b71b-0e701af7583d")
+
+# Epic Configuration (MdxClinicalStaff App - Registered Jan 2026)
+EPIC_CLIENT_ID = os.getenv("EPIC_CLIENT_ID", "97fe3459-e967-4283-aa94-47ab0a85e93b")  # Non-Production/Sandbox
+EPIC_PROD_CLIENT_ID = os.getenv("EPIC_PROD_CLIENT_ID", "2ade3e6f-a7da-4c72-8548-9c0441072aa2")  # Production
+EPIC_BASE_URL = os.getenv("EPIC_BASE_URL", "https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4")
+EPIC_AUTH_URL = os.getenv("EPIC_AUTH_URL", "https://fhir.epic.com/interconnect-fhir-oauth/oauth2/authorize")
+EPIC_TOKEN_URL = os.getenv("EPIC_TOKEN_URL", "https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token")
+EPIC_REDIRECT_URI = os.getenv("EPIC_REDIRECT_URI", "http://localhost:8002/auth/epic/callback")
+
+# Veradigm Configuration
+VERADIGM_CLIENT_ID = os.getenv("VERADIGM_CLIENT_ID", "11A47952-0F52-4936-A6A3-CF91FDFDDF14")
+VERADIGM_CLIENT_SECRET = os.getenv("VERADIGM_CLIENT_SECRET", "E32B4F39BA2F")
+VERADIGM_BASE_URL = os.getenv("VERADIGM_BASE_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/fhir/CP00101")
+VERADIGM_AUTH_URL = os.getenv("VERADIGM_AUTH_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/authorizationV2/CP00101/connect/authorize")
+VERADIGM_TOKEN_URL = os.getenv("VERADIGM_TOKEN_URL", "https://fhir.fhirpoint.open.allscripts.com/fhirroute/authorizationV2/CP00101/connect/token")
+VERADIGM_REDIRECT_URI = os.getenv("VERADIGM_REDIRECT_URI", "http://localhost:8002/auth/veradigm/callback")
+
+# athenahealth Configuration
+ATHENA_CLIENT_ID = os.getenv("ATHENA_CLIENT_ID", "")
+ATHENA_CLIENT_SECRET = os.getenv("ATHENA_CLIENT_SECRET", "")
+ATHENA_BASE_URL = os.getenv("ATHENA_BASE_URL", "https://api.platform.athenahealth.com/fhir/r4")
+ATHENA_AUTH_URL = os.getenv("ATHENA_AUTH_URL", "https://api.platform.athenahealth.com/oauth2/v1/authorize")
+ATHENA_TOKEN_URL = os.getenv("ATHENA_TOKEN_URL", "https://api.platform.athenahealth.com/oauth2/v1/token")
+ATHENA_REDIRECT_URI = os.getenv("ATHENA_REDIRECT_URI", "http://localhost:8002/auth/athena/callback")
+
+# NextGen Configuration
+NEXTGEN_CLIENT_ID = os.getenv("NEXTGEN_CLIENT_ID", "")
+NEXTGEN_CLIENT_SECRET = os.getenv("NEXTGEN_CLIENT_SECRET", "")
+NEXTGEN_BASE_URL = os.getenv("NEXTGEN_BASE_URL", "https://fhir.nextgen.com/nge/prod/fhir-api-r4/fhir/r4")
+NEXTGEN_AUTH_URL = os.getenv("NEXTGEN_AUTH_URL", "https://fhir.nextgen.com/nge/prod/patient-oauth/authorize")
+NEXTGEN_TOKEN_URL = os.getenv("NEXTGEN_TOKEN_URL", "https://fhir.nextgen.com/nge/prod/patient-oauth/token")
+NEXTGEN_REDIRECT_URI = os.getenv("NEXTGEN_REDIRECT_URI", "http://localhost:8002/auth/nextgen/callback")
+
+# MEDITECH Configuration (Greenfield US Core STU6 v2.0)
+MEDITECH_CLIENT_ID = os.getenv("MEDITECH_CLIENT_ID", "MDxVision@269e2312bf404c8293bcfffca232b729")
+MEDITECH_CLIENT_SECRET = os.getenv("MEDITECH_CLIENT_SECRET", "ZCQi_K0MQqqSIGS35j5DNw==")
+MEDITECH_BASE_URL = os.getenv("MEDITECH_BASE_URL", "https://greenfield-prod-apis.meditech.com/v2/uscore/STU6")
+MEDITECH_AUTH_URL = os.getenv("MEDITECH_AUTH_URL", "https://greenfield-prod-apis.meditech.com/oauth/authorize")
+MEDITECH_TOKEN_URL = os.getenv("MEDITECH_TOKEN_URL", "https://greenfield-prod-apis.meditech.com/oauth/token")
+MEDITECH_REDIRECT_URI = os.getenv("MEDITECH_REDIRECT_URI", "http://localhost:8002/auth/meditech/callback")
+
+# eClinicalWorks Configuration
+ECLINICALWORKS_CLIENT_ID = os.getenv("ECLINICALWORKS_CLIENT_ID", "576VCnKhhT1JSru1lkHheokd-iCJjRUkIIc3RmrRf1Y")
+ECLINICALWORKS_CLIENT_SECRET = os.getenv("ECLINICALWORKS_CLIENT_SECRET", "tpxvpRqcgj8Fwa0O16Wf_dOMfQK1vtqew6Dv6-9cv3XI4JCmKy1AXMz5Xrt8mdtz")
+ECLINICALWORKS_BASE_URL = os.getenv("ECLINICALWORKS_BASE_URL", "https://fhir.eclinicalworks.com/fhir/r4")
+ECLINICALWORKS_AUTH_URL = os.getenv("ECLINICALWORKS_AUTH_URL", "https://oauthserver.eclinicalworks.com/oauth/oauth2/authorize")
+ECLINICALWORKS_TOKEN_URL = os.getenv("ECLINICALWORKS_TOKEN_URL", "https://oauthserver.eclinicalworks.com/oauth/oauth2/token")
+ECLINICALWORKS_REDIRECT_URI = os.getenv("ECLINICALWORKS_REDIRECT_URI", "http://localhost:8002/auth/ecw/callback")
+
+# HAPI FHIR Configuration (Full CRUD Demo Server)
+HAPI_FHIR_BASE_URL = os.getenv("HAPI_FHIR_BASE_URL", "http://hapi.fhir.org/baseR4")
+HAPI_FHIR_ENABLED = os.getenv("HAPI_FHIR_ENABLED", "true").lower() == "true"
+
 FHIR_HEADERS = {"Accept": "application/fhir+json"}
 
 # Simple ping endpoint for Samsung network testing
 @app.get("/ping")
 async def ping():
     return {"status": "ok", "time": datetime.now().isoformat()}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EHR OAUTH2 AUTHENTICATION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Epic test patients (from Epic sandbox)
+EPIC_TEST_PATIENTS = {
+    "Tbt3KuCY0B5PSrJvCu2j-PlK.aiทRwdgmSAmH1U2D5rZ4": {"name": "Jason Argonaut", "dob": "1978-01-25"},
+    "erXuFYUfucBZaryVksYEcMg3": {"name": "Camila Lopez", "dob": "1987-09-12"},
+    "eq081-VQEgP8drUUqCWzHfw3": {"name": "Derrick Lin", "dob": "1973-06-03"},
+    "eAB3mDIBBcyUKviyzrxsnOQ3": {"name": "Amy Shaw", "dob": "1985-11-22"},
+    "egqBHVfQlt4Bw3XGXoxVxHg3": {"name": "John Smith", "dob": "1965-02-14"},
+}
+
+@app.get("/auth/epic/authorize")
+async def epic_authorize():
+    """
+    Initiate Epic OAuth2 authorization flow.
+    Redirects user to Epic login page.
+    """
+    import urllib.parse
+
+    # Build authorization URL
+    # Using scopes from old working smartConfig.js
+    params = {
+        "response_type": "code",
+        "client_id": EPIC_CLIENT_ID,
+        "redirect_uri": EPIC_REDIRECT_URI,
+        "scope": "launch openid fhirUser",
+        "state": uuid.uuid4().hex,
+        "aud": EPIC_BASE_URL,
+    }
+
+    auth_url = f"{EPIC_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with Epic",
+        "redirect_uri": EPIC_REDIRECT_URI,
+        "client_id": EPIC_CLIENT_ID
+    }
+
+
+@app.get("/auth/epic/callback")
+async def epic_callback(
+    code: str = None,
+    state: str = None,
+    error: str = None,
+    error_description: str = None,
+    error_uri: str = None
+):
+    """
+    Epic OAuth2 callback - exchanges authorization code for access token.
+    """
+    # Log callback parameters for debugging
+    print(f"🔐 Epic callback received:")
+    print(f"   code: {code[:20] if code else 'None'}...")
+    print(f"   error: {error}")
+    print(f"   error_description: {error_description}")
+
+    if error:
+        return {
+            "success": False,
+            "error": error,
+            "error_description": error_description,
+            "error_uri": error_uri,
+            "hint": "Check Epic app configuration: OAuth 2.0 must be ON, app must be in Ready state"
+        }
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    try:
+        print(f"🔄 Exchanging code for token...")
+        print(f"   Token URL: {EPIC_TOKEN_URL}")
+        print(f"   Client ID: {EPIC_CLIENT_ID[:20]}...")
+        print(f"   Redirect URI: {EPIC_REDIRECT_URI}")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            token_response = await client.post(
+                EPIC_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": EPIC_REDIRECT_URI,
+                    "client_id": EPIC_CLIENT_ID,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+
+            print(f"   Response status: {token_response.status_code}")
+
+            if token_response.status_code == 200:
+                token_data = token_response.json()
+
+                # Store token
+                ehr_tokens["epic"] = {
+                    "access_token": token_data.get("access_token"),
+                    "token_type": token_data.get("token_type", "Bearer"),
+                    "expires_in": token_data.get("expires_in", 3600),
+                    "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                    "patient": token_data.get("patient"),  # Patient ID if launch context
+                    "scope": token_data.get("scope"),
+                }
+
+                # Persist token to file for demo simplicity
+                save_tokens()
+
+                print(f"✅ Epic authentication successful!")
+                print(f"   Patient ID: {token_data.get('patient')}")
+
+                return {
+                    "success": True,
+                    "message": "Epic authentication successful",
+                    "patient_id": token_data.get("patient"),
+                    "expires_in": token_data.get("expires_in"),
+                    "scope": token_data.get("scope")
+                }
+            else:
+                error_text = token_response.text
+                print(f"❌ Token exchange failed: {token_response.status_code}")
+                print(f"   Response: {error_text[:500]}")
+                return {
+                    "success": False,
+                    "error": f"Token exchange failed: {token_response.status_code}",
+                    "details": error_text
+                }
+    except Exception as e:
+        print(f"❌ Epic callback exception: {str(e)}")
+        return {
+            "success": False,
+            "error": "Exception during token exchange",
+            "details": str(e)
+        }
+
+
+@app.get("/auth/epic/status")
+async def epic_auth_status():
+    """Check Epic authentication status"""
+    token_data = ehr_tokens.get("epic")
+
+    if not token_data:
+        return {
+            "authenticated": False,
+            "message": "Not authenticated with Epic. Use /auth/epic/authorize to start.",
+            "test_patients": EPIC_TEST_PATIENTS
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope"),
+        "test_patients": EPIC_TEST_PATIENTS if not is_valid else None
+    }
+
+
+@app.get("/api/v1/epic/test-patients")
+async def get_epic_test_patients():
+    """Get list of Epic sandbox test patients"""
+    return {
+        "ehr": "epic",
+        "sandbox_url": EPIC_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in EPIC_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=epic parameter"
+    }
+
+
+# Veradigm Test Patients (CP00101 sandbox)
+VERADIGM_TEST_PATIENTS = {
+    "R2785": {"name": "Test Patient", "dob": "1980-01-15"},
+    "R2786": {"name": "Demo Patient", "dob": "1975-03-22"},
+    "R2787": {"name": "Sample Patient", "dob": "1990-07-08"},
+}
+
+
+@app.get("/auth/veradigm/authorize")
+async def veradigm_authorize():
+    """
+    Initiate Veradigm OAuth2 authorization flow.
+    Redirects user to Veradigm login page.
+    """
+    import urllib.parse
+
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": VERADIGM_CLIENT_ID,
+        "redirect_uri": VERADIGM_REDIRECT_URI,
+        "scope": "launch/patient patient/*.read openid fhirUser",
+        "state": uuid.uuid4().hex,
+        "aud": VERADIGM_BASE_URL,
+    }
+
+    auth_url = f"{VERADIGM_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with Veradigm",
+        "redirect_uri": VERADIGM_REDIRECT_URI,
+        "client_id": VERADIGM_CLIENT_ID
+    }
+
+
+@app.get("/auth/veradigm/callback")
+async def veradigm_callback(code: str = None, state: str = None, error: str = None):
+    """
+    Veradigm OAuth2 callback - exchanges authorization code for access token.
+    """
+    if error:
+        return {"success": False, "error": error}
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            VERADIGM_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": VERADIGM_REDIRECT_URI,
+                "client_id": VERADIGM_CLIENT_ID,
+                "client_secret": VERADIGM_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["veradigm"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),
+                "scope": token_data.get("scope"),
+            }
+
+            # Persist token to file
+            save_tokens()
+
+            return {
+                "success": True,
+                "message": "Veradigm authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/veradigm/status")
+async def veradigm_auth_status():
+    """Check Veradigm authentication status"""
+    token_data = ehr_tokens.get("veradigm")
+
+    if not token_data:
+        return {
+            "authenticated": False,
+            "message": "Not authenticated with Veradigm. Use /auth/veradigm/authorize to start.",
+            "client_id": VERADIGM_CLIENT_ID,
+            "base_url": VERADIGM_BASE_URL
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope")
+    }
+
+
+@app.get("/api/v1/veradigm/test-patients")
+async def get_veradigm_test_patients():
+    """Get list of Veradigm sandbox test patients"""
+    return {
+        "ehr": "veradigm",
+        "sandbox_url": VERADIGM_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in VERADIGM_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=veradigm parameter after OAuth authentication"
+    }
+
+
+# athenahealth Test Patients (sandbox)
+ATHENA_TEST_PATIENTS = {
+    "a1.E-1": {"name": "Test Patient One", "dob": "1985-03-15"},
+    "a1.E-2": {"name": "Test Patient Two", "dob": "1972-07-22"},
+    "a1.E-3": {"name": "Test Patient Three", "dob": "1990-11-08"},
+}
+
+
+@app.get("/auth/athena/authorize")
+async def athena_authorize():
+    """
+    Initiate athenahealth OAuth2 authorization flow.
+    Redirects user to athenahealth login page.
+    """
+    import urllib.parse
+
+    if not ATHENA_CLIENT_ID:
+        return {
+            "error": "athenahealth not configured",
+            "message": "Set ATHENA_CLIENT_ID and ATHENA_CLIENT_SECRET in environment"
+        }
+
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": ATHENA_CLIENT_ID,
+        "redirect_uri": ATHENA_REDIRECT_URI,
+        "scope": "openid fhirUser launch/patient patient/*.read",
+        "state": uuid.uuid4().hex,
+    }
+
+    auth_url = f"{ATHENA_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with athenahealth",
+        "redirect_uri": ATHENA_REDIRECT_URI,
+        "client_id": ATHENA_CLIENT_ID
+    }
+
+
+@app.get("/auth/athena/callback")
+async def athena_callback(code: str = None, state: str = None, error: str = None):
+    """
+    athenahealth OAuth2 callback - exchanges authorization code for access token.
+    """
+    if error:
+        return {"success": False, "error": error}
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            ATHENA_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": ATHENA_REDIRECT_URI,
+                "client_id": ATHENA_CLIENT_ID,
+                "client_secret": ATHENA_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["athena"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),
+                "scope": token_data.get("scope"),
+            }
+
+            # Persist token to file
+            save_tokens()
+
+            return {
+                "success": True,
+                "message": "athenahealth authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/athena/status")
+async def athena_auth_status():
+    """Check athenahealth authentication status"""
+    if not ATHENA_CLIENT_ID:
+        return {
+            "configured": False,
+            "message": "athenahealth not configured. Set ATHENA_CLIENT_ID in environment."
+        }
+
+    token_data = ehr_tokens.get("athena")
+
+    if not token_data:
+        return {
+            "configured": True,
+            "authenticated": False,
+            "message": "Not authenticated with athenahealth. Use /auth/athena/authorize to start.",
+            "client_id": ATHENA_CLIENT_ID[:8] + "...",
+            "base_url": ATHENA_BASE_URL
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "configured": True,
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope")
+    }
+
+
+@app.get("/api/v1/athena/test-patients")
+async def get_athena_test_patients():
+    """Get list of athenahealth sandbox test patients"""
+    return {
+        "ehr": "athena",
+        "sandbox_url": ATHENA_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in ATHENA_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=athena parameter after OAuth authentication"
+    }
+
+
+# NextGen Test Patients (sandbox)
+NEXTGEN_TEST_PATIENTS = {
+    "patient-1": {"name": "Demo Patient One", "dob": "1982-05-20"},
+    "patient-2": {"name": "Demo Patient Two", "dob": "1975-09-14"},
+    "patient-3": {"name": "Demo Patient Three", "dob": "1993-02-28"},
+}
+
+
+@app.get("/auth/nextgen/authorize")
+async def nextgen_authorize():
+    """
+    Initiate NextGen OAuth2 authorization flow.
+    Redirects user to NextGen login page.
+    """
+    import urllib.parse
+
+    if not NEXTGEN_CLIENT_ID:
+        return {
+            "error": "NextGen not configured",
+            "message": "Set NEXTGEN_CLIENT_ID and NEXTGEN_CLIENT_SECRET in environment"
+        }
+
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": NEXTGEN_CLIENT_ID,
+        "redirect_uri": NEXTGEN_REDIRECT_URI,
+        "scope": "openid fhirUser launch/patient patient/*.read",
+        "state": uuid.uuid4().hex,
+    }
+
+    auth_url = f"{NEXTGEN_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with NextGen",
+        "redirect_uri": NEXTGEN_REDIRECT_URI,
+        "client_id": NEXTGEN_CLIENT_ID
+    }
+
+
+@app.get("/auth/nextgen/callback")
+async def nextgen_callback(code: str = None, state: str = None, error: str = None):
+    """
+    NextGen OAuth2 callback - exchanges authorization code for access token.
+    """
+    if error:
+        return {"success": False, "error": error}
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            NEXTGEN_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": NEXTGEN_REDIRECT_URI,
+                "client_id": NEXTGEN_CLIENT_ID,
+                "client_secret": NEXTGEN_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["nextgen"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),
+                "scope": token_data.get("scope"),
+            }
+
+            # Persist token to file
+            save_tokens()
+
+            return {
+                "success": True,
+                "message": "NextGen authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/nextgen/status")
+async def nextgen_auth_status():
+    """Check NextGen authentication status"""
+    if not NEXTGEN_CLIENT_ID:
+        return {
+            "configured": False,
+            "message": "NextGen not configured. Set NEXTGEN_CLIENT_ID in environment."
+        }
+
+    token_data = ehr_tokens.get("nextgen")
+
+    if not token_data:
+        return {
+            "configured": True,
+            "authenticated": False,
+            "message": "Not authenticated with NextGen. Use /auth/nextgen/authorize to start.",
+            "client_id": NEXTGEN_CLIENT_ID[:8] + "...",
+            "base_url": NEXTGEN_BASE_URL
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "configured": True,
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope")
+    }
+
+
+@app.get("/api/v1/nextgen/test-patients")
+async def get_nextgen_test_patients():
+    """Get list of NextGen sandbox test patients"""
+    return {
+        "ehr": "nextgen",
+        "sandbox_url": NEXTGEN_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in NEXTGEN_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=nextgen parameter after OAuth authentication"
+    }
+
+
+# eClinicalWorks Test Patients (sandbox)
+ECW_TEST_PATIENTS = {
+    "ecw-patient-1": {"name": "Test Patient One", "dob": "1980-04-12"},
+    "ecw-patient-2": {"name": "Test Patient Two", "dob": "1972-08-25"},
+    "ecw-patient-3": {"name": "Test Patient Three", "dob": "1995-01-30"},
+}
+
+
+@app.get("/auth/ecw/authorize")
+async def ecw_authorize():
+    """
+    Initiate eClinicalWorks OAuth2 authorization flow.
+    Redirects user to eClinicalWorks login page.
+    """
+    import urllib.parse
+
+    if not ECLINICALWORKS_CLIENT_ID:
+        return {
+            "error": "eClinicalWorks not configured",
+            "message": "Set ECLINICALWORKS_CLIENT_ID and ECLINICALWORKS_CLIENT_SECRET in environment"
+        }
+
+    # Build authorization URL
+    params = {
+        "response_type": "code",
+        "client_id": ECLINICALWORKS_CLIENT_ID,
+        "redirect_uri": ECLINICALWORKS_REDIRECT_URI,
+        "scope": "openid fhirUser launch/patient patient/*.read",
+        "state": uuid.uuid4().hex,
+        "aud": ECLINICALWORKS_BASE_URL,
+    }
+
+    auth_url = f"{ECLINICALWORKS_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with eClinicalWorks",
+        "redirect_uri": ECLINICALWORKS_REDIRECT_URI,
+        "client_id": ECLINICALWORKS_CLIENT_ID
+    }
+
+
+@app.get("/auth/ecw/callback")
+async def ecw_callback(code: str = None, state: str = None, error: str = None):
+    """
+    eClinicalWorks OAuth2 callback - exchanges authorization code for access token.
+    """
+    if error:
+        return {"success": False, "error": error}
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_response = await client.post(
+            ECLINICALWORKS_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": ECLINICALWORKS_REDIRECT_URI,
+                "client_id": ECLINICALWORKS_CLIENT_ID,
+                "client_secret": ECLINICALWORKS_CLIENT_SECRET,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["eclinicalworks"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),
+                "scope": token_data.get("scope"),
+            }
+
+            # Persist token to file
+            save_tokens()
+
+            return {
+                "success": True,
+                "message": "eClinicalWorks authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/ecw/status")
+async def ecw_auth_status():
+    """Check eClinicalWorks authentication status"""
+    if not ECLINICALWORKS_CLIENT_ID:
+        return {
+            "configured": False,
+            "message": "eClinicalWorks not configured. Set ECLINICALWORKS_CLIENT_ID in environment."
+        }
+
+    token_data = ehr_tokens.get("eclinicalworks")
+
+    if not token_data:
+        return {
+            "configured": True,
+            "authenticated": False,
+            "message": "Not authenticated with eClinicalWorks. Use /auth/ecw/authorize to start.",
+            "client_id": ECLINICALWORKS_CLIENT_ID[:12] + "...",
+            "base_url": ECLINICALWORKS_BASE_URL
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "configured": True,
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope")
+    }
+
+
+@app.get("/api/v1/ecw/test-patients")
+async def get_ecw_test_patients():
+    """Get list of eClinicalWorks sandbox test patients"""
+    return {
+        "ehr": "eclinicalworks",
+        "sandbox_url": ECLINICALWORKS_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in ECW_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=eclinicalworks parameter after OAuth authentication"
+    }
+
+
+# MEDITECH Test Patients (Greenfield US Core STU6 sandbox)
+# From Postman collection: Sarai Mccall
+MEDITECH_TEST_PATIENTS = {
+    "0218f2d0-968b-5888-976f-68a554670f6e": {"name": "Sarai Mccall", "dob": "1959-08-14"},
+}
+
+
+# Store PKCE code verifiers for MEDITECH OAuth
+meditech_pkce_store = {}
+
+@app.get("/auth/meditech/authorize")
+async def meditech_authorize():
+    """
+    Initiate MEDITECH OAuth2 authorization flow with PKCE.
+    Redirects user to MEDITECH Greenfield login page.
+    """
+    import urllib.parse
+    import hashlib
+    import secrets
+
+    if not MEDITECH_CLIENT_ID:
+        return {
+            "error": "MEDITECH not configured",
+            "message": "Set MEDITECH_CLIENT_ID and MEDITECH_CLIENT_SECRET in environment"
+        }
+
+    # Generate PKCE code verifier and challenge (S256)
+    code_verifier = secrets.token_urlsafe(64)[:128]  # 43-128 chars
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).decode().rstrip('=')
+
+    state = uuid.uuid4().hex
+
+    # Store code_verifier for later use in token exchange
+    meditech_pkce_store[state] = code_verifier
+
+    # Build authorization URL - Greenfield uses patient/*.read scope with PKCE
+    params = {
+        "response_type": "code",
+        "client_id": MEDITECH_CLIENT_ID,
+        "redirect_uri": MEDITECH_REDIRECT_URI,
+        "scope": "patient/*.read",
+        "state": state,
+        "aud": MEDITECH_BASE_URL,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+
+    auth_url = f"{MEDITECH_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    return {
+        "authorization_url": auth_url,
+        "instructions": "Open this URL in a browser to authenticate with MEDITECH",
+        "redirect_uri": MEDITECH_REDIRECT_URI,
+        "client_id": MEDITECH_CLIENT_ID,
+        "pkce_enabled": True
+    }
+
+
+@app.get("/auth/meditech/callback")
+async def meditech_callback(code: str = None, state: str = None, error: str = None, error_description: str = None):
+    """
+    MEDITECH OAuth2 callback - exchanges authorization code for access token with PKCE.
+    """
+    print(f"🔐 MEDITECH callback received:")
+    print(f"   code: {code[:20] if code else 'None'}...")
+    print(f"   state: {state}")
+    print(f"   error: {error}")
+    print(f"   error_description: {error_description}")
+
+    if error:
+        return {
+            "success": False,
+            "error": error,
+            "error_description": error_description,
+            "hint": "Check MEDITECH app configuration in Greenfield portal"
+        }
+
+    if not code:
+        return {"success": False, "error": "No authorization code received"}
+
+    # Get PKCE code_verifier from store
+    code_verifier = meditech_pkce_store.pop(state, None) if state else None
+    if not code_verifier:
+        print(f"   ⚠️ No code_verifier found for state: {state}")
+
+    # Exchange code for token with PKCE
+    token_data_payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": MEDITECH_REDIRECT_URI,
+        "client_id": MEDITECH_CLIENT_ID,
+        "client_secret": MEDITECH_CLIENT_SECRET,
+    }
+    if code_verifier:
+        token_data_payload["code_verifier"] = code_verifier
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        print(f"🔄 Exchanging code for token...")
+        print(f"   Token URL: {MEDITECH_TOKEN_URL}")
+        print(f"   PKCE: {'Yes' if code_verifier else 'No'}")
+
+        token_response = await client.post(
+            MEDITECH_TOKEN_URL,
+            data=token_data_payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
+        print(f"   Response status: {token_response.status_code}")
+
+        if token_response.status_code == 200:
+            token_data = token_response.json()
+
+            # Store token
+            ehr_tokens["meditech"] = {
+                "access_token": token_data.get("access_token"),
+                "token_type": token_data.get("token_type", "Bearer"),
+                "expires_in": token_data.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp() + token_data.get("expires_in", 3600),
+                "patient": token_data.get("patient"),
+                "scope": token_data.get("scope"),
+            }
+
+            # Persist token to file
+            save_tokens()
+
+            print(f"✅ MEDITECH authentication successful")
+            return {
+                "success": True,
+                "message": "MEDITECH authentication successful",
+                "patient_id": token_data.get("patient"),
+                "expires_in": token_data.get("expires_in"),
+                "scope": token_data.get("scope")
+            }
+        else:
+            print(f"❌ Token exchange failed: {token_response.text}")
+            return {
+                "success": False,
+                "error": f"Token exchange failed: {token_response.status_code}",
+                "details": token_response.text
+            }
+
+
+@app.get("/auth/meditech/status")
+async def meditech_auth_status():
+    """Check MEDITECH authentication status"""
+    if not MEDITECH_CLIENT_ID:
+        return {
+            "configured": False,
+            "message": "MEDITECH not configured. Set MEDITECH_CLIENT_ID in environment."
+        }
+
+    token_data = ehr_tokens.get("meditech")
+
+    if not token_data:
+        return {
+            "configured": True,
+            "authenticated": False,
+            "message": "Not authenticated with MEDITECH. Use /auth/meditech/authorize to start.",
+            "client_id": MEDITECH_CLIENT_ID[:12] + "...",
+            "base_url": MEDITECH_BASE_URL
+        }
+
+    expires_at = token_data.get("expires_at", 0)
+    is_valid = expires_at > datetime.now().timestamp()
+
+    return {
+        "configured": True,
+        "authenticated": is_valid,
+        "patient_id": token_data.get("patient"),
+        "expires_in": int(expires_at - datetime.now().timestamp()) if is_valid else 0,
+        "scope": token_data.get("scope")
+    }
+
+
+@app.get("/api/v1/meditech/test-patients")
+async def get_meditech_test_patients():
+    """Get list of MEDITECH Greenfield sandbox test patients"""
+    return {
+        "ehr": "meditech",
+        "sandbox_url": MEDITECH_BASE_URL,
+        "test_patients": [
+            {"id": pid, **info} for pid, info in MEDITECH_TEST_PATIENTS.items()
+        ],
+        "note": "Use these patient IDs with ?ehr=meditech parameter after OAuth authentication"
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -759,37 +1746,202 @@ async def get_device_status(device_id: str):
         "last_seen": device.last_seen.isoformat() if device.last_seen else None
     }
 
-# Minimal patient endpoint for Samsung (returns compact data, no slow FHIR calls)
+# Minimal patient endpoint for Samsung (returns compact data from actual EHR)
 @app.get("/api/v1/patient/{patient_id}/quick")
-async def get_patient_quick(patient_id: str):
-    """Quick patient lookup - compact data for Samsung network issues"""
-    return {
-        "patient_id": patient_id,
-        "name": "SMARTS SR., NANCYS II",
-        "date_of_birth": "1990-09-15",
-        "gender": "female",
-        "allergies": [
-            {"substance": "Penicillin", "severity": "high", "reaction": "Anaphylaxis"},
-            {"substance": "Sulfa drugs", "severity": "moderate", "reaction": "Rash"}
-        ],
-        "vitals": [
-            {"name": "Blood Pressure", "value": "142/88", "unit": "mmHg", "is_critical": True},
-            {"name": "Heart Rate", "value": "92", "unit": "bpm", "is_critical": False},
-            {"name": "Temperature", "value": "98.6", "unit": "°F", "is_critical": False},
-            {"name": "SpO2", "value": "97", "unit": "%", "is_critical": False}
-        ],
-        "conditions": [
-            "Type 2 Diabetes Mellitus",
-            "Essential Hypertension",
-            "Hyperlipidemia"
-        ],
-        "medications": [
-            "Metformin 500mg BID",
-            "Lisinopril 10mg daily",
-            "Atorvastatin 20mg daily"
-        ],
-        "display_text": "SMARTS SR., NANCYS II\\nDOB: 1990-09-15 | Female\\n\\n⚠️ ALLERGIES: Penicillin (Anaphylaxis), Sulfa drugs\\n\\n📊 VITALS:\\nBP: 142/88 mmHg (HIGH)\\nHR: 92 bpm\\nTemp: 98.6°F\\nSpO2: 97%\\n\\n🏥 CONDITIONS:\\n• Type 2 Diabetes\\n• Hypertension\\n• Hyperlipidemia\\n\\n💊 MEDICATIONS:\\n• Metformin 500mg BID\\n• Lisinopril 10mg daily\\n• Atorvastatin 20mg daily"
-    }
+async def get_patient_quick(patient_id: str, ehr: str = "cerner"):
+    """Quick patient lookup - compact data for AR glasses, routes to correct EHR"""
+    import asyncio
+
+    async def fetch_with_timeout(endpoint: str, timeout: float = 8.0):
+        """Fetch FHIR data with short timeout for quick endpoint"""
+        try:
+            base_url = get_ehr_base_url(ehr)
+            headers = get_ehr_headers(ehr)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(f"{base_url}/{endpoint}", headers=headers)
+                if response.status_code == 200:
+                    return response.json()
+        except Exception as e:
+            print(f"Quick fetch timeout/error for {endpoint}: {e}")
+        return {}
+
+    try:
+        # Fetch patient data with short timeout
+        patient_data = await fetch_with_timeout(f"Patient/{patient_id}", timeout=10.0)
+
+        # Extract basic info
+        name = "Unknown"
+        if "name" in patient_data and patient_data["name"]:
+            name_obj = patient_data["name"][0]
+            given = " ".join(name_obj.get("given", []))
+            family = name_obj.get("family", "")
+            name = f"{given} {family}".strip() or family or given or "Unknown"
+
+        dob = patient_data.get("birthDate", "Unknown")
+        gender = patient_data.get("gender", "unknown")
+
+        # Fetch allergies, vitals, conditions, meds concurrently with short timeouts
+        allergy_task = fetch_with_timeout(f"AllergyIntolerance?patient={patient_id}&_count=5", timeout=6.0)
+        vitals_task = fetch_with_timeout(f"Observation?patient={patient_id}&category=vital-signs&_count=10&_sort=-date", timeout=6.0)
+        cond_task = fetch_with_timeout(f"Condition?patient={patient_id}&_count=5", timeout=6.0)
+        med_task = fetch_with_timeout(f"MedicationRequest?patient={patient_id}&_count=5", timeout=6.0)
+
+        # Run all fetches concurrently
+        allergy_bundle, vitals_bundle, cond_bundle, med_bundle = await asyncio.gather(
+            allergy_task, vitals_task, cond_task, med_task,
+            return_exceptions=True
+        )
+
+        # Handle exceptions from gather
+        if isinstance(allergy_bundle, Exception):
+            allergy_bundle = {}
+        if isinstance(vitals_bundle, Exception):
+            vitals_bundle = {}
+        if isinstance(cond_bundle, Exception):
+            cond_bundle = {}
+        if isinstance(med_bundle, Exception):
+            med_bundle = {}
+
+        # Parse allergies
+        allergies = []
+        try:
+            for entry in allergy_bundle.get("entry", []):
+                allergy = entry.get("resource", {})
+                substance = "Unknown"
+                if "code" in allergy and "coding" in allergy["code"]:
+                    substance = allergy["code"]["coding"][0].get("display", "Unknown")
+                elif "code" in allergy and "text" in allergy["code"]:
+                    substance = allergy["code"]["text"]
+
+                criticality = allergy.get("criticality", "unknown")
+                severity = "high" if criticality == "high" else "moderate" if criticality == "low" else "unknown"
+
+                reaction_text = ""
+                if "reaction" in allergy and allergy["reaction"]:
+                    manifestations = allergy["reaction"][0].get("manifestation", [])
+                    if manifestations and "coding" in manifestations[0]:
+                        reaction_text = manifestations[0]["coding"][0].get("display", "")
+
+                allergies.append({"substance": substance, "severity": severity, "reaction": reaction_text})
+        except Exception as e:
+            print(f"Error parsing allergies: {e}")
+
+        # Parse vitals (already fetched concurrently)
+        vitals = []
+        try:
+            vital_map = {}  # Keep only latest of each type
+            for entry in vitals_bundle.get("entry", []):
+                obs = entry.get("resource", {})
+                code = obs.get("code", {}).get("coding", [{}])[0].get("display", "Unknown")
+
+                value = ""
+                unit = ""
+                if "valueQuantity" in obs:
+                    value = str(obs["valueQuantity"].get("value", ""))
+                    unit = obs["valueQuantity"].get("unit", "")
+                elif "component" in obs:  # Blood pressure
+                    systolic = diastolic = ""
+                    for comp in obs["component"]:
+                        comp_code = comp.get("code", {}).get("coding", [{}])[0].get("code", "")
+                        if comp_code == "8480-6":  # Systolic
+                            systolic = str(comp.get("valueQuantity", {}).get("value", ""))
+                        elif comp_code == "8462-4":  # Diastolic
+                            diastolic = str(comp.get("valueQuantity", {}).get("value", ""))
+                    if systolic and diastolic:
+                        value = f"{systolic}/{diastolic}"
+                        unit = "mmHg"
+                        code = "Blood Pressure"
+
+                if code not in vital_map and value:
+                    is_critical = False
+                    if "Blood Pressure" in code:
+                        try:
+                            sys_val = int(value.split("/")[0])
+                            if sys_val > 180 or sys_val < 90:
+                                is_critical = True
+                        except:
+                            pass
+                    vital_map[code] = {"name": code, "value": value, "unit": unit, "is_critical": is_critical}
+            vitals = list(vital_map.values())[:6]
+        except Exception as e:
+            print(f"Error parsing vitals: {e}")
+
+        # Parse conditions (already fetched concurrently)
+        conditions = []
+        try:
+            for entry in cond_bundle.get("entry", []):
+                cond = entry.get("resource", {})
+                cond_name = cond.get("code", {}).get("coding", [{}])[0].get("display", "")
+                if not cond_name:
+                    cond_name = cond.get("code", {}).get("text", "Unknown")
+                if cond_name:
+                    conditions.append(cond_name)
+        except Exception as e:
+            print(f"Error parsing conditions: {e}")
+
+        # Parse medications (already fetched concurrently)
+        medications = []
+        try:
+            for entry in med_bundle.get("entry", []):
+                med = entry.get("resource", {})
+                med_name = ""
+                if "medicationCodeableConcept" in med:
+                    med_name = med["medicationCodeableConcept"].get("text", "")
+                    if not med_name and "coding" in med["medicationCodeableConcept"]:
+                        med_name = med["medicationCodeableConcept"]["coding"][0].get("display", "")
+                if med_name:
+                    medications.append(med_name)
+        except Exception as e:
+            print(f"Error parsing medications: {e}")
+
+        # Build display text
+        display_lines = [f"{name}", f"DOB: {dob} | {gender.capitalize()}", ""]
+
+        if allergies:
+            allergy_str = ", ".join([f"{a['substance']}" + (f" ({a['reaction']})" if a['reaction'] else "") for a in allergies[:3]])
+            display_lines.append(f"⚠️ ALLERGIES: {allergy_str}")
+            display_lines.append("")
+
+        if vitals:
+            display_lines.append("📊 VITALS:")
+            for v in vitals[:4]:
+                critical_mark = " (HIGH)" if v["is_critical"] else ""
+                display_lines.append(f"{v['name']}: {v['value']} {v['unit']}{critical_mark}")
+            display_lines.append("")
+
+        if conditions:
+            display_lines.append("🏥 CONDITIONS:")
+            for c in conditions[:4]:
+                display_lines.append(f"• {c}")
+            display_lines.append("")
+
+        if medications:
+            display_lines.append("💊 MEDICATIONS:")
+            for m in medications[:4]:
+                display_lines.append(f"• {m}")
+
+        return {
+            "patient_id": patient_id,
+            "name": name,
+            "date_of_birth": dob,
+            "gender": gender,
+            "allergies": allergies,
+            "vitals": vitals,
+            "conditions": conditions,
+            "medications": medications,
+            "ehr": ehr,
+            "display_text": "\n".join(display_lines)
+        }
+    except Exception as e:
+        print(f"Error in quick patient fetch: {e}")
+        # Return error response
+        return {
+            "patient_id": patient_id,
+            "name": "Error loading patient",
+            "error": str(e),
+            "ehr": ehr,
+            "display_text": f"Error loading patient from {ehr.upper()}:\n{str(e)}"
+        }
 
 
 class VitalSign(BaseModel):
@@ -1803,16 +2955,80 @@ class ConsultNote(BaseModel):
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
 
-async def fetch_fhir(endpoint: str) -> dict:
-    """Fetch from Cerner FHIR API"""
+# Token storage for EHR OAuth sessions (persisted to file)
+TOKENS_FILE = os.path.join(os.path.dirname(__file__), ".ehr_tokens.json")
+ehr_tokens: Dict[str, Dict[str, Any]] = {}
+
+def save_tokens():
+    """Save EHR tokens to file for persistence across restarts"""
+    try:
+        with open(TOKENS_FILE, "w") as f:
+            json.dump(ehr_tokens, f, indent=2, default=str)
+        print(f"✅ Saved EHR tokens to {TOKENS_FILE}")
+    except Exception as e:
+        print(f"⚠️ Failed to save tokens: {e}")
+
+def load_tokens():
+    """Load EHR tokens from file on startup"""
+    global ehr_tokens
+    try:
+        if os.path.exists(TOKENS_FILE):
+            with open(TOKENS_FILE, "r") as f:
+                ehr_tokens = json.load(f)
+            # Check which tokens are still valid
+            valid = [k for k, v in ehr_tokens.items() if v.get("access_token")]
+            print(f"✅ Loaded EHR tokens: {', '.join(valid) if valid else 'none'}")
+    except Exception as e:
+        print(f"⚠️ Failed to load tokens: {e}")
+        ehr_tokens = {}
+
+# Load tokens on module import
+load_tokens()
+
+def get_ehr_base_url(ehr: str = "cerner") -> str:
+    """Get FHIR base URL for specified EHR"""
+    ehr_urls = {
+        "cerner": CERNER_BASE_URL,
+        "epic": EPIC_BASE_URL,
+        "veradigm": VERADIGM_BASE_URL,
+        "athena": ATHENA_BASE_URL,
+        "nextgen": NEXTGEN_BASE_URL,
+        "meditech": MEDITECH_BASE_URL,
+        "eclinicalworks": ECLINICALWORKS_BASE_URL,
+        "hapi": HAPI_FHIR_BASE_URL,
+    }
+    return ehr_urls.get(ehr.lower(), CERNER_BASE_URL)
+
+def get_ehr_headers(ehr: str = "cerner") -> dict:
+    """Get headers for specified EHR, including auth token if available"""
+    headers = {"Accept": "application/fhir+json"}
+
+    # Check for stored access token
+    token_data = ehr_tokens.get(ehr.lower())
+    if token_data and token_data.get("access_token"):
+        # Check if token is expired
+        expires_at = token_data.get("expires_at", 0)
+        if expires_at > datetime.now().timestamp():
+            headers["Authorization"] = f"Bearer {token_data['access_token']}"
+
+    return headers
+
+async def fetch_fhir(endpoint: str, ehr: str = "cerner") -> dict:
+    """Fetch from FHIR API - supports multiple EHRs"""
+    base_url = get_ehr_base_url(ehr)
+    headers = get_ehr_headers(ehr)
+
     async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.get(
-            f"{CERNER_BASE_URL}/{endpoint}",
-            headers=FHIR_HEADERS
+            f"{base_url}/{endpoint}",
+            headers=headers
         )
         if response.status_code == 200:
             return response.json()
-        print(f"⚠️ FHIR fetch failed for {endpoint}: status={response.status_code}")
+        elif response.status_code == 401:
+            print(f"⚠️ FHIR {ehr} auth required for {endpoint}: status=401")
+            return {"error": "auth_required", "ehr": ehr}
+        print(f"⚠️ FHIR {ehr} fetch failed for {endpoint}: status={response.status_code}")
         return {}
 
 
@@ -2459,9 +3675,137 @@ async def root():
     return {"service": "MDx Vision EHR Proxy", "status": "running", "ehr": "Cerner"}
 
 
+@app.get("/api/v1/ehr/status")
+async def get_ehr_status():
+    """Get status of all configured EHR integrations"""
+    ehrs = {
+        "cerner": {
+            "name": "Cerner/Oracle Health",
+            "configured": bool(CERNER_CLIENT_ID),
+            "client_id": CERNER_CLIENT_ID[:8] + "..." if CERNER_CLIENT_ID else None,
+            "base_url": CERNER_BASE_URL,
+            "market": "~25% hospitals",
+            "status": "ready" if CERNER_CLIENT_ID else "open_sandbox"
+        },
+        "epic": {
+            "name": "Epic",
+            "configured": bool(EPIC_CLIENT_ID),
+            "client_id": EPIC_CLIENT_ID[:8] + "..." if EPIC_CLIENT_ID else None,
+            "base_url": EPIC_BASE_URL,
+            "market": "~35% hospitals",
+            "status": "ready" if EPIC_CLIENT_ID else "pending_credentials",
+            "auth_url": "/auth/epic/authorize",
+            "test_patients": "/api/v1/epic/test-patients"
+        },
+        "veradigm": {
+            "name": "Veradigm/Allscripts",
+            "configured": bool(VERADIGM_CLIENT_ID),
+            "client_id": VERADIGM_CLIENT_ID[:8] + "..." if VERADIGM_CLIENT_ID else None,
+            "base_url": VERADIGM_BASE_URL if VERADIGM_CLIENT_ID else None,
+            "market": "~15% hospitals",
+            "status": "ready" if VERADIGM_CLIENT_ID else "pending_credentials"
+        },
+        "athenahealth": {
+            "name": "athenahealth",
+            "configured": bool(ATHENA_CLIENT_ID),
+            "client_id": ATHENA_CLIENT_ID[:8] + "..." if ATHENA_CLIENT_ID else None,
+            "base_url": ATHENA_BASE_URL if ATHENA_CLIENT_ID else None,
+            "market": "~15% ambulatory",
+            "status": "ready" if ATHENA_CLIENT_ID else "pending_credentials"
+        },
+        "nextgen": {
+            "name": "NextGen Healthcare",
+            "configured": bool(NEXTGEN_CLIENT_ID),
+            "client_id": NEXTGEN_CLIENT_ID[:8] + "..." if NEXTGEN_CLIENT_ID else None,
+            "base_url": NEXTGEN_BASE_URL if NEXTGEN_CLIENT_ID else None,
+            "market": "~10% ambulatory",
+            "status": "ready" if NEXTGEN_CLIENT_ID else "pending_credentials"
+        },
+        "meditech": {
+            "name": "MEDITECH Expanse",
+            "configured": bool(MEDITECH_CLIENT_ID),
+            "client_id": MEDITECH_CLIENT_ID[:12] + "..." if MEDITECH_CLIENT_ID else None,
+            "base_url": MEDITECH_BASE_URL if MEDITECH_CLIENT_ID else None,
+            "market": "~25% community hospitals",
+            "status": "ready" if MEDITECH_CLIENT_ID else "pending_credentials"
+        },
+        "eclinicalworks": {
+            "name": "eClinicalWorks",
+            "configured": bool(ECLINICALWORKS_CLIENT_ID),
+            "client_id": ECLINICALWORKS_CLIENT_ID[:12] + "..." if ECLINICALWORKS_CLIENT_ID else None,
+            "base_url": ECLINICALWORKS_BASE_URL if ECLINICALWORKS_CLIENT_ID else None,
+            "market": "~10% ambulatory, largest cloud EHR",
+            "status": "ready" if ECLINICALWORKS_CLIENT_ID else "pending_credentials"
+        },
+        "hapi_fhir": {
+            "name": "HAPI FHIR (Demo Server)",
+            "configured": HAPI_FHIR_ENABLED,
+            "base_url": HAPI_FHIR_BASE_URL,
+            "market": "Full CRUD demo",
+            "status": "ready" if HAPI_FHIR_ENABLED else "disabled",
+            "crud": "CREATE, READ, UPDATE, DELETE all supported"
+        }
+    }
+
+    configured_count = sum(1 for e in ehrs.values() if e["configured"] and e.get("market") != "Full CRUD demo")
+
+    ambulatory_pct = (15 if ATHENA_CLIENT_ID else 0) + (10 if NEXTGEN_CLIENT_ID else 0)
+    hospital_pct = (35 if CERNER_CLIENT_ID else 0) + (35 if EPIC_CLIENT_ID else 0) + (25 if MEDITECH_CLIENT_ID else 0)
+    return {
+        "total_configured": configured_count,
+        "total_available": 6,
+        "ehrs": ehrs,
+        "market_coverage": {
+            "hospitals": f"~{min(configured_count * 20, 90)}%",
+            "ambulatory": f"~{ambulatory_pct}%",
+            "note": "Epic + Cerner + Veradigm = ~75% hospital, athena + NextGen = ~25% ambulatory"
+        }
+    }
+
+
+@app.get("/api/v1/patient/search", response_model=List[SearchResult])
+async def search_patients(name: str, request: Request, ehr: str = "cerner"):
+    """Search patients by name - for voice command 'Find patient...'
+
+    Args:
+        name: Patient name to search for
+        ehr: EHR system to query (cerner, epic, veradigm, athena, nextgen, meditech, eclinicalworks, hapi)
+    """
+    bundle = await fetch_fhir(f"Patient?name={name}&_count=10", ehr=ehr)
+
+    results = []
+    for entry in bundle.get("entry", []):
+        patient = entry.get("resource", {})
+        results.append(SearchResult(
+            patient_id=patient.get("id", ""),
+            name=extract_patient_name(patient),
+            date_of_birth=patient.get("birthDate", "Unknown"),
+            gender=patient.get("gender", "unknown")
+        ))
+
+    # HIPAA Audit: Log patient search
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.SEARCH_PATIENT,
+        patient_id="search",
+        endpoint="/api/v1/patient/search",
+        status="success",
+        details=f"query={name}, ehr={ehr}, results={len(results)}",
+        ip_address=ip_address,
+        user_agent=request.headers.get("User-Agent", "")
+    )
+
+    return results
+
+
 @app.get("/api/v1/patient/{patient_id}", response_model=PatientSummary)
-async def get_patient(patient_id: str, request: Request):
-    """Get patient summary by ID - optimized for AR glasses"""
+async def get_patient(patient_id: str, request: Request, ehr: str = "cerner"):
+    """Get patient summary by ID - optimized for AR glasses
+
+    Args:
+        patient_id: FHIR Patient ID
+        ehr: EHR system to query (cerner, epic, veradigm, athena, nextgen, meditech, eclinicalworks, hapi)
+    """
 
     # Get request context for audit
     ip_address = request.client.host if request.client else None
@@ -2470,9 +3814,17 @@ async def get_patient(patient_id: str, request: Request):
     user_name = request.headers.get("X-Clinician-Name")
 
     # Fetch patient demographics
-    patient_data = await fetch_fhir(f"Patient/{patient_id}")
+    patient_data = await fetch_fhir(f"Patient/{patient_id}", ehr=ehr)
+
+    # Check for auth required
+    if patient_data.get("error") == "auth_required":
+        raise HTTPException(
+            status_code=401,
+            detail=f"Authentication required for {ehr}. Use /auth/{ehr}/authorize to authenticate."
+        )
+
     if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
-        raise HTTPException(status_code=404, detail="Patient not found")
+        raise HTTPException(status_code=404, detail=f"Patient not found in {ehr}")
 
     # Extract basic info
     name = extract_patient_name(patient_data)
@@ -2481,28 +3833,28 @@ async def get_patient(patient_id: str, request: Request):
     photo_url = extract_patient_photo(patient_data)
 
     # Fetch vitals (50 for trend analysis)
-    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=50&_sort=-date")
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=50&_sort=-date", ehr=ehr)
     vitals = extract_vitals(vitals_bundle)
 
     # Fetch allergies
-    allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}&_count=10")
+    allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}&_count=10", ehr=ehr)
     allergies = extract_allergies(allergy_bundle)
 
     # Fetch medications
-    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=10")
+    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=10", ehr=ehr)
     medications = extract_medications(med_bundle)
 
     # Fetch lab results (50 for trend analysis)
-    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date")
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date", ehr=ehr)
     labs = extract_labs(lab_bundle)
 
     # Fetch procedures
-    proc_bundle = await fetch_fhir(f"Procedure?patient={patient_id}&_count=10")
+    proc_bundle = await fetch_fhir(f"Procedure?patient={patient_id}&_count=10", ehr=ehr)
     procedures = extract_procedures(proc_bundle)
 
     # Fetch immunizations (may not be available in all sandboxes)
     try:
-        imm_bundle = await fetch_fhir(f"Immunization?patient={patient_id}&_count=10")
+        imm_bundle = await fetch_fhir(f"Immunization?patient={patient_id}&_count=10", ehr=ehr)
         immunizations = extract_immunizations(imm_bundle)
     except Exception as e:
         print(f"⚠️ Could not fetch immunizations: {e}")
@@ -2510,34 +3862,34 @@ async def get_patient(patient_id: str, request: Request):
 
     # Fetch conditions/problems
     try:
-        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10")
-        print(f"🔍 Condition bundle type: {cond_bundle.get('resourceType', 'N/A')}, entries: {len(cond_bundle.get('entry', []))}")
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10", ehr=ehr)
+        print(f"🔍 [{ehr}] Condition bundle type: {cond_bundle.get('resourceType', 'N/A')}, entries: {len(cond_bundle.get('entry', []))}")
         conditions = extract_conditions(cond_bundle)
-        print(f"✓ Fetched {len(conditions)} conditions")
+        print(f"✓ [{ehr}] Fetched {len(conditions)} conditions")
     except Exception as e:
-        print(f"⚠️ Could not fetch conditions: {e}")
+        print(f"⚠️ [{ehr}] Could not fetch conditions: {e}")
         import traceback
         traceback.print_exc()
         conditions = []
 
     # Fetch care plans
     try:
-        care_plan_bundle = await fetch_fhir(f"CarePlan?patient={patient_id}&_count=10")
-        print(f"🔍 CarePlan bundle type: {care_plan_bundle.get('resourceType', 'N/A')}, entries: {len(care_plan_bundle.get('entry', []))}")
+        care_plan_bundle = await fetch_fhir(f"CarePlan?patient={patient_id}&_count=10", ehr=ehr)
+        print(f"🔍 [{ehr}] CarePlan bundle type: {care_plan_bundle.get('resourceType', 'N/A')}, entries: {len(care_plan_bundle.get('entry', []))}")
         care_plans = extract_care_plans(care_plan_bundle)
-        print(f"✓ Fetched {len(care_plans)} care plans")
+        print(f"✓ [{ehr}] Fetched {len(care_plans)} care plans")
     except Exception as e:
-        print(f"⚠️ Could not fetch care plans: {e}")
+        print(f"⚠️ [{ehr}] Could not fetch care plans: {e}")
         care_plans = []
 
     # Fetch clinical notes (DocumentReference)
     try:
-        doc_bundle = await fetch_fhir(f"DocumentReference?patient={patient_id}&_count=10")
-        print(f"🔍 DocumentReference bundle type: {doc_bundle.get('resourceType', 'N/A')}, entries: {len(doc_bundle.get('entry', []))}")
+        doc_bundle = await fetch_fhir(f"DocumentReference?patient={patient_id}&_count=10", ehr=ehr)
+        print(f"🔍 [{ehr}] DocumentReference bundle type: {doc_bundle.get('resourceType', 'N/A')}, entries: {len(doc_bundle.get('entry', []))}")
         clinical_notes = extract_clinical_notes(doc_bundle)
-        print(f"✓ Fetched {len(clinical_notes)} clinical notes")
+        print(f"✓ [{ehr}] Fetched {len(clinical_notes)} clinical notes")
     except Exception as e:
-        print(f"⚠️ Could not fetch clinical notes: {e}")
+        print(f"⚠️ [{ehr}] Could not fetch clinical notes: {e}")
         clinical_notes = []
 
     # Filter critical and abnormal vitals for safety alerts
@@ -2756,36 +4108,6 @@ async def get_vital_history(patient_id: str, request: Request, count: int = 100)
         "vital_types": len(history),
         "history": history
     }
-
-
-@app.get("/api/v1/patient/search", response_model=List[SearchResult])
-async def search_patients(name: str, request: Request):
-    """Search patients by name - for voice command 'Find patient...'"""
-    bundle = await fetch_fhir(f"Patient?name={name}&_count=10")
-
-    results = []
-    for entry in bundle.get("entry", []):
-        patient = entry.get("resource", {})
-        results.append(SearchResult(
-            patient_id=patient.get("id", ""),
-            name=extract_patient_name(patient),
-            date_of_birth=patient.get("birthDate", "Unknown"),
-            gender=patient.get("gender", "unknown")
-        ))
-
-    # HIPAA Audit: Log patient search
-    ip_address = request.client.host if request.client else None
-    audit_logger.log_phi_access(
-        action=AuditAction.SEARCH_PATIENT,
-        patient_id="search",
-        endpoint="/api/v1/patient/search",
-        status="success",
-        details=f"query={name}, results={len(results)}",
-        ip_address=ip_address,
-        user_agent=request.headers.get("User-Agent", "")
-    )
-
-    return results
 
 
 @app.get("/api/v1/patient/mrn/{mrn}", response_model=PatientSummary)
@@ -4765,6 +6087,3099 @@ async def copilot_chat(request: CopilotRequest, req: Request):
             details={"error": str(e)[:100]}
         )
         raise HTTPException(status_code=500, detail=f"Co-pilot error: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MULTI-TURN CLINICAL REASONING (Feature #95 - Jarvis Wave 1)
+# Enhanced Co-pilot for back-and-forth dialogue with teaching and second opinion modes
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Teaching mode prompt - explains reasoning
+TEACHING_MODE_PROMPT = """You are a clinical educator helping a physician understand clinical reasoning.
+Your response will be spoken via TTS, so be clear and structured.
+
+RESPONSE FORMAT:
+1. KEY CONCEPT (1 sentence)
+2. REASONING STEPS (2-3 bullets, 15 words each max)
+3. CLINICAL PEARL (1 actionable insight)
+4. Optional: Follow-up question to deepen understanding
+
+RULES:
+- Use plain language, avoid jargon when possible
+- Connect reasoning to patient specifics when available
+- Cite guidelines or evidence when relevant
+- Keep total response under 100 words for TTS
+
+Current patient context:
+{patient_context}
+
+Previous question context:
+{previous_context}
+"""
+
+# Second opinion mode prompt - challenges thinking
+SECOND_OPINION_PROMPT = """You are a clinical consultant providing a second opinion.
+Your role is to constructively challenge the working diagnosis and suggest alternatives.
+
+RESPONSE FORMAT:
+1. ALTERNATIVE CONSIDERATIONS (2-3 alternatives with brief rationale)
+2. WHAT COULD WE BE MISSING? (1-2 red flags to rule out)
+3. SUGGESTED NEXT STEP (1 concrete action)
+
+RULES:
+- Be constructive, not dismissive
+- Prioritize by clinical urgency
+- Focus on don't-miss diagnoses
+- Keep total response under 80 words for TTS
+
+Current patient context:
+{patient_context}
+
+Working diagnosis/thinking:
+{working_diagnosis}
+"""
+
+# Clarifying question prompt - AI asks for more info
+CLARIFICATION_PROMPT = """Based on the clinical scenario, identify what additional information would help narrow the differential or guide management.
+
+Ask 1-2 SPECIFIC clarifying questions that:
+- Would change clinical decision-making
+- Can be answered quickly (yes/no, brief exam finding, specific history)
+- Prioritize high-yield information
+
+Current patient context:
+{patient_context}
+
+Current clinical question:
+{clinical_question}
+"""
+
+
+class ReasoningMode(str, Enum):
+    """Available reasoning modes"""
+    STANDARD = "standard"
+    TEACHING = "teaching"
+    SECOND_OPINION = "second_opinion"
+    CLARIFY = "clarify"
+
+
+class MultiTurnRequest(BaseModel):
+    """Request for multi-turn clinical reasoning"""
+    message: str
+    mode: ReasoningMode = ReasoningMode.STANDARD
+    patient_context: Optional[dict] = None
+    conversation_history: List[CopilotMessage] = []
+    working_diagnosis: Optional[str] = None  # For second opinion mode
+
+
+class MultiTurnResponse(BaseModel):
+    """Response for multi-turn clinical reasoning"""
+    response: str
+    mode: str
+    clarifying_questions: List[str] = []
+    alternative_diagnoses: List[str] = []
+    reasoning_steps: List[str] = []
+    suggested_actions: List[CopilotAction] = []
+    follow_up_prompts: List[str] = []
+    timestamp: str
+
+
+async def generate_multiturn_response(request: MultiTurnRequest) -> MultiTurnResponse:
+    """
+    Generate multi-turn clinical reasoning response.
+    Supports different reasoning modes for enhanced dialogue.
+    """
+    if not CLAUDE_API_KEY:
+        return MultiTurnResponse(
+            response="Multi-turn reasoning requires Claude API configuration.",
+            mode=request.mode.value,
+            timestamp=datetime.now().isoformat()
+        )
+
+    # Build patient context summary
+    patient_summary = "No patient currently loaded."
+    if request.patient_context:
+        ctx = request.patient_context
+        parts = []
+        if ctx.get("name"):
+            parts.append(f"Patient: {ctx.get('name')}")
+        if ctx.get("age"):
+            parts.append(f"Age: {ctx.get('age')}")
+        if ctx.get("gender"):
+            parts.append(f"Gender: {ctx.get('gender')}")
+        if ctx.get("chief_complaint"):
+            parts.append(f"CC: {ctx.get('chief_complaint')}")
+        if ctx.get("conditions"):
+            conditions = ctx.get("conditions", [])
+            if conditions:
+                parts.append(f"Conditions: {', '.join(conditions[:5])}")
+        if ctx.get("medications"):
+            meds = ctx.get("medications", [])
+            if meds:
+                parts.append(f"Meds: {', '.join(meds[:5])}")
+        patient_summary = "; ".join(parts) if parts else "No patient details available."
+
+    # Build previous context from history
+    previous_context = ""
+    if request.conversation_history:
+        recent = request.conversation_history[-4:]
+        previous_context = " | ".join([f"{m.role}: {m.content[:100]}" for m in recent])
+
+    # Select system prompt based on mode
+    if request.mode == ReasoningMode.TEACHING:
+        system_prompt = TEACHING_MODE_PROMPT.format(
+            patient_context=patient_summary,
+            previous_context=previous_context or "No previous context"
+        )
+    elif request.mode == ReasoningMode.SECOND_OPINION:
+        system_prompt = SECOND_OPINION_PROMPT.format(
+            patient_context=patient_summary,
+            working_diagnosis=request.working_diagnosis or request.message
+        )
+    elif request.mode == ReasoningMode.CLARIFY:
+        system_prompt = CLARIFICATION_PROMPT.format(
+            patient_context=patient_summary,
+            clinical_question=request.message
+        )
+    else:
+        # Standard mode uses the existing copilot prompt
+        system_prompt = COPILOT_SYSTEM_PROMPT.format(patient_context=patient_summary)
+
+    # Build messages
+    messages = []
+    for msg in request.conversation_history[-6:]:
+        messages.append({"role": msg.role, "content": msg.content})
+    messages.append({"role": "user", "content": request.message})
+
+    # Call Claude
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": CLAUDE_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-3-haiku-20240307",
+                    "max_tokens": 600,
+                    "system": system_prompt,
+                    "messages": messages
+                }
+            )
+
+            if response.status_code != 200:
+                return MultiTurnResponse(
+                    response="Reasoning temporarily unavailable. Please try again.",
+                    mode=request.mode.value,
+                    timestamp=datetime.now().isoformat()
+                )
+
+            result = response.json()
+            response_text = result.get("content", [{}])[0].get("text", "No response generated.")
+
+            # Parse response based on mode
+            clarifying_questions = []
+            alternative_diagnoses = []
+            reasoning_steps = []
+            follow_up_prompts = []
+            actions = []
+
+            response_lower = response_text.lower()
+
+            # Extract clarifying questions (lines ending with ?)
+            import re
+            questions = re.findall(r'[^.!?]*\?', response_text)
+            clarifying_questions = [q.strip() for q in questions[:3] if len(q.strip()) > 10]
+
+            # Extract alternatives for second opinion mode
+            if request.mode == ReasoningMode.SECOND_OPINION:
+                # Look for numbered alternatives or bullet points
+                alt_patterns = re.findall(r'(?:^|\n)\s*(?:\d+\.|[-•])\s*([A-Z][^.!?\n]+)', response_text)
+                alternative_diagnoses = alt_patterns[:5]
+
+            # Extract reasoning steps for teaching mode
+            if request.mode == ReasoningMode.TEACHING:
+                step_patterns = re.findall(r'(?:^|\n)\s*(?:\d+\.|[-•])\s*(.+?)(?=\n|$)', response_text)
+                reasoning_steps = [s.strip() for s in step_patterns[:5] if len(s.strip()) > 5]
+
+            # Generate follow-up prompts based on mode
+            if request.mode == ReasoningMode.TEACHING:
+                follow_up_prompts = ["Tell me more", "Why is that important?", "What if patient had fever?"]
+            elif request.mode == ReasoningMode.SECOND_OPINION:
+                follow_up_prompts = ["What tests would differentiate?", "What's the most urgent to rule out?"]
+            elif request.mode == ReasoningMode.CLARIFY:
+                follow_up_prompts = ["Continue with workup", "What's most likely?"]
+            else:
+                follow_up_prompts = ["Tell me more", "What else?", "Explain your reasoning"]
+
+            # Detect actionable suggestions
+            if "order" in response_lower or "check" in response_lower:
+                if "troponin" in response_lower:
+                    actions.append(CopilotAction(action_type="order", label="Order troponin", command="order troponin"))
+                if "ekg" in response_lower or "ecg" in response_lower:
+                    actions.append(CopilotAction(action_type="order", label="Order EKG", command="order EKG"))
+                if "ct" in response_lower:
+                    actions.append(CopilotAction(action_type="order", label="Order CT", command="order CT"))
+
+            return MultiTurnResponse(
+                response=response_text,
+                mode=request.mode.value,
+                clarifying_questions=clarifying_questions,
+                alternative_diagnoses=alternative_diagnoses,
+                reasoning_steps=reasoning_steps,
+                suggested_actions=actions[:3],
+                follow_up_prompts=follow_up_prompts[:3],
+                timestamp=datetime.now().isoformat()
+            )
+
+        except Exception as e:
+            return MultiTurnResponse(
+                response=f"Reasoning error: {str(e)[:50]}. Try again.",
+                mode=request.mode.value,
+                timestamp=datetime.now().isoformat()
+            )
+
+
+@app.post("/api/v1/copilot/reason", response_model=MultiTurnResponse)
+async def copilot_multiturn_reason(request: MultiTurnRequest, req: Request):
+    """
+    Multi-Turn Clinical Reasoning endpoint (Feature #95 - Jarvis Wave 1)
+
+    Enhanced co-pilot with different reasoning modes:
+    - standard: Normal clinical decision support
+    - teaching: Explains clinical reasoning with steps
+    - second_opinion: Challenges thinking, suggests alternatives
+    - clarify: AI asks clarifying questions
+
+    Example:
+        POST /api/v1/copilot/reason
+        {
+            "message": "Why do you think this is PE?",
+            "mode": "teaching",
+            "patient_context": {"age": 55, "conditions": ["DVT"]}
+        }
+    """
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="COPILOT_MULTITURN",
+        status="processing",
+        details={"mode": request.mode.value, "message_length": len(request.message)}
+    )
+
+    try:
+        response = await generate_multiturn_response(request)
+
+        audit_logger._log_event(
+            event_type="AI",
+            action="COPILOT_MULTITURN",
+            status="success",
+            details={"mode": request.mode.value, "response_length": len(response.response)}
+        )
+
+        return response
+
+    except Exception as e:
+        audit_logger._log_event(
+            event_type="AI",
+            action="COPILOT_MULTITURN",
+            status="failure",
+            details={"error": str(e)[:100]}
+        )
+        raise HTTPException(status_code=500, detail=f"Reasoning error: {str(e)}")
+
+
+@app.post("/api/v1/copilot/teach")
+async def copilot_teach(request: CopilotRequest, req: Request):
+    """
+    Teaching Mode shortcut - Explain clinical reasoning (Feature #95)
+
+    Example: "Explain why you suggested PE workup"
+    """
+    multi_request = MultiTurnRequest(
+        message=request.message,
+        mode=ReasoningMode.TEACHING,
+        patient_context=request.patient_context,
+        conversation_history=request.conversation_history
+    )
+    return await copilot_multiturn_reason(multi_request, req)
+
+
+@app.post("/api/v1/copilot/challenge")
+async def copilot_challenge(request: CopilotRequest, req: Request):
+    """
+    Second Opinion Mode shortcut - Challenge diagnosis (Feature #95)
+
+    Example: "I think it's pneumonia, what else could it be?"
+    """
+    multi_request = MultiTurnRequest(
+        message=request.message,
+        mode=ReasoningMode.SECOND_OPINION,
+        patient_context=request.patient_context,
+        conversation_history=request.conversation_history,
+        working_diagnosis=request.message
+    )
+    return await copilot_multiturn_reason(multi_request, req)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MINERVA AI CLINICAL ASSISTANT (Feature #97)
+# Named in honor of Minerva Diaz
+# Conversational AI with RAG-grounded responses to prevent hallucination
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MinervaRequest(BaseModel):
+    """Request model for Minerva chat"""
+    message: str
+    patient_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    patient_context: Optional[Dict[str, Any]] = None
+
+class MinervaCitation(BaseModel):
+    """Citation from RAG knowledge base"""
+    index: int
+    source: str
+    title: str
+    relevance: Optional[str] = None
+
+class MinervaSuggestedAction(BaseModel):
+    """Suggested action from Minerva"""
+    type: str  # "order", "calculate", "document", "alert"
+    command: str  # Voice command to execute
+    description: Optional[str] = None
+
+class MinervaResponse(BaseModel):
+    """Response model for Minerva chat"""
+    response: str
+    citations: List[MinervaCitation] = []
+    suggested_actions: List[MinervaSuggestedAction] = []
+    confidence: float = 0.0
+    rag_enhanced: bool = False
+    conversation_id: str
+    follow_up_prompt: Optional[str] = None
+
+class MinervaContextResponse(BaseModel):
+    """Patient context for Minerva"""
+    patient_id: str
+    patient_name: str
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    conditions: List[str] = []
+    medications: List[str] = []
+    allergies: List[str] = []
+    recent_labs: List[Dict[str, Any]] = []
+    recent_vitals: List[Dict[str, Any]] = []
+    summary: str
+
+# In-memory conversation history storage (keyed by conversation_id)
+minerva_conversations: Dict[str, List[Dict[str, str]]] = {}
+
+# Minerva's system prompt - defines her persona and behavior
+MINERVA_SYSTEM_PROMPT = """You are Minerva, an AI clinical assistant for MDx Vision AR glasses.
+You help clinicians with evidence-based clinical decision support.
+
+CRITICAL RULES:
+1. EVERY clinical claim MUST cite a source using [1], [2], etc.
+2. If you don't have a guideline source, say "I don't have specific guidelines on this, but generally..."
+3. NEVER make up drug doses, treatment protocols, or clinical recommendations without citation
+4. Be concise - responses will be spoken via TTS (aim for under 100 words)
+5. Be professional but warm, like a trusted colleague
+6. When uncertain, acknowledge it and suggest consulting specialists
+
+RESPONSE FORMAT:
+- Start with a direct answer to the question
+- Include 2-3 key points with citations [1], [2]
+- End with a suggested next step or follow-up question
+- For orders/actions, phrase as voice commands ("say 'order CBC'")
+
+PATIENT CONTEXT (when available):
+{patient_context}
+
+CLINICAL GUIDELINES (cite these using [1], [2], etc.):
+{rag_context}
+"""
+
+
+async def generate_minerva_response(
+    message: str,
+    patient_context: Optional[Dict[str, Any]] = None,
+    conversation_history: List[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Generate Minerva's response with RAG grounding.
+
+    Args:
+        message: User's question
+        patient_context: Current patient data
+        conversation_history: Previous messages in conversation
+
+    Returns:
+        Response dict with citations and suggestions
+    """
+    if conversation_history is None:
+        conversation_history = []
+
+    # Build RAG context
+    rag_context = ""
+    citations = []
+    rag_enhanced = False
+
+    if RAG_AVAILABLE and rag_engine.initialized:
+        try:
+            # Retrieve relevant guidelines based on the question
+            augmented_prompt, sources = get_augmented_prompt(message, n_results=5)
+
+            if sources:
+                rag_enhanced = True
+                for source in sources:
+                    rag_context += f"[{source['index']}] {source['source_name']}: {source['title']}\n"
+                    rag_context += f"   Content: {source.get('content', '')[:300]}...\n\n"
+                    citations.append({
+                        "index": source['index'],
+                        "source": source['source_name'],
+                        "title": source['title'],
+                        "relevance": source.get('relevance', 'Related to query')
+                    })
+        except Exception as e:
+            print(f"RAG retrieval error: {e}")
+            rag_context = "No guidelines available - respond with general medical knowledge and note uncertainty."
+    else:
+        rag_context = "RAG not available - respond with general medical knowledge and note that specific guidelines should be consulted."
+
+    # Format patient context
+    patient_context_str = "No patient loaded"
+    if patient_context:
+        context_parts = []
+        if patient_context.get('name'):
+            context_parts.append(f"Patient: {patient_context['name']}")
+        if patient_context.get('age'):
+            context_parts.append(f"Age: {patient_context['age']}")
+        if patient_context.get('gender'):
+            context_parts.append(f"Gender: {patient_context['gender']}")
+        if patient_context.get('conditions'):
+            context_parts.append(f"Conditions: {', '.join(patient_context['conditions'][:5])}")
+        if patient_context.get('medications'):
+            context_parts.append(f"Medications: {', '.join(patient_context['medications'][:5])}")
+        if patient_context.get('allergies'):
+            context_parts.append(f"Allergies: {', '.join(patient_context['allergies'])}")
+        patient_context_str = '\n'.join(context_parts) if context_parts else "No patient loaded"
+
+    # Build system prompt with context
+    system_prompt = MINERVA_SYSTEM_PROMPT.format(
+        patient_context=patient_context_str,
+        rag_context=rag_context if rag_context else "No specific guidelines retrieved."
+    )
+
+    # Build messages for Claude
+    messages = []
+
+    # Add conversation history (last 6 messages for context)
+    for msg in conversation_history[-6:]:
+        messages.append({
+            "role": msg.get("role", "user"),
+            "content": msg.get("content", "")
+        })
+
+    # Add current message
+    messages.append({
+        "role": "user",
+        "content": message
+    })
+
+    # Call Claude API
+    if not CLAUDE_API_KEY:
+        return {
+            "response": "I'm sorry, I can't process your request right now. The AI service is not configured.",
+            "citations": [],
+            "suggested_actions": [],
+            "confidence": 0.0,
+            "rag_enhanced": False,
+            "follow_up_prompt": None
+        }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": CLAUDE_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 500,
+                "system": system_prompt,
+                "messages": messages
+            }
+        )
+
+        if response.status_code != 200:
+            return {
+                "response": "I encountered an error processing your request. Please try again.",
+                "citations": citations,
+                "suggested_actions": [],
+                "confidence": 0.0,
+                "rag_enhanced": rag_enhanced,
+                "follow_up_prompt": None
+            }
+
+        result = response.json()
+        minerva_response = result.get("content", [{}])[0].get("text", "")
+
+    # Extract suggested actions from response
+    suggested_actions = []
+    action_patterns = [
+        (r"say ['\"]([^'\"]+)['\"]", "order"),
+        (r"order (\w+)", "order"),
+        (r"calculate (\w+)", "calculate"),
+    ]
+
+    import re
+    for pattern, action_type in action_patterns:
+        matches = re.findall(pattern, minerva_response, re.IGNORECASE)
+        for match in matches[:2]:  # Limit to 2 actions
+            suggested_actions.append({
+                "type": action_type,
+                "command": match if action_type == "order" else f"calculate {match}",
+                "description": f"Voice command: {match}"
+            })
+
+    # Calculate confidence based on RAG and citation presence
+    confidence = 0.5  # Base confidence
+    if rag_enhanced:
+        confidence += 0.3
+    if "[1]" in minerva_response or "[2]" in minerva_response:
+        confidence += 0.15
+    confidence = min(confidence, 0.95)
+
+    return {
+        "response": minerva_response,
+        "citations": citations,
+        "suggested_actions": suggested_actions,
+        "confidence": confidence,
+        "rag_enhanced": rag_enhanced,
+        "follow_up_prompt": "Is there anything else you'd like to know?" if len(conversation_history) < 3 else None
+    }
+
+
+@app.post("/api/v1/minerva/chat", response_model=MinervaResponse)
+async def minerva_chat(request: MinervaRequest, req: Request):
+    """
+    Minerva AI Clinical Assistant chat endpoint (Feature #97).
+
+    Provides conversational clinical decision support with:
+    - RAG-grounded responses citing clinical guidelines
+    - Patient context awareness
+    - Multi-turn conversation support
+    - Suggested voice commands for actions
+
+    Example:
+        POST /api/v1/minerva/chat
+        {
+            "message": "What's the recommended treatment for afib with RVR?",
+            "patient_id": "12724066",
+            "conversation_id": "abc123"
+        }
+    """
+    # Validate input
+    if not request.message or not request.message.strip():
+        raise HTTPException(status_code=400, detail="Message is required")
+
+    # Generate or use conversation ID
+    conversation_id = request.conversation_id or str(uuid.uuid4())[:8]
+
+    # Get conversation history
+    conversation_history = minerva_conversations.get(conversation_id, [])
+
+    # Audit log - Minerva interaction
+    audit_logger._log_event(
+        event_type="AI",
+        action="MINERVA_CHAT",
+        patient_id=request.patient_id,
+        status="processing",
+        details={
+            "message_length": len(request.message),
+            "conversation_id": conversation_id,
+            "has_patient_context": bool(request.patient_context or request.patient_id)
+        }
+    )
+
+    try:
+        # Generate response
+        result = await generate_minerva_response(
+            message=request.message,
+            patient_context=request.patient_context,
+            conversation_history=conversation_history
+        )
+
+        # Store conversation history
+        minerva_conversations[conversation_id] = conversation_history + [
+            {"role": "user", "content": request.message},
+            {"role": "assistant", "content": result["response"]}
+        ]
+
+        # Keep only last 10 messages per conversation
+        if len(minerva_conversations[conversation_id]) > 10:
+            minerva_conversations[conversation_id] = minerva_conversations[conversation_id][-10:]
+
+        # Audit success
+        audit_logger._log_event(
+            event_type="AI",
+            action="MINERVA_CHAT",
+            patient_id=request.patient_id,
+            status="success",
+            details={
+                "conversation_id": conversation_id,
+                "rag_enhanced": result["rag_enhanced"],
+                "citations_count": len(result["citations"]),
+                "confidence": result["confidence"]
+            }
+        )
+
+        return MinervaResponse(
+            response=result["response"],
+            citations=[MinervaCitation(**c) for c in result["citations"]],
+            suggested_actions=[MinervaSuggestedAction(**a) for a in result["suggested_actions"]],
+            confidence=result["confidence"],
+            rag_enhanced=result["rag_enhanced"],
+            conversation_id=conversation_id,
+            follow_up_prompt=result.get("follow_up_prompt")
+        )
+
+    except Exception as e:
+        audit_logger._log_event(
+            event_type="AI",
+            action="MINERVA_CHAT",
+            patient_id=request.patient_id,
+            status="failure",
+            details={"error": str(e)[:100]}
+        )
+        raise HTTPException(status_code=500, detail=f"Minerva error: {str(e)}")
+
+
+@app.get("/api/v1/minerva/context/{patient_id}", response_model=MinervaContextResponse)
+async def minerva_get_context(patient_id: str, ehr: str = "cerner", req: Request = None):
+    """
+    Get patient context formatted for Minerva (Feature #97).
+
+    Returns a summary of patient data optimized for AI context.
+
+    Example:
+        GET /api/v1/minerva/context/12724066?ehr=cerner
+    """
+    # Audit log
+    audit_logger._log_event(
+        event_type="PHI_ACCESS",
+        action="MINERVA_CONTEXT",
+        patient_id=patient_id,
+        status="processing",
+        details={"ehr": ehr}
+    )
+
+    try:
+        # Fetch patient data from EHR
+        base_url = get_ehr_base_url(ehr)
+        headers = get_ehr_headers(ehr)
+
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # Fetch patient demographics
+            patient_resp = await client.get(f"{base_url}/Patient/{patient_id}", headers=headers)
+
+            if patient_resp.status_code != 200:
+                raise HTTPException(status_code=404, detail=f"Patient not found: {patient_id}")
+
+            patient_data = patient_resp.json()
+
+            # Extract name
+            names = patient_data.get("name", [])
+            patient_name = "Unknown"
+            if names:
+                name = names[0]
+                given = " ".join(name.get("given", []))
+                family = name.get("family", "")
+                patient_name = f"{given} {family}".strip()
+
+            # Calculate age
+            birth_date = patient_data.get("birthDate")
+            age = None
+            if birth_date:
+                from datetime import datetime
+                try:
+                    birth = datetime.strptime(birth_date, "%Y-%m-%d")
+                    today = datetime.now()
+                    age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+                except:
+                    pass
+
+            gender = patient_data.get("gender", "unknown")
+
+            # Fetch conditions, medications, allergies concurrently
+            conditions_task = client.get(f"{base_url}/Condition?patient={patient_id}&_count=10", headers=headers)
+            meds_task = client.get(f"{base_url}/MedicationRequest?patient={patient_id}&_count=10", headers=headers)
+            allergies_task = client.get(f"{base_url}/AllergyIntolerance?patient={patient_id}&_count=10", headers=headers)
+
+            import asyncio
+            cond_resp, meds_resp, allergy_resp = await asyncio.gather(
+                conditions_task, meds_task, allergies_task,
+                return_exceptions=True
+            )
+
+            # Parse conditions
+            conditions = []
+            if not isinstance(cond_resp, Exception) and cond_resp.status_code == 200:
+                cond_data = cond_resp.json()
+                for entry in cond_data.get("entry", []):
+                    resource = entry.get("resource", {})
+                    code = resource.get("code", {})
+                    text = code.get("text") or (code.get("coding", [{}])[0].get("display") if code.get("coding") else None)
+                    if text:
+                        conditions.append(text)
+
+            # Parse medications
+            medications = []
+            if not isinstance(meds_resp, Exception) and meds_resp.status_code == 200:
+                meds_data = meds_resp.json()
+                for entry in meds_data.get("entry", []):
+                    resource = entry.get("resource", {})
+                    med_ref = resource.get("medicationCodeableConcept", {}) or resource.get("medicationReference", {})
+                    text = med_ref.get("text") or (med_ref.get("coding", [{}])[0].get("display") if med_ref.get("coding") else None)
+                    if text:
+                        medications.append(text)
+
+            # Parse allergies
+            allergies = []
+            if not isinstance(allergy_resp, Exception) and allergy_resp.status_code == 200:
+                allergy_data = allergy_resp.json()
+                for entry in allergy_data.get("entry", []):
+                    resource = entry.get("resource", {})
+                    code = resource.get("code", {})
+                    text = code.get("text") or (code.get("coding", [{}])[0].get("display") if code.get("coding") else None)
+                    if text:
+                        allergies.append(text)
+
+            # Build summary
+            summary_parts = [f"{patient_name}, {age}yo {gender}" if age else f"{patient_name}, {gender}"]
+            if conditions:
+                summary_parts.append(f"Conditions: {', '.join(conditions[:3])}")
+            if allergies:
+                summary_parts.append(f"Allergies: {', '.join(allergies[:3])}")
+            summary = ". ".join(summary_parts)
+
+            # Audit success
+            audit_logger._log_event(
+                event_type="PHI_ACCESS",
+                action="MINERVA_CONTEXT",
+                patient_id=patient_id,
+                status="success",
+                details={"conditions_count": len(conditions), "meds_count": len(medications)}
+            )
+
+            return MinervaContextResponse(
+                patient_id=patient_id,
+                patient_name=patient_name,
+                age=age,
+                gender=gender,
+                conditions=conditions,
+                medications=medications,
+                allergies=allergies,
+                recent_labs=[],  # TODO: Add labs
+                recent_vitals=[],  # TODO: Add vitals
+                summary=summary
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        audit_logger._log_event(
+            event_type="PHI_ACCESS",
+            action="MINERVA_CONTEXT",
+            patient_id=patient_id,
+            status="failure",
+            details={"error": str(e)[:100]}
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to get patient context: {str(e)}")
+
+
+@app.delete("/api/v1/minerva/conversation/{conversation_id}")
+async def minerva_clear_conversation(conversation_id: str):
+    """
+    Clear Minerva conversation history (Feature #97).
+
+    Use this when starting a new clinical context or patient.
+
+    Example:
+        DELETE /api/v1/minerva/conversation/abc123
+    """
+    if conversation_id in minerva_conversations:
+        del minerva_conversations[conversation_id]
+        return {"success": True, "message": f"Conversation {conversation_id} cleared"}
+    return {"success": True, "message": "Conversation not found (already cleared)"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MINERVA PHASE 3: PROACTIVE INTELLIGENCE (Feature #97)
+# Minerva speaks FIRST when something important needs attention
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MinervaProactiveAlert(BaseModel):
+    """Individual proactive alert from Minerva"""
+    category: str  # "critical", "warning", "info"
+    priority: int  # 1-10, where 10 is most urgent
+    type: str  # "vital", "lab", "care_gap", "drug_interaction", "allergy", "trend"
+    message: str  # Display-friendly message
+    spoken_message: str  # TTS-friendly message (Minerva voice)
+    action: Optional[str] = None  # Suggested voice command
+    data: Optional[Dict[str, Any]] = None  # Additional context
+
+
+class MinervaProactiveResponse(BaseModel):
+    """Minerva proactive intelligence response"""
+    patient_id: str
+    patient_name: str
+    has_critical: bool
+    alert_count: int
+    alerts: List[MinervaProactiveAlert]
+    spoken_summary: str  # Full TTS summary (max 3-4 items)
+    display_summary: str  # HUD-formatted display
+    acknowledgment_phrase: str  # How to acknowledge ("Got it, Minerva")
+
+
+def generate_minerva_spoken_intro(patient_name: str, has_critical: bool, alert_count: int) -> str:
+    """Generate Minerva's intro phrase"""
+    first_name = patient_name.split(",")[0].strip() if "," in patient_name else patient_name.split()[0]
+
+    if has_critical:
+        return f"Heads up on {first_name}. "
+    elif alert_count > 0:
+        return f"A few things on {first_name}. "
+    else:
+        return f"No urgent concerns for {first_name}. "
+
+
+def prioritize_alerts(alerts: List[MinervaProactiveAlert], max_spoken: int = 4) -> List[MinervaProactiveAlert]:
+    """
+    Prioritize alerts for speaking. Critical first, then by priority score.
+    Prevents alert fatigue by limiting to max_spoken items.
+    """
+    # Sort by category (critical first) then by priority score (descending)
+    category_order = {"critical": 0, "warning": 1, "info": 2}
+    sorted_alerts = sorted(
+        alerts,
+        key=lambda a: (category_order.get(a.category, 2), -a.priority)
+    )
+    return sorted_alerts[:max_spoken]
+
+
+def generate_minerva_proactive_summary(
+    patient_name: str,
+    alerts: List[MinervaProactiveAlert],
+    max_spoken: int = 4
+) -> str:
+    """
+    Generate Minerva's full spoken summary.
+    Uses natural, conversational language with max items to prevent fatigue.
+    """
+    if not alerts:
+        first_name = patient_name.split(",")[0].strip() if "," in patient_name else patient_name.split()[0]
+        return f"No urgent concerns for {first_name}. Let me know if you need anything."
+
+    # Prioritize and limit
+    spoken_alerts = prioritize_alerts(alerts, max_spoken)
+    has_critical = any(a.category == "critical" for a in spoken_alerts)
+
+    # Build summary
+    intro = generate_minerva_spoken_intro(patient_name, has_critical, len(spoken_alerts))
+
+    # Combine alert messages
+    messages = [a.spoken_message for a in spoken_alerts]
+
+    # Join naturally
+    if len(messages) == 1:
+        body = messages[0]
+    elif len(messages) == 2:
+        body = f"{messages[0]} Also, {messages[1].lower()}"
+    else:
+        body = f"{messages[0]} {messages[1]} "
+        if len(messages) > 2:
+            body += f"And {messages[2].lower()}"
+        if len(messages) > 3:
+            body += f" Plus {len(alerts) - 3} more items."
+
+    # Add closing if critical
+    if has_critical:
+        closing = " Say 'got it Minerva' when ready."
+    else:
+        closing = ""
+
+    return intro + body + closing
+
+
+@app.post("/api/v1/minerva/proactive/{patient_id}", response_model=MinervaProactiveResponse)
+async def minerva_proactive_alerts(patient_id: str, request: Request):
+    """
+    Minerva Proactive Intelligence (Feature #97 - Phase 3)
+
+    Returns proactive alerts for Minerva to speak WITHOUT being asked.
+    Called automatically on patient load to trigger spoken alerts.
+
+    Aggregates:
+    - Critical vitals (BP >180, HR <40/>150, SpO2 <88%)
+    - Critical labs (K >6.0, glucose <50/>400, etc.)
+    - Care gaps (overdue screenings, vaccines)
+    - Drug interactions (high severity)
+    - Allergy warnings
+    - Trend alerts (worsening values)
+
+    Response includes:
+    - spoken_summary: TTS-ready Minerva speech (max 3-4 items)
+    - alerts: Full list for UI display
+    - has_critical: True if any critical alerts (bypass speech toggle)
+
+    Example:
+        POST /api/v1/minerva/proactive/12724066
+
+    Response:
+        {
+            "spoken_summary": "Heads up on Nancy. Potassium is critically high at 6.8.
+                              Blood pressure elevated at 182 over 95.
+                              Say 'got it Minerva' when ready.",
+            "has_critical": true,
+            "alerts": [...]
+        }
+    """
+    alerts: List[MinervaProactiveAlert] = []
+
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
+            raise HTTPException(status_code=404, detail="Patient not found")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+
+    # Extract patient name
+    patient_name = extract_patient_name(patient_data)
+    dob = patient_data.get("birthDate", "")
+    gender = patient_data.get("gender", "")
+
+    # Fetch clinical data
+    try:
+        vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=20&_sort=-date")
+        vitals = extract_vitals(vitals_bundle)
+
+        lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date")
+        labs = extract_labs(lab_bundle)
+
+        med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=30")
+        medications = extract_medications(med_bundle)
+
+        allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}")
+        allergies = extract_allergies(allergy_bundle)
+
+        condition_bundle = await fetch_fhir(f"Condition?patient={patient_id}&clinical-status=active")
+        conditions = extract_conditions(condition_bundle)
+    except Exception as e:
+        # Continue with empty data if fetch fails
+        vitals, labs, medications, allergies, conditions = [], [], [], [], []
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 1. CRITICAL VITALS (Priority 10)
+    # ─────────────────────────────────────────────────────────────────────────
+    critical_vital_thresholds = {
+        "blood pressure": {"systolic_high": 180, "diastolic_high": 120, "systolic_low": 90},
+        "heart rate": {"high": 150, "low": 40},
+        "oxygen saturation": {"low": 88},
+        "temperature": {"high": 104.0, "low": 95.0},
+        "respiratory rate": {"high": 30, "low": 8}
+    }
+
+    for vital in vitals[:10]:
+        if not isinstance(vital, dict):
+            continue
+        name = vital.get("name", "").lower()
+        value = vital.get("value")
+        unit = vital.get("unit", "")
+
+        if "blood pressure" in name or "bp" in name:
+            try:
+                if "/" in str(value):
+                    systolic, diastolic = map(int, str(value).split("/"))
+                    if systolic >= 180 or diastolic >= 120:
+                        alerts.append(MinervaProactiveAlert(
+                            category="critical",
+                            priority=10,
+                            type="vital",
+                            message=f"⚠️ Critical BP: {value} mmHg",
+                            spoken_message=f"Blood pressure is critically elevated at {systolic} over {diastolic}.",
+                            action="show vitals",
+                            data={"vital": "bp", "value": value}
+                        ))
+                    elif systolic >= 160 or diastolic >= 100:
+                        alerts.append(MinervaProactiveAlert(
+                            category="warning",
+                            priority=7,
+                            type="vital",
+                            message=f"📈 Elevated BP: {value} mmHg",
+                            spoken_message=f"Blood pressure is elevated at {systolic} over {diastolic}.",
+                            action="show vitals",
+                            data={"vital": "bp", "value": value}
+                        ))
+            except:
+                pass
+
+        elif "heart rate" in name or "pulse" in name:
+            try:
+                hr = int(value) if value else 0
+                if hr >= 150 or hr <= 40:
+                    alerts.append(MinervaProactiveAlert(
+                        category="critical",
+                        priority=10,
+                        type="vital",
+                        message=f"⚠️ Critical HR: {hr} bpm",
+                        spoken_message=f"Heart rate is {'dangerously fast' if hr >= 150 else 'dangerously slow'} at {hr}.",
+                        action="show vitals",
+                        data={"vital": "hr", "value": hr}
+                    ))
+                elif hr >= 120 or hr <= 50:
+                    alerts.append(MinervaProactiveAlert(
+                        category="warning",
+                        priority=6,
+                        type="vital",
+                        message=f"📈 Abnormal HR: {hr} bpm",
+                        spoken_message=f"Heart rate is {'elevated' if hr >= 120 else 'low'} at {hr}.",
+                        action="show vitals",
+                        data={"vital": "hr", "value": hr}
+                    ))
+            except:
+                pass
+
+        elif "oxygen" in name or "spo2" in name or "o2 sat" in name:
+            try:
+                spo2 = float(value) if value else 100
+                if spo2 < 88:
+                    alerts.append(MinervaProactiveAlert(
+                        category="critical",
+                        priority=10,
+                        type="vital",
+                        message=f"⚠️ Critical SpO2: {spo2}%",
+                        spoken_message=f"Oxygen saturation is critically low at {spo2} percent.",
+                        action="show vitals",
+                        data={"vital": "spo2", "value": spo2}
+                    ))
+                elif spo2 < 92:
+                    alerts.append(MinervaProactiveAlert(
+                        category="warning",
+                        priority=7,
+                        type="vital",
+                        message=f"📉 Low SpO2: {spo2}%",
+                        spoken_message=f"Oxygen saturation is low at {spo2} percent.",
+                        action="show vitals",
+                        data={"vital": "spo2", "value": spo2}
+                    ))
+            except:
+                pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 2. CRITICAL LABS (Priority 9)
+    # ─────────────────────────────────────────────────────────────────────────
+    critical_lab_thresholds = {
+        "potassium": {"high": 6.0, "low": 2.5, "unit": "mEq/L"},
+        "sodium": {"high": 160, "low": 120, "unit": "mEq/L"},
+        "glucose": {"high": 400, "low": 50, "unit": "mg/dL"},
+        "creatinine": {"high": 4.0, "unit": "mg/dL"},
+        "hemoglobin": {"low": 7.0, "unit": "g/dL"},
+        "platelet": {"low": 50, "unit": "K/uL"},
+        "inr": {"high": 4.5, "unit": ""},
+        "troponin": {"high": 0.04, "unit": "ng/mL"}
+    }
+
+    for lab in labs[:20]:
+        if not isinstance(lab, dict):
+            continue
+        name = lab.get("name", "").lower()
+        value = lab.get("value")
+
+        try:
+            val = float(value) if value else None
+            if val is None:
+                continue
+
+            for lab_name, thresholds in critical_lab_thresholds.items():
+                if lab_name in name:
+                    is_critical = False
+                    message = ""
+
+                    if "high" in thresholds and val >= thresholds["high"]:
+                        is_critical = True
+                        message = f"{lab_name.title()} is critically high at {val}"
+                    elif "low" in thresholds and val <= thresholds["low"]:
+                        is_critical = True
+                        message = f"{lab_name.title()} is critically low at {val}"
+
+                    if is_critical:
+                        alerts.append(MinervaProactiveAlert(
+                            category="critical",
+                            priority=9,
+                            type="lab",
+                            message=f"⚠️ Critical {lab_name.title()}: {val} {thresholds.get('unit', '')}",
+                            spoken_message=message + ".",
+                            action="show labs",
+                            data={"lab": lab_name, "value": val}
+                        ))
+                    break
+        except:
+            pass
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 3. HIGH-SEVERITY ALLERGIES (Priority 8)
+    # ─────────────────────────────────────────────────────────────────────────
+    severe_allergies = []
+    for allergy in allergies[:10]:
+        if isinstance(allergy, dict):
+            severity = allergy.get("severity", "").lower()
+            substance = allergy.get("substance", allergy.get("name", "Unknown"))
+            if severity in ["severe", "high", "life-threatening"] or "anaphyl" in str(allergy).lower():
+                severe_allergies.append(substance)
+
+    if severe_allergies:
+        allergy_list = ", ".join(severe_allergies[:3])
+        alerts.append(MinervaProactiveAlert(
+            category="warning",
+            priority=8,
+            type="allergy",
+            message=f"🚨 Severe allergies: {allergy_list}",
+            spoken_message=f"Reminder: severe allergy to {allergy_list}.",
+            action="show allergies",
+            data={"allergies": severe_allergies}
+        ))
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 4. CARE GAPS - HIGH PRIORITY ONLY (Priority 5)
+    # ─────────────────────────────────────────────────────────────────────────
+    try:
+        patient_analysis_data = {
+            "dob": dob,
+            "gender": gender,
+            "conditions": conditions,
+            "medications": medications,
+            "labs": labs,
+            "vitals": vitals
+        }
+        care_gaps = detect_care_gaps(patient_analysis_data)
+        high_priority_gaps = [g for g in care_gaps if g.priority == "high"][:2]
+
+        for gap in high_priority_gaps:
+            alerts.append(MinervaProactiveAlert(
+                category="info",
+                priority=5,
+                type="care_gap",
+                message=f"📋 {gap.name}: {gap.status}",
+                spoken_message=f"This patient is {gap.status.lower()} for {gap.name.lower()}.",
+                action=gap.action if gap.action else "show care gaps",
+                data={"gap": gap.name, "category": gap.category}
+            ))
+    except Exception as e:
+        pass  # Care gaps are optional
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 5. DRUG INTERACTIONS (Priority 7) - Check if on high-risk combos
+    # ─────────────────────────────────────────────────────────────────────────
+    # High-risk medication combinations
+    high_risk_combos = [
+        (["warfarin", "coumadin"], ["aspirin", "ibuprofen", "naproxen", "nsaid"], "Warfarin with NSAID increases bleeding risk"),
+        (["metformin"], ["contrast", "iodine"], "Hold metformin before contrast"),
+        (["ace inhibitor", "lisinopril", "enalapril"], ["potassium", "k-dur", "klor-con"], "ACE inhibitor with potassium risks hyperkalemia"),
+        (["digoxin", "lanoxin"], ["amiodarone"], "Amiodarone increases digoxin levels"),
+    ]
+
+    med_names = [m.get("name", "").lower() if isinstance(m, dict) else str(m).lower() for m in medications]
+
+    for drug_a_list, drug_b_list, warning in high_risk_combos:
+        has_a = any(any(d in med for d in drug_a_list) for med in med_names)
+        has_b = any(any(d in med for d in drug_b_list) for med in med_names)
+
+        if has_a and has_b:
+            alerts.append(MinervaProactiveAlert(
+                category="warning",
+                priority=7,
+                type="drug_interaction",
+                message=f"⚠️ Drug interaction: {warning}",
+                spoken_message=f"Caution: {warning}.",
+                action="show meds",
+                data={"interaction": warning}
+            ))
+            break  # Only report first interaction
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Generate final response
+    # ─────────────────────────────────────────────────────────────────────────
+    has_critical = any(a.category == "critical" for a in alerts)
+    spoken_summary = generate_minerva_proactive_summary(patient_name, alerts, max_spoken=4)
+
+    # Generate display summary
+    display_lines = []
+    for alert in prioritize_alerts(alerts, max_spoken=6):
+        display_lines.append(alert.message)
+    display_summary = "\n".join(display_lines) if display_lines else "No concerns identified."
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="MINERVA_PROACTIVE",
+        patient_id=patient_id,
+        status="success",
+        details={
+            "alert_count": len(alerts),
+            "has_critical": has_critical,
+            "categories": list(set(a.category for a in alerts)),
+            "types": list(set(a.type for a in alerts))
+        }
+    )
+
+    return MinervaProactiveResponse(
+        patient_id=patient_id,
+        patient_name=patient_name,
+        has_critical=has_critical,
+        alert_count=len(alerts),
+        alerts=alerts,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        acknowledgment_phrase="Got it, Minerva"
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JARVIS-LIKE AI FEATURES - INDIRECT COMMANDS (Feature #96)
+# Natural language parsing to translate conversational commands into actions
+# Examples: "check that potassium" -> show_labs, "what's his blood pressure" -> show_vitals
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class IndirectCommandResult(BaseModel):
+    """Result of parsing an indirect command"""
+    action: str  # The action to execute: show_labs, show_vitals, show_meds, show_allergies, etc.
+    parameters: Dict[str, Any] = {}  # Parameters for the action (e.g., specific lab name)
+    spoken_confirmation: str  # TTS-friendly response
+    confidence: str  # "high", "medium", "low"
+    original_input: str  # The original natural language input
+    parsed_entities: List[str] = []  # Entities extracted from input
+
+# Mapping of natural language patterns to actions and specific items
+INDIRECT_COMMAND_PATTERNS = {
+    # Labs - specific values
+    "labs": {
+        "action": "show_labs",
+        "keywords": ["lab", "labs", "laboratory", "bloodwork", "blood work", "test", "tests", "results", "blood test"],
+        "specific_items": {
+            "potassium": {"loinc": "2823-3", "aliases": ["k", "k+", "potassium level", "serum potassium"]},
+            "sodium": {"loinc": "2951-2", "aliases": ["na", "na+", "sodium level", "serum sodium"]},
+            "creatinine": {"loinc": "2160-0", "aliases": ["creat", "kidney function", "renal function"]},
+            "hemoglobin": {"loinc": "718-7", "aliases": ["hgb", "hb", "hemoglobin level"]},
+            "hematocrit": {"loinc": "4544-3", "aliases": ["hct"]},
+            "glucose": {"loinc": "2345-7", "aliases": ["blood sugar", "sugar level", "blood glucose", "fasting glucose"]},
+            "a1c": {"loinc": "4548-4", "aliases": ["hemoglobin a1c", "hba1c", "glycated hemoglobin"]},
+            "bun": {"loinc": "3094-0", "aliases": ["blood urea nitrogen", "urea"]},
+            "wbc": {"loinc": "6690-2", "aliases": ["white blood cells", "white count", "leukocytes"]},
+            "platelets": {"loinc": "777-3", "aliases": ["plt", "platelet count"]},
+            "troponin": {"loinc": "6598-7", "aliases": ["trop", "cardiac troponin", "heart enzyme"]},
+            "bnp": {"loinc": "30934-4", "aliases": ["brain natriuretic peptide", "nt-probnp", "pro-bnp"]},
+            "inr": {"loinc": "6301-6", "aliases": ["international normalized ratio", "coagulation"]},
+            "ptt": {"loinc": "3173-2", "aliases": ["partial thromboplastin time"]},
+            "tsh": {"loinc": "3016-3", "aliases": ["thyroid", "thyroid stimulating hormone"]},
+            "magnesium": {"loinc": "19123-9", "aliases": ["mg", "mag level"]},
+            "calcium": {"loinc": "17861-6", "aliases": ["ca", "calcium level", "serum calcium"]},
+            "phosphorus": {"loinc": "2777-1", "aliases": ["phos", "phosphate"]},
+            "albumin": {"loinc": "1751-7", "aliases": ["alb"]},
+            "bilirubin": {"loinc": "1975-2", "aliases": ["bili", "total bilirubin"]},
+            "ast": {"loinc": "1920-8", "aliases": ["sgot", "aspartate aminotransferase"]},
+            "alt": {"loinc": "1742-6", "aliases": ["sgpt", "alanine aminotransferase"]},
+            "lipid panel": {"loinc": "24331-1", "aliases": ["cholesterol", "lipids", "triglycerides", "ldl", "hdl"]},
+            "cbc": {"loinc": "58410-2", "aliases": ["complete blood count", "blood count"]},
+            "cmp": {"loinc": "24323-8", "aliases": ["comprehensive metabolic panel", "metabolic panel"]},
+            "bmp": {"loinc": "24320-4", "aliases": ["basic metabolic panel", "basic metabolic"]},
+        }
+    },
+    # Vitals - specific values
+    "vitals": {
+        "action": "show_vitals",
+        "keywords": ["vital", "vitals", "vital signs"],
+        "specific_items": {
+            "blood pressure": {"code": "85354-9", "aliases": ["bp", "pressure", "systolic", "diastolic"]},
+            "heart rate": {"code": "8867-4", "aliases": ["pulse", "hr", "heart beat", "bpm"]},
+            "temperature": {"code": "8310-5", "aliases": ["temp", "fever"]},
+            "respiratory rate": {"code": "9279-1", "aliases": ["rr", "breathing rate", "respirations"]},
+            "oxygen saturation": {"code": "59408-5", "aliases": ["spo2", "o2 sat", "sat", "oxygen", "pulse ox"]},
+            "weight": {"code": "29463-7", "aliases": ["wt", "how much weigh", "body weight"]},
+            "height": {"code": "8302-2", "aliases": ["ht", "how tall"]},
+            "bmi": {"code": "39156-5", "aliases": ["body mass index"]},
+            "pain": {"code": "72514-3", "aliases": ["pain level", "pain score"]},
+        }
+    },
+    # Medications
+    "medications": {
+        "action": "show_meds",
+        "keywords": ["med", "meds", "medication", "medications", "medicine", "medicines", "drug", "drugs", "prescription", "prescriptions", "rx"],
+        "specific_items": {}  # Can be extended with specific medication queries
+    },
+    # Allergies
+    "allergies": {
+        "action": "show_allergies",
+        "keywords": ["allergy", "allergies", "allergic", "allergy list", "drug allergy", "drug allergies"],
+        "specific_items": {}
+    },
+    # Conditions
+    "conditions": {
+        "action": "show_conditions",
+        "keywords": ["condition", "conditions", "diagnosis", "diagnoses", "problem", "problems", "problem list", "medical history"],
+        "specific_items": {}
+    },
+    # Procedures
+    "procedures": {
+        "action": "show_procedures",
+        "keywords": ["procedure", "procedures", "surgery", "surgeries", "operation", "operations"],
+        "specific_items": {}
+    },
+    # Patient info
+    "patient": {
+        "action": "show_patient",
+        "keywords": ["patient", "patient info", "demographics", "who is", "patient summary", "summary"],
+        "specific_items": {}
+    },
+    # Care plans
+    "care_plans": {
+        "action": "show_care_plans",
+        "keywords": ["care plan", "care plans", "treatment plan", "plan of care"],
+        "specific_items": {}
+    },
+    # Notes
+    "notes": {
+        "action": "show_notes",
+        "keywords": ["note", "notes", "clinical notes", "documentation", "chart notes", "progress notes"],
+        "specific_items": {}
+    },
+    # Immunizations
+    "immunizations": {
+        "action": "show_immunizations",
+        "keywords": ["immunization", "immunizations", "vaccine", "vaccines", "vaccination", "shots"],
+        "specific_items": {}
+    },
+}
+
+# Question words that indicate a query
+QUESTION_WORDS = ["what", "what's", "whats", "how", "show", "check", "look", "pull", "get", "find", "see", "view", "display", "tell", "give"]
+
+# Temporal indicators
+TEMPORAL_WORDS = {
+    "last": "most_recent",
+    "latest": "most_recent",
+    "recent": "most_recent",
+    "previous": "previous",
+    "history": "all",
+    "all": "all",
+    "trend": "trend",
+    "over time": "trend",
+}
+
+def parse_indirect_command(text: str) -> IndirectCommandResult:
+    """
+    Parse natural language input and extract the intended action.
+
+    Examples:
+    - "check that potassium" -> show_labs with parameter potassium
+    - "what's his blood pressure" -> show_vitals with parameter blood pressure
+    - "show me the meds" -> show_meds
+    - "pull up labs" -> show_labs
+    - "what was the last hemoglobin" -> show_labs with parameter hemoglobin, temporal=most_recent
+    """
+    original = text
+    lower = text.lower().strip()
+
+    # Remove common filler words
+    filler_words = ["please", "can you", "could you", "would you", "his", "her", "their", "the", "that", "those", "this", "me", "up", "a", "an"]
+    for filler in filler_words:
+        lower = lower.replace(f" {filler} ", " ")
+    lower = " ".join(lower.split())  # Normalize whitespace
+
+    parsed_entities = []
+    action = "unknown"
+    parameters = {}
+    confidence = "low"
+    specific_item = None
+    temporal = None
+
+    # Check for temporal indicators
+    for word, temporal_type in TEMPORAL_WORDS.items():
+        if word in lower:
+            temporal = temporal_type
+            parameters["temporal"] = temporal
+            parsed_entities.append(f"temporal:{temporal}")
+
+    # First, try to find specific items (more specific = higher confidence)
+    for category, config in INDIRECT_COMMAND_PATTERNS.items():
+        specific_items = config.get("specific_items", {})
+        for item_name, item_config in specific_items.items():
+            # Check the item name and its aliases
+            all_names = [item_name] + item_config.get("aliases", [])
+            for name in all_names:
+                if name.lower() in lower:
+                    action = config["action"]
+                    specific_item = item_name
+                    parameters["specific_item"] = item_name
+                    if "loinc" in item_config:
+                        parameters["loinc_code"] = item_config["loinc"]
+                    if "code" in item_config:
+                        parameters["code"] = item_config["code"]
+                    parsed_entities.append(f"item:{item_name}")
+                    confidence = "high"
+                    break
+            if specific_item:
+                break
+        if specific_item:
+            break
+
+    # If no specific item, check for category keywords
+    if not specific_item:
+        for category, config in INDIRECT_COMMAND_PATTERNS.items():
+            keywords = config.get("keywords", [])
+            for keyword in keywords:
+                if keyword in lower:
+                    action = config["action"]
+                    parsed_entities.append(f"category:{category}")
+                    confidence = "medium"
+                    break
+            if action != "unknown":
+                break
+
+    # Check for question words at the start (boosts confidence)
+    for qword in QUESTION_WORDS:
+        if lower.startswith(qword):
+            if confidence == "medium":
+                confidence = "high"
+            elif confidence == "low":
+                confidence = "medium"
+            parsed_entities.append(f"question_word:{qword}")
+            break
+
+    # Generate spoken confirmation
+    if action == "unknown":
+        spoken_confirmation = "I'm not sure what you're asking for. Try 'show labs' or 'check vitals'."
+    elif specific_item:
+        action_name = action.replace("show_", "").replace("_", " ")
+        spoken_confirmation = f"Showing {specific_item} from {action_name}."
+    else:
+        action_name = action.replace("show_", "").replace("_", " ")
+        spoken_confirmation = f"Showing {action_name}."
+
+    return IndirectCommandResult(
+        action=action,
+        parameters=parameters,
+        spoken_confirmation=spoken_confirmation,
+        confidence=confidence,
+        original_input=original,
+        parsed_entities=parsed_entities
+    )
+
+
+@app.post("/api/v1/commands/parse")
+async def parse_natural_command(request: Request, text: str = None, body: dict = None):
+    """
+    Parse natural language into actionable commands (Feature #96)
+
+    Examples:
+    - "check that potassium" -> {"action": "show_labs", "parameters": {"specific_item": "potassium"}}
+    - "what's his blood pressure" -> {"action": "show_vitals", "parameters": {"specific_item": "blood pressure"}}
+    - "show me the meds" -> {"action": "show_meds"}
+    - "what was the last hemoglobin" -> {"action": "show_labs", "parameters": {"specific_item": "hemoglobin", "temporal": "most_recent"}}
+    """
+    # Get text from query param or body
+    if text is None and body is not None:
+        text = body.get("text", "")
+    if text is None:
+        text = ""
+
+    # Parse the command
+    result = parse_indirect_command(text)
+
+    # Log for HIPAA audit (no PHI in input text ideally)
+    audit_logger._log_event(
+        event_type="indirect_command",
+        action="parse",
+        patient_id=None,
+        details={
+            "original_input": text[:100],  # Truncate for safety
+            "parsed_action": result.action,
+            "confidence": result.confidence
+        }
+    )
+
+    return result
+
+
+@app.get("/api/v1/commands/suggestions")
+async def get_command_suggestions():
+    """
+    Get list of supported indirect command examples for help display.
+    """
+    return {
+        "categories": [
+            {
+                "name": "Labs",
+                "examples": [
+                    "check the potassium",
+                    "what's the hemoglobin",
+                    "show me the a1c",
+                    "what was the last creatinine",
+                    "pull up the cbc",
+                    "labs please"
+                ]
+            },
+            {
+                "name": "Vitals",
+                "examples": [
+                    "what's the blood pressure",
+                    "check the temp",
+                    "show me the heart rate",
+                    "what's the o2 sat",
+                    "vitals please"
+                ]
+            },
+            {
+                "name": "Medications",
+                "examples": [
+                    "what meds is he on",
+                    "show medications",
+                    "check the prescriptions"
+                ]
+            },
+            {
+                "name": "Allergies",
+                "examples": [
+                    "any allergies",
+                    "what are the allergies",
+                    "check for drug allergies"
+                ]
+            },
+            {
+                "name": "Clinical",
+                "examples": [
+                    "show the problems",
+                    "what conditions",
+                    "pull up the notes",
+                    "show care plans"
+                ]
+            }
+        ],
+        "tips": [
+            "Use natural language - you don't need exact commands",
+            "Mention specific values like 'potassium' or 'blood pressure'",
+            "Add 'last' or 'recent' for most recent values",
+            "Say 'trend' to see values over time"
+        ]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JARVIS-LIKE AI FEATURES - PRE-VISIT PREP ALERT (Feature #92)
+# Proactive AI that summarizes care gaps, trends, and important items on patient load
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class PrepAlertItem(BaseModel):
+    """Individual prep alert item"""
+    category: str  # "care_gap", "trend", "critical", "follow_up", "reminder"
+    priority: str  # "high", "medium", "low"
+    title: str
+    detail: str
+    action: Optional[str] = None  # Voice command to act on this
+    icon: Optional[str] = None  # Emoji for display
+
+class PreVisitPrepResponse(BaseModel):
+    """Pre-visit preparation intelligence"""
+    patient_id: str
+    patient_name: str
+    spoken_summary: str  # TTS-friendly conversational summary
+    display_summary: str  # Formatted for HUD/screen display
+    alerts: List[PrepAlertItem]
+    quick_actions: List[str]  # Suggested voice commands
+    timestamp: str
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CARE GAP DETECTION (Feature #97 - Jarvis Wave 2)
+# Proactively identify missing screenings, labs, and preventive care
+# Based on USPSTF, ADA, AHA, CDC guidelines
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CareGapItem(BaseModel):
+    """Individual care gap item"""
+    gap_id: str  # Unique identifier
+    category: str  # "screening", "lab", "vaccine", "monitoring", "counseling"
+    name: str  # Display name
+    description: str  # What's missing
+    guideline: str  # Source guideline (USPSTF, ADA, etc.)
+    priority: str  # "high", "medium", "low"
+    due_status: str  # "overdue", "due_soon", "due", "recommended"
+    last_completed: Optional[str] = None  # Date of last completion
+    next_due: Optional[str] = None  # When it's due
+    action: str  # Voice command to address
+    order_code: Optional[str] = None  # CPT/LOINC code if applicable
+    icd10_codes: List[str] = []  # Relevant diagnosis codes
+
+class CareGapResponse(BaseModel):
+    """Response for care gap detection"""
+    patient_id: str
+    patient_name: str
+    total_gaps: int
+    high_priority: int
+    gaps: List[CareGapItem]
+    spoken_summary: str  # TTS-friendly
+    display_summary: str  # For HUD
+    timestamp: str
+
+# Comprehensive care gap rules based on clinical guidelines
+CARE_GAP_RULES = {
+    # === CANCER SCREENINGS (USPSTF) ===
+    "colonoscopy": {
+        "name": "Colorectal Cancer Screening",
+        "category": "screening",
+        "min_age": 45, "max_age": 75,
+        "interval_years": 10,
+        "gender": None,
+        "guideline": "USPSTF Grade A",
+        "description": "Colonoscopy every 10 years (or FIT annually)",
+        "order_code": "45378",
+        "keywords": ["colonoscopy", "colorectal", "colon cancer", "fit test", "cologuard"],
+        "icd10": ["Z12.11", "Z12.12"]
+    },
+    "mammogram": {
+        "name": "Breast Cancer Screening",
+        "category": "screening",
+        "min_age": 40, "max_age": 74,
+        "interval_years": 2,
+        "gender": "female",
+        "guideline": "USPSTF Grade B",
+        "description": "Mammography every 2 years for women 40-74",
+        "order_code": "77067",
+        "keywords": ["mammogram", "breast cancer", "mammography"],
+        "icd10": ["Z12.31"]
+    },
+    "pap_smear": {
+        "name": "Cervical Cancer Screening",
+        "category": "screening",
+        "min_age": 21, "max_age": 65,
+        "interval_years": 3,
+        "gender": "female",
+        "guideline": "USPSTF Grade A",
+        "description": "Pap smear every 3 years (or with HPV every 5 years)",
+        "order_code": "88175",
+        "keywords": ["pap", "pap smear", "cervical", "hpv"],
+        "icd10": ["Z12.4"]
+    },
+    "lung_cancer": {
+        "name": "Lung Cancer Screening",
+        "category": "screening",
+        "min_age": 50, "max_age": 80,
+        "interval_years": 1,
+        "gender": None,
+        "conditions": ["tobacco_use", "smoking", "smoker"],
+        "guideline": "USPSTF Grade B",
+        "description": "Low-dose CT for 20+ pack-year smokers",
+        "order_code": "71271",
+        "keywords": ["ldct", "lung cancer", "low dose ct"],
+        "icd10": ["Z87.891", "Z12.2"]
+    },
+    "prostate_discussion": {
+        "name": "Prostate Cancer Discussion",
+        "category": "counseling",
+        "min_age": 55, "max_age": 69,
+        "gender": "male",
+        "guideline": "USPSTF Grade C",
+        "description": "Discuss PSA screening risks/benefits",
+        "keywords": ["psa", "prostate"],
+        "icd10": ["Z12.5"]
+    },
+
+    # === BONE HEALTH ===
+    "dexa_scan": {
+        "name": "Osteoporosis Screening",
+        "category": "screening",
+        "min_age": 65, "max_age": 999,
+        "interval_years": 2,
+        "gender": "female",
+        "guideline": "USPSTF Grade B",
+        "description": "DEXA scan for women 65+ or postmenopausal with risk factors",
+        "order_code": "77080",
+        "keywords": ["dexa", "bone density", "osteoporosis"],
+        "icd10": ["Z13.820"]
+    },
+
+    # === CARDIOVASCULAR (AHA/ACC) ===
+    "lipid_panel": {
+        "name": "Lipid Panel",
+        "category": "lab",
+        "min_age": 40, "max_age": 75,
+        "interval_years": 5,
+        "conditions": ["diabetes", "hypertension", "hyperlipidemia", "cardiovascular", "cad", "heart"],
+        "guideline": "ACC/AHA",
+        "description": "Fasting lipid panel for cardiovascular risk assessment",
+        "order_code": "80061",
+        "keywords": ["lipid", "cholesterol", "ldl", "hdl", "triglycerides"],
+        "icd10": ["Z13.220"]
+    },
+    "blood_pressure": {
+        "name": "Blood Pressure Screening",
+        "category": "screening",
+        "min_age": 18,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade A",
+        "description": "Annual blood pressure measurement for adults",
+        "keywords": ["blood pressure", "hypertension", "bp"],
+        "icd10": ["Z13.6"]
+    },
+    "aaa_screening": {
+        "name": "AAA Screening",
+        "category": "screening",
+        "min_age": 65, "max_age": 75,
+        "gender": "male",
+        "conditions": ["tobacco_use", "smoking"],
+        "guideline": "USPSTF Grade B",
+        "description": "One-time abdominal aortic aneurysm ultrasound for male smokers 65-75",
+        "order_code": "76706",
+        "keywords": ["aaa", "aortic aneurysm", "abdominal ultrasound"],
+        "icd10": ["Z13.6"]
+    },
+
+    # === DIABETES (ADA) ===
+    "a1c": {
+        "name": "Hemoglobin A1c",
+        "category": "lab",
+        "conditions": ["diabetes", "prediabetes", "dm", "type 2", "type 1"],
+        "interval_months": 3,
+        "guideline": "ADA Standards of Care",
+        "description": "A1c every 3 months if not at goal, every 6 months if stable",
+        "order_code": "83036",
+        "keywords": ["a1c", "hemoglobin a1c", "hba1c", "glycated"],
+        "icd10": ["Z13.1"]
+    },
+    "diabetes_eye_exam": {
+        "name": "Diabetic Eye Exam",
+        "category": "screening",
+        "conditions": ["diabetes", "dm", "type 2", "type 1"],
+        "interval_years": 1,
+        "guideline": "ADA Standards of Care",
+        "description": "Annual dilated eye exam for diabetics",
+        "order_code": "92014",
+        "keywords": ["eye exam", "retinopathy", "dilated eye"],
+        "icd10": ["Z01.00"]
+    },
+    "diabetes_foot_exam": {
+        "name": "Diabetic Foot Exam",
+        "category": "screening",
+        "conditions": ["diabetes", "dm", "type 2", "type 1"],
+        "interval_years": 1,
+        "guideline": "ADA Standards of Care",
+        "description": "Annual comprehensive foot exam for diabetics",
+        "keywords": ["foot exam", "monofilament", "neuropathy"],
+        "icd10": ["Z01.89"]
+    },
+    "urine_albumin": {
+        "name": "Urine Albumin-Creatinine Ratio",
+        "category": "lab",
+        "conditions": ["diabetes", "hypertension", "ckd", "kidney"],
+        "interval_years": 1,
+        "guideline": "ADA/KDIGO",
+        "description": "Annual uACR for diabetics and CKD monitoring",
+        "order_code": "82043",
+        "keywords": ["uacr", "microalbumin", "albumin creatinine"],
+        "icd10": ["Z13.1"]
+    },
+
+    # === KIDNEY (KDIGO) ===
+    "egfr": {
+        "name": "eGFR/Creatinine",
+        "category": "lab",
+        "conditions": ["diabetes", "hypertension", "ckd", "kidney"],
+        "interval_years": 1,
+        "guideline": "KDIGO",
+        "description": "Annual creatinine/eGFR for at-risk patients",
+        "order_code": "82565",
+        "keywords": ["creatinine", "egfr", "kidney function", "renal"],
+        "icd10": ["Z13.1"]
+    },
+
+    # === VACCINATIONS (CDC/ACIP) ===
+    "flu_shot": {
+        "name": "Influenza Vaccine",
+        "category": "vaccine",
+        "min_age": 6,  # 6 months
+        "interval_months": 12,
+        "guideline": "CDC/ACIP",
+        "description": "Annual influenza vaccination",
+        "order_code": "90686",
+        "keywords": ["flu", "influenza", "flu shot"],
+        "icd10": ["Z23"]
+    },
+    "pneumonia_vaccine": {
+        "name": "Pneumococcal Vaccine",
+        "category": "vaccine",
+        "min_age": 65,
+        "guideline": "CDC/ACIP",
+        "description": "PCV15 or PCV20 for adults 65+",
+        "order_code": "90677",
+        "keywords": ["pneumonia", "pneumococcal", "prevnar"],
+        "icd10": ["Z23"]
+    },
+    "shingles_vaccine": {
+        "name": "Shingles Vaccine",
+        "category": "vaccine",
+        "min_age": 50,
+        "guideline": "CDC/ACIP",
+        "description": "Shingrix 2-dose series for adults 50+",
+        "order_code": "90750",
+        "keywords": ["shingles", "shingrix", "zoster"],
+        "icd10": ["Z23"]
+    },
+    "tdap_vaccine": {
+        "name": "Tdap/Td Vaccine",
+        "category": "vaccine",
+        "min_age": 19,
+        "interval_years": 10,
+        "guideline": "CDC/ACIP",
+        "description": "Tdap once, then Td every 10 years",
+        "order_code": "90715",
+        "keywords": ["tdap", "tetanus", "pertussis"],
+        "icd10": ["Z23"]
+    },
+    "covid_vaccine": {
+        "name": "COVID-19 Vaccine",
+        "category": "vaccine",
+        "min_age": 6,  # 6 months
+        "interval_years": 1,
+        "guideline": "CDC/ACIP",
+        "description": "Updated COVID-19 vaccine annually",
+        "order_code": "91318",
+        "keywords": ["covid", "covid-19", "coronavirus"],
+        "icd10": ["Z23"]
+    },
+
+    # === MENTAL HEALTH (USPSTF) ===
+    "depression_screening": {
+        "name": "Depression Screening",
+        "category": "screening",
+        "min_age": 12,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade B",
+        "description": "Annual PHQ-2/PHQ-9 screening",
+        "order_code": "96127",
+        "keywords": ["depression", "phq", "mental health"],
+        "icd10": ["Z13.31"]
+    },
+    "anxiety_screening": {
+        "name": "Anxiety Screening",
+        "category": "screening",
+        "min_age": 8,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade B (2023)",
+        "description": "Annual anxiety screening with GAD-7",
+        "order_code": "96127",
+        "keywords": ["anxiety", "gad"],
+        "icd10": ["Z13.31"]
+    },
+
+    # === SUBSTANCE USE ===
+    "tobacco_counseling": {
+        "name": "Tobacco Cessation Counseling",
+        "category": "counseling",
+        "conditions": ["tobacco_use", "smoking", "smoker", "nicotine"],
+        "guideline": "USPSTF Grade A",
+        "description": "Tobacco cessation intervention for smokers",
+        "order_code": "99406",
+        "keywords": ["smoking", "tobacco", "cessation", "quit"],
+        "icd10": ["Z87.891", "F17.210"]
+    },
+    "alcohol_screening": {
+        "name": "Alcohol Use Screening",
+        "category": "screening",
+        "min_age": 18,
+        "interval_years": 1,
+        "guideline": "USPSTF Grade B",
+        "description": "Annual AUDIT-C screening for unhealthy alcohol use",
+        "keywords": ["alcohol", "audit", "drinking"],
+        "icd10": ["Z13.89"]
+    },
+
+    # === STI SCREENING ===
+    "hiv_screening": {
+        "name": "HIV Screening",
+        "category": "screening",
+        "min_age": 15, "max_age": 65,
+        "guideline": "USPSTF Grade A",
+        "description": "One-time HIV screening for all 15-65 year olds",
+        "order_code": "86703",
+        "keywords": ["hiv", "aids"],
+        "icd10": ["Z11.4"]
+    },
+    "hepatitis_c": {
+        "name": "Hepatitis C Screening",
+        "category": "screening",
+        "min_age": 18, "max_age": 79,
+        "guideline": "USPSTF Grade B",
+        "description": "One-time HCV screening for adults 18-79",
+        "order_code": "86803",
+        "keywords": ["hepatitis c", "hcv", "hep c"],
+        "icd10": ["Z11.59"]
+    },
+    "hepatitis_b_vaccine": {
+        "name": "Hepatitis B Vaccine",
+        "category": "vaccine",
+        "min_age": 19, "max_age": 59,
+        "guideline": "CDC/ACIP",
+        "description": "Hep B vaccine series for adults 19-59",
+        "order_code": "90746",
+        "keywords": ["hepatitis b", "hbv", "hep b"],
+        "icd10": ["Z23"]
+    },
+
+    # === WELLNESS ===
+    "annual_wellness": {
+        "name": "Annual Wellness Visit",
+        "category": "screening",
+        "min_age": 65,
+        "interval_years": 1,
+        "guideline": "Medicare",
+        "description": "Annual Wellness Visit for Medicare patients",
+        "order_code": "G0438",
+        "keywords": ["wellness", "annual visit", "awv"],
+        "icd10": ["Z00.00"]
+    },
+
+    # === CONDITION-SPECIFIC MONITORING ===
+    "ckd_monitoring": {
+        "name": "CKD Monitoring Labs",
+        "category": "lab",
+        "conditions": ["ckd", "chronic kidney", "renal"],
+        "interval_months": 6,
+        "guideline": "KDIGO",
+        "description": "CMP, CBC, phosphorus, PTH for CKD Stage 3+",
+        "keywords": ["ckd", "kidney", "renal function"],
+        "icd10": ["N18.3", "N18.4", "N18.5"]
+    },
+    "chf_monitoring": {
+        "name": "Heart Failure Monitoring",
+        "category": "lab",
+        "conditions": ["heart failure", "chf", "hfref", "hfpef"],
+        "interval_months": 6,
+        "guideline": "ACC/AHA Heart Failure Guidelines",
+        "description": "BNP, renal function, electrolytes for CHF",
+        "keywords": ["heart failure", "bnp", "chf"],
+        "icd10": ["I50.9"]
+    },
+    "warfarin_inr": {
+        "name": "Warfarin INR Monitoring",
+        "category": "lab",
+        "conditions": ["warfarin", "coumadin", "anticoagulation"],
+        "interval_weeks": 4,
+        "guideline": "ACC/AHA",
+        "description": "INR monitoring every 4 weeks when stable",
+        "order_code": "85610",
+        "keywords": ["inr", "warfarin", "coumadin", "anticoagulation"],
+        "icd10": ["Z79.01"]
+    },
+    "thyroid_monitoring": {
+        "name": "Thyroid Function Monitoring",
+        "category": "lab",
+        "conditions": ["hypothyroid", "hyperthyroid", "thyroid", "levothyroxine", "synthroid"],
+        "interval_months": 6,
+        "guideline": "ATA",
+        "description": "TSH monitoring every 6-12 months when stable",
+        "order_code": "84443",
+        "keywords": ["tsh", "thyroid", "t4"],
+        "icd10": ["E03.9", "E05.90"]
+    },
+}
+
+def detect_care_gaps(patient_data: dict, immunizations: list = None, documents: list = None) -> List[CareGapItem]:
+    """
+    Detect care gaps based on patient demographics, conditions, and clinical history.
+    Uses USPSTF, ADA, AHA, CDC/ACIP, and specialty society guidelines.
+
+    Args:
+        patient_data: Dict containing dob, gender, conditions, medications, labs, vitals
+        immunizations: List of immunization records
+        documents: List of clinical documents (for procedure history)
+
+    Returns:
+        List of CareGapItem objects sorted by priority
+    """
+    gaps = []
+    today = datetime.now()
+
+    # Extract patient data
+    dob = patient_data.get("dob", "")
+    gender = patient_data.get("gender", "").lower()
+    conditions = patient_data.get("conditions", [])
+    medications = patient_data.get("medications", [])
+    labs = patient_data.get("labs", [])
+    vitals = patient_data.get("vitals", [])
+    immunizations = immunizations or []
+    documents = documents or []
+
+    # Calculate age
+    try:
+        dob_date = datetime.strptime(dob[:10], "%Y-%m-%d")
+        age = today.year - dob_date.year - ((today.month, today.day) < (dob_date.month, dob_date.day))
+    except:
+        age = 0
+
+    # Normalize condition names for matching
+    condition_names = []
+    for c in conditions:
+        if isinstance(c, dict):
+            condition_names.append(c.get("name", "").lower())
+        else:
+            condition_names.append(str(c).lower())
+    condition_text = " ".join(condition_names)
+
+    # Normalize medication names
+    med_names = []
+    for m in medications:
+        if isinstance(m, dict):
+            med_names.append(m.get("name", "").lower())
+        else:
+            med_names.append(str(m).lower())
+    med_text = " ".join(med_names)
+
+    # Extract lab history with dates
+    lab_history = {}
+    for lab in labs:
+        if isinstance(lab, dict):
+            name = lab.get("name", "").lower()
+            date_str = lab.get("date", "")
+            if name and date_str:
+                if name not in lab_history or date_str > lab_history[name]:
+                    lab_history[name] = date_str
+
+    # Extract immunization history
+    vaccine_history = {}
+    for imm in immunizations:
+        if isinstance(imm, dict):
+            name = imm.get("name", "").lower()
+            date_str = imm.get("date", "")
+            if name and date_str:
+                if name not in vaccine_history or date_str > vaccine_history[name]:
+                    vaccine_history[name] = date_str
+
+    # Helper to check if something was done within interval
+    def check_interval(last_date_str: str, interval_months: int = None, interval_years: int = None, interval_weeks: int = None) -> tuple:
+        """Returns (is_due, due_status, last_completed, next_due)"""
+        if not last_date_str:
+            return True, "overdue", None, None
+
+        try:
+            last_date = datetime.strptime(last_date_str[:10], "%Y-%m-%d")
+
+            # Calculate interval in days
+            if interval_years:
+                interval_days = interval_years * 365
+            elif interval_months:
+                interval_days = interval_months * 30
+            elif interval_weeks:
+                interval_days = interval_weeks * 7
+            else:
+                interval_days = 365  # Default 1 year
+
+            next_due_date = last_date + timedelta(days=interval_days)
+            days_until_due = (next_due_date - today).days
+
+            if days_until_due < 0:
+                return True, "overdue", last_date_str, next_due_date.strftime("%Y-%m-%d")
+            elif days_until_due < 30:
+                return True, "due_soon", last_date_str, next_due_date.strftime("%Y-%m-%d")
+            elif days_until_due < 90:
+                return False, "due", last_date_str, next_due_date.strftime("%Y-%m-%d")
+            else:
+                return False, "ok", last_date_str, next_due_date.strftime("%Y-%m-%d")
+        except:
+            return True, "overdue", None, None
+
+    # Check each care gap rule
+    for gap_id, rule in CARE_GAP_RULES.items():
+        # Age eligibility
+        min_age = rule.get("min_age", 0)
+        max_age = rule.get("max_age", 999)
+        if age < min_age or age > max_age:
+            continue
+
+        # Gender eligibility
+        rule_gender = rule.get("gender")
+        if rule_gender and rule_gender.lower() != gender:
+            continue
+
+        # Condition requirement (if specified)
+        required_conditions = rule.get("conditions", [])
+        if required_conditions:
+            has_condition = any(
+                any(req in condition_text or req in med_text for req in required_conditions)
+                for _ in [1]  # Just for iteration
+            )
+            if not any(req in condition_text or req in med_text for req in required_conditions):
+                continue
+
+        # Check if item is due based on category
+        category = rule.get("category", "screening")
+        keywords = rule.get("keywords", [])
+
+        # Find last completed date from appropriate source
+        last_date = None
+
+        if category == "vaccine":
+            # Check immunization records
+            for keyword in keywords:
+                for vax_name, vax_date in vaccine_history.items():
+                    if keyword in vax_name:
+                        if not last_date or vax_date > last_date:
+                            last_date = vax_date
+                        break
+
+        elif category == "lab":
+            # Check lab records
+            for keyword in keywords:
+                for lab_name, lab_date in lab_history.items():
+                    if keyword in lab_name:
+                        if not last_date or lab_date > last_date:
+                            last_date = lab_date
+                        break
+
+        # For screenings/monitoring, would check procedures/documents
+        # For now, assume due if no record found
+
+        # Determine interval
+        interval_years = rule.get("interval_years")
+        interval_months = rule.get("interval_months")
+        interval_weeks = rule.get("interval_weeks")
+
+        # For one-time screenings (no interval), skip if already done
+        if not interval_years and not interval_months and not interval_weeks:
+            if last_date:
+                continue
+            is_due = True
+            due_status = "recommended"
+            next_due = None
+        else:
+            is_due, due_status, _, next_due = check_interval(
+                last_date,
+                interval_months=interval_months,
+                interval_years=interval_years,
+                interval_weeks=interval_weeks
+            )
+
+        if not is_due and due_status == "ok":
+            continue
+
+        # Determine priority
+        if due_status == "overdue":
+            priority = "high"
+        elif due_status == "due_soon":
+            priority = "medium"
+        else:
+            priority = "low"
+
+        # Boost priority for condition-specific items
+        if required_conditions:
+            if priority == "low":
+                priority = "medium"
+
+        # Build action command
+        if category == "vaccine":
+            action = f"order {gap_id.replace('_', ' ')}"
+        elif category == "lab":
+            action = f"order {keywords[0] if keywords else gap_id}"
+        elif category == "screening":
+            action = f"order {keywords[0] if keywords else gap_id}"
+        else:
+            action = f"show {category}"
+
+        gaps.append(CareGapItem(
+            gap_id=gap_id,
+            category=category,
+            name=rule.get("name", gap_id),
+            description=rule.get("description", ""),
+            guideline=rule.get("guideline", ""),
+            priority=priority,
+            due_status=due_status,
+            last_completed=last_date,
+            next_due=next_due,
+            action=action,
+            order_code=rule.get("order_code"),
+            icd10_codes=rule.get("icd10", [])
+        ))
+
+    # Sort by priority
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    gaps.sort(key=lambda x: (priority_order.get(x.priority, 3), x.name))
+
+    return gaps
+
+def generate_care_gap_spoken(patient_name: str, gaps: List[CareGapItem]) -> str:
+    """Generate TTS-friendly spoken summary of care gaps"""
+    if not gaps:
+        return f"No care gaps identified for {patient_name}. Preventive care appears up to date."
+
+    high_priority = [g for g in gaps if g.priority == "high"]
+    medium_priority = [g for g in gaps if g.priority == "medium"]
+
+    parts = []
+
+    if high_priority:
+        parts.append(f"{patient_name} has {len(high_priority)} overdue item{'s' if len(high_priority) > 1 else ''}.")
+        for gap in high_priority[:3]:
+            parts.append(f"{gap.name} is overdue.")
+
+    if medium_priority:
+        if parts:
+            parts.append(f"Also, {len(medium_priority)} item{'s' if len(medium_priority) > 1 else ''} due soon.")
+        else:
+            parts.append(f"{patient_name} has {len(medium_priority)} item{'s' if len(medium_priority) > 1 else ''} due soon.")
+        for gap in medium_priority[:2]:
+            parts.append(f"{gap.name}.")
+
+    if gaps and gaps[0].action:
+        parts.append(f"Say '{gaps[0].action}' to address.")
+
+    return " ".join(parts)
+
+def generate_care_gap_display(gaps: List[CareGapItem]) -> str:
+    """Generate formatted display summary for HUD"""
+    if not gaps:
+        return "✓ All preventive care up to date"
+
+    lines = []
+    icons = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+
+    for gap in gaps[:8]:
+        icon = icons.get(gap.priority, "•")
+        status = "OVERDUE" if gap.due_status == "overdue" else "DUE SOON" if gap.due_status == "due_soon" else "DUE"
+        lines.append(f"{icon} {gap.name} [{status}]")
+
+    if len(gaps) > 8:
+        lines.append(f"   +{len(gaps) - 8} more gaps")
+
+    return "\n".join(lines)
+
+# Import timedelta for interval calculations
+from datetime import timedelta
+
+def calculate_age(dob_str: str) -> int:
+    """Calculate age from DOB string"""
+    try:
+        dob = datetime.strptime(dob_str[:10], "%Y-%m-%d")
+        today = datetime.now()
+        return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    except:
+        return 0
+
+def analyze_patient_for_prep(patient_data: dict) -> List[PrepAlertItem]:
+    """Analyze patient data and generate prep alerts"""
+    alerts = []
+
+    # Extract data
+    vitals = patient_data.get("vitals", [])
+    labs = patient_data.get("labs", [])
+    conditions = patient_data.get("conditions", [])
+    medications = patient_data.get("medications", [])
+    allergies = patient_data.get("allergies", [])
+    dob = patient_data.get("dob", "")
+    gender = patient_data.get("gender", "").lower()
+    age = calculate_age(dob)
+
+    condition_names = [c.get("name", "").lower() if isinstance(c, dict) else str(c).lower() for c in conditions]
+
+    # 1. Check for critical values (highest priority)
+    critical_vitals = [v for v in vitals if isinstance(v, dict) and v.get("is_critical")]
+    for vital in critical_vitals[:2]:
+        alerts.append(PrepAlertItem(
+            category="critical",
+            priority="high",
+            title=f"Critical {vital.get('name', 'vital')}",
+            detail=f"{vital.get('value', '')} {vital.get('unit', '')} - {vital.get('interpretation', '')}",
+            action="show vitals",
+            icon="🚨"
+        ))
+
+    critical_labs = [l for l in labs if isinstance(l, dict) and l.get("is_critical")]
+    for lab in critical_labs[:2]:
+        alerts.append(PrepAlertItem(
+            category="critical",
+            priority="high",
+            title=f"Critical {lab.get('name', 'lab')}",
+            detail=f"{lab.get('value', '')} {lab.get('unit', '')}",
+            action="show labs",
+            icon="🚨"
+        ))
+
+    # 2. Check for abnormal trends (compare recent to previous)
+    if len(labs) >= 2:
+        # Group labs by name and check trends
+        lab_by_name = {}
+        for lab in labs:
+            if isinstance(lab, dict):
+                name = lab.get("name", "")
+                if name not in lab_by_name:
+                    lab_by_name[name] = []
+                lab_by_name[name].append(lab)
+
+        for name, values in lab_by_name.items():
+            if len(values) >= 2 and values[0].get("is_abnormal"):
+                # Check if worsening
+                try:
+                    current = float(str(values[0].get("value", "0")).split()[0])
+                    previous = float(str(values[1].get("value", "0")).split()[0])
+                    if current > previous * 1.2:  # >20% increase
+                        alerts.append(PrepAlertItem(
+                            category="trend",
+                            priority="medium",
+                            title=f"{name} trending up",
+                            detail=f"↗️ {values[1].get('value', '')} → {values[0].get('value', '')}",
+                            action="show labs",
+                            icon="📈"
+                        ))
+                except:
+                    pass
+
+    # 3. Care gaps based on age/gender/conditions
+    # Diabetes care gaps
+    if any("diabet" in c for c in condition_names):
+        a1c_labs = [l for l in labs if isinstance(l, dict) and "a1c" in l.get("name", "").lower()]
+        if a1c_labs:
+            last_a1c = a1c_labs[0]
+            try:
+                a1c_value = float(str(last_a1c.get("value", "0")).replace("%", ""))
+                if a1c_value >= 8.0:
+                    alerts.append(PrepAlertItem(
+                        category="care_gap",
+                        priority="medium",
+                        title="A1c above target",
+                        detail=f"Last A1c: {a1c_value}% - ADA target <7%",
+                        action="order a1c",
+                        icon="🎯"
+                    ))
+            except:
+                pass
+        else:
+            alerts.append(PrepAlertItem(
+                category="care_gap",
+                priority="medium",
+                title="A1c may be due",
+                detail="Diabetic patient - consider checking A1c",
+                action="order a1c",
+                icon="🔬"
+            ))
+
+    # Hypertension care
+    if any("hypertens" in c for c in condition_names):
+        bp_vitals = [v for v in vitals if isinstance(v, dict) and "blood pressure" in v.get("name", "").lower()]
+        if bp_vitals:
+            last_bp = bp_vitals[0].get("value", "")
+            if "/" in last_bp:
+                try:
+                    systolic = int(last_bp.split("/")[0])
+                    if systolic >= 140:
+                        alerts.append(PrepAlertItem(
+                            category="care_gap",
+                            priority="medium",
+                            title="BP above target",
+                            detail=f"Last BP: {last_bp} - Target <140/90",
+                            action="show vitals",
+                            icon="💓"
+                        ))
+                except:
+                    pass
+
+    # Age-based screenings
+    if age >= 45 and gender in ["male", "female"]:
+        alerts.append(PrepAlertItem(
+            category="reminder",
+            priority="low",
+            title="Screening reminder",
+            detail=f"Age {age} - verify colonoscopy status",
+            action=None,
+            icon="📋"
+        ))
+
+    if age >= 40 and gender == "female":
+        alerts.append(PrepAlertItem(
+            category="reminder",
+            priority="low",
+            title="Mammogram reminder",
+            detail="Verify mammogram screening is current",
+            action=None,
+            icon="📋"
+        ))
+
+    # 4. Allergy reminders for high-risk allergies
+    high_risk_allergies = ["penicillin", "sulfa", "nsaid", "aspirin", "contrast", "latex"]
+    for allergy in allergies:
+        allergy_name = allergy.get("substance", "") if isinstance(allergy, dict) else str(allergy)
+        if any(risk in allergy_name.lower() for risk in high_risk_allergies):
+            alerts.append(PrepAlertItem(
+                category="reminder",
+                priority="high",
+                title=f"Allergy: {allergy_name}",
+                detail="High-risk allergy - verify before prescribing",
+                action="show allergies",
+                icon="⚠️"
+            ))
+            break  # Only show one allergy reminder
+
+    # 5. Medication count check
+    if len(medications) >= 10:
+        alerts.append(PrepAlertItem(
+            category="reminder",
+            priority="low",
+            title="Polypharmacy",
+            detail=f"Patient on {len(medications)} medications - consider reconciliation",
+            action="med reconciliation",
+            icon="💊"
+        ))
+
+    # Sort by priority
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    alerts.sort(key=lambda x: priority_order.get(x.priority, 3))
+
+    return alerts[:8]  # Limit to 8 most important
+
+def generate_spoken_prep(patient_name: str, alerts: List[PrepAlertItem]) -> str:
+    """Generate TTS-friendly spoken summary"""
+    if not alerts:
+        return f"Patient {patient_name} loaded. No urgent items to review."
+
+    parts = [f"Heads up on {patient_name}:"]
+
+    # Group by priority
+    high_priority = [a for a in alerts if a.priority == "high"]
+    medium_priority = [a for a in alerts if a.priority == "medium"]
+
+    if high_priority:
+        for alert in high_priority[:2]:
+            parts.append(f"{alert.title}. {alert.detail}.")
+
+    if medium_priority:
+        for alert in medium_priority[:2]:
+            parts.append(f"{alert.title}.")
+
+    # Add action prompt
+    if any(a.action for a in alerts):
+        actionable = [a for a in alerts if a.action]
+        if actionable:
+            parts.append(f"Say '{actionable[0].action}' for details.")
+
+    return " ".join(parts)
+
+def generate_display_prep(alerts: List[PrepAlertItem]) -> str:
+    """Generate formatted display summary"""
+    if not alerts:
+        return "✓ No urgent items"
+
+    lines = []
+    for alert in alerts[:5]:
+        icon = alert.icon or "•"
+        lines.append(f"{icon} {alert.title}: {alert.detail}")
+
+    return "\n".join(lines)
+
+@app.get("/api/v1/patient/{patient_id}/prep", response_model=PreVisitPrepResponse)
+async def get_pre_visit_prep(patient_id: str, request: Request):
+    """
+    Pre-Visit Prep Alert (Feature #92 - Jarvis Wave 1)
+
+    Returns proactive AI-generated briefing when loading a patient:
+    - Care gaps (screenings due, A1c targets)
+    - Critical/abnormal value alerts
+    - Trend analysis (worsening labs)
+    - Medication/allergy reminders
+    - Actionable voice commands
+
+    Returns both:
+    - spoken_summary: TTS-friendly for voice output
+    - display_summary: Formatted for HUD/screen
+    - alerts: Structured list for UI rendering
+    - quick_actions: Suggested voice commands
+
+    Example:
+        GET /api/v1/patient/12724066/prep
+
+    Response:
+        {
+            "spoken_summary": "Heads up on John Smith: A1c above target at 8.2%. BP elevated at 148/92. Say 'order a1c' for labs.",
+            "display_summary": "🎯 A1c above target: 8.2%\n💓 BP elevated: 148/92",
+            "alerts": [...],
+            "quick_actions": ["order a1c", "show vitals", "med reconciliation"]
+        }
+    """
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
+            raise HTTPException(status_code=404, detail="Patient not found")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+
+    # Extract basic info
+    name = extract_patient_name(patient_data)
+    dob = patient_data.get("birthDate", "")
+    gender = patient_data.get("gender", "")
+
+    # Fetch clinical data
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=20&_sort=-date")
+    vitals = extract_vitals(vitals_bundle)
+
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=30&_sort=-date")
+    labs = extract_labs(lab_bundle)
+
+    allergy_bundle = await fetch_fhir(f"AllergyIntolerance?patient={patient_id}&_count=10")
+    allergies = extract_allergies(allergy_bundle)
+
+    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=20")
+    medications = extract_medications(med_bundle)
+
+    try:
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10")
+        conditions = extract_conditions(cond_bundle)
+    except:
+        conditions = []
+
+    # Package data for analysis (handle both Pydantic objects and plain strings)
+    def to_dict(item):
+        if isinstance(item, str):
+            return {"name": item}
+        elif hasattr(item, 'model_dump'):
+            return item.model_dump()
+        elif hasattr(item, '__dict__'):
+            return item.__dict__
+        else:
+            return {"name": str(item)}
+
+    patient_analysis_data = {
+        "dob": dob,
+        "gender": gender,
+        "vitals": [to_dict(v) for v in vitals],
+        "labs": [to_dict(l) for l in labs],
+        "conditions": [to_dict(c) for c in conditions],
+        "medications": [to_dict(m) for m in medications],
+        "allergies": [to_dict(a) for a in allergies],
+    }
+
+    # Analyze and generate alerts
+    alerts = analyze_patient_for_prep(patient_analysis_data)
+
+    # Generate summaries
+    spoken_summary = generate_spoken_prep(name, alerts)
+    display_summary = generate_display_prep(alerts)
+
+    # Extract quick actions from alerts
+    quick_actions = list(set(a.action for a in alerts if a.action))[:5]
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="PRE_VISIT_PREP",
+        patient_id=patient_id,
+        status="success",
+        details={"alerts_count": len(alerts), "has_critical": any(a.priority == "high" for a in alerts)}
+    )
+
+    return PreVisitPrepResponse(
+        patient_id=patient_id,
+        patient_name=name,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        alerts=alerts,
+        quick_actions=quick_actions,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CARE GAP DETECTION (Feature #97 - Jarvis Wave 2)
+# Proactively identify missing screenings, labs, and preventive care
+# Based on USPSTF, ADA, AHA, CDC/ACIP, KDIGO guidelines
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/patient/{patient_id}/care-gaps", response_model=CareGapResponse)
+async def get_care_gaps(
+    patient_id: str,
+    request: Request,
+    category: Optional[str] = None,  # Filter by category: screening, lab, vaccine, monitoring, counseling
+    priority: Optional[str] = None   # Filter by priority: high, medium, low
+):
+    """
+    Care Gap Detection (Feature #97 - Jarvis Wave 2)
+
+    Proactively identifies missing screenings, labs, vaccines, and preventive care
+    based on patient demographics, conditions, and clinical guidelines.
+
+    Guidelines used:
+    - USPSTF: Colorectal, breast, cervical, lung cancer; depression, anxiety
+    - ADA: Diabetes care (A1c, eye exam, foot exam, uACR)
+    - AHA/ACC: Lipid panel, BP screening, heart failure monitoring
+    - CDC/ACIP: Influenza, pneumococcal, shingles, COVID, hepatitis
+    - KDIGO: CKD monitoring, eGFR
+    - Medicare: Annual Wellness Visit
+
+    Returns:
+    - gaps: List of care gaps with priority, due status, and actionable commands
+    - spoken_summary: TTS-friendly summary for voice output
+    - display_summary: Formatted for HUD/AR display
+
+    Query Parameters:
+    - category: Filter by type (screening, lab, vaccine, monitoring, counseling)
+    - priority: Filter by priority (high, medium, low)
+
+    Example:
+        GET /api/v1/patient/12724066/care-gaps
+        GET /api/v1/patient/12724066/care-gaps?priority=high
+        GET /api/v1/patient/12724066/care-gaps?category=vaccine
+
+    Voice Commands:
+    - "show care gaps"
+    - "what screenings are due"
+    - "overdue items"
+    - "care gaps for [patient]"
+    """
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
+            raise HTTPException(status_code=404, detail="Patient not found")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+
+    # Extract basic info
+    name = extract_patient_name(patient_data)
+    dob = patient_data.get("birthDate", "")
+    gender = patient_data.get("gender", "")
+
+    # Fetch clinical data in parallel
+    vitals_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=20&_sort=-date")
+    vitals = extract_vitals(vitals_bundle)
+
+    lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=50&_sort=-date")
+    labs = extract_labs(lab_bundle)
+
+    med_bundle = await fetch_fhir(f"MedicationRequest?patient={patient_id}&_count=30")
+    medications = extract_medications(med_bundle)
+
+    try:
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=20")
+        conditions = extract_conditions(cond_bundle)
+    except:
+        conditions = []
+
+    try:
+        imm_bundle = await fetch_fhir(f"Immunization?patient={patient_id}&_count=20&_sort=-date")
+        immunizations = extract_immunizations(imm_bundle)
+    except:
+        immunizations = []
+
+    # Convert to dict format
+    def to_dict(item):
+        if isinstance(item, str):
+            return {"name": item}
+        elif hasattr(item, 'model_dump'):
+            return item.model_dump()
+        elif hasattr(item, '__dict__'):
+            return item.__dict__
+        else:
+            return {"name": str(item)}
+
+    patient_analysis_data = {
+        "dob": dob,
+        "gender": gender,
+        "vitals": [to_dict(v) for v in vitals],
+        "labs": [to_dict(l) for l in labs],
+        "conditions": [to_dict(c) for c in conditions],
+        "medications": [to_dict(m) for m in medications],
+    }
+
+    immunization_data = [to_dict(i) for i in immunizations]
+
+    # Detect care gaps
+    gaps = detect_care_gaps(patient_analysis_data, immunizations=immunization_data)
+
+    # Apply filters
+    if category:
+        gaps = [g for g in gaps if g.category == category.lower()]
+    if priority:
+        gaps = [g for g in gaps if g.priority == priority.lower()]
+
+    # Generate summaries
+    spoken_summary = generate_care_gap_spoken(name, gaps)
+    display_summary = generate_care_gap_display(gaps)
+
+    # Count high priority
+    high_priority_count = len([g for g in gaps if g.priority == "high"])
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="CARE_GAP_DETECTION",
+        patient_id=patient_id,
+        status="success",
+        details={
+            "gaps_count": len(gaps),
+            "high_priority": high_priority_count,
+            "categories": list(set(g.category for g in gaps))
+        }
+    )
+
+    return CareGapResponse(
+        patient_id=patient_id,
+        patient_name=name,
+        total_gaps=len(gaps),
+        high_priority=high_priority_count,
+        gaps=gaps,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.get("/api/v1/care-gaps/rules")
+async def get_care_gap_rules():
+    """
+    Get all available care gap rules with their criteria.
+    Useful for understanding what screenings/tests are checked.
+    """
+    rules = []
+    for gap_id, rule in CARE_GAP_RULES.items():
+        rules.append({
+            "gap_id": gap_id,
+            "name": rule.get("name", gap_id),
+            "category": rule.get("category", "screening"),
+            "guideline": rule.get("guideline", ""),
+            "description": rule.get("description", ""),
+            "age_range": f"{rule.get('min_age', 0)}-{rule.get('max_age', 999)}",
+            "gender": rule.get("gender"),
+            "conditions": rule.get("conditions", []),
+            "interval": f"{rule.get('interval_years', '')}y" if rule.get('interval_years') else
+                       f"{rule.get('interval_months', '')}m" if rule.get('interval_months') else
+                       f"{rule.get('interval_weeks', '')}w" if rule.get('interval_weeks') else "one-time",
+            "order_code": rule.get("order_code"),
+            "icd10_codes": rule.get("icd10", [])
+        })
+
+    return {
+        "total_rules": len(rules),
+        "rules": rules,
+        "guidelines_covered": ["USPSTF", "ADA", "AHA/ACC", "CDC/ACIP", "KDIGO", "Medicare"]
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHIEF COMPLAINT WORKFLOWS (Feature #94 - Jarvis Wave 1)
+# Detects chief complaint and suggests relevant workups/orders
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Chief complaint to order set mapping
+CHIEF_COMPLAINT_WORKFLOWS = {
+    "chest pain": {
+        "order_set": "chest_pain",
+        "order_set_name": "Chest Pain Workup",
+        "orders": ["EKG", "Troponin", "CBC", "BMP", "Chest X-ray"],
+        "protocols": ["ACS rule-out protocol", "HEART score calculation"],
+        "considerations": ["Consider cardiology consult if positive troponin", "Aspirin if no contraindications"],
+        "keywords": ["chest pain", "chest pressure", "chest tightness", "substernal", "angina", "mi", "heart attack"]
+    },
+    "shortness of breath": {
+        "order_set": "chf",
+        "order_set_name": "CHF/Dyspnea Workup",
+        "orders": ["CBC", "BMP", "BNP", "Troponin", "Chest X-ray", "ABG"],
+        "protocols": ["Heart failure assessment", "COPD assessment"],
+        "considerations": ["Consider BiPAP if respiratory distress", "Check O2 saturation"],
+        "keywords": ["shortness of breath", "dyspnea", "sob", "breathing difficulty", "can't breathe", "winded"]
+    },
+    "abdominal pain": {
+        "order_set": "abdominal_pain",
+        "order_set_name": "Abdominal Pain Workup",
+        "orders": ["CBC", "CMP", "Lipase", "UA", "CT Abdomen"],
+        "protocols": ["Acute abdomen assessment", "Appendicitis score"],
+        "considerations": ["NPO if surgical concern", "Consider GI consult"],
+        "keywords": ["abdominal pain", "belly pain", "stomach pain", "abd pain", "nausea", "vomiting"]
+    },
+    "fever": {
+        "order_set": "sepsis",
+        "order_set_name": "Sepsis/Fever Workup",
+        "orders": ["CBC", "CMP", "Blood cultures x2", "UA", "Urine culture", "Chest X-ray"],
+        "protocols": ["Sepsis screening", "qSOFA calculation"],
+        "considerations": ["Start antibiotics within 1 hour if septic", "Fluid resuscitation"],
+        "keywords": ["fever", "febrile", "chills", "rigors", "temperature", "infection"]
+    },
+    "headache": {
+        "order_set": "stroke",
+        "order_set_name": "Headache/Stroke Workup",
+        "orders": ["CT Head", "CBC", "BMP"],
+        "protocols": ["NIHSS if stroke concern", "Subarachnoid hemorrhage screening"],
+        "considerations": ["LP if SAH concern with negative CT", "Consider neurology consult"],
+        "keywords": ["headache", "head pain", "migraine", "worst headache", "thunderclap"]
+    },
+    "altered mental status": {
+        "order_set": "sepsis",
+        "order_set_name": "AMS Workup",
+        "orders": ["CBC", "CMP", "UA", "Ammonia", "Blood glucose", "CT Head", "Drug screen"],
+        "protocols": ["Delirium assessment", "Stroke assessment"],
+        "considerations": ["Check glucose immediately", "Consider stroke code if focal deficits"],
+        "keywords": ["altered mental status", "confusion", "ams", "disoriented", "lethargic", "unresponsive"]
+    },
+    "syncope": {
+        "order_set": "chest_pain",
+        "order_set_name": "Syncope Workup",
+        "orders": ["EKG", "CBC", "BMP", "Troponin", "Orthostatic vitals"],
+        "protocols": ["San Francisco Syncope Rule", "Cardiac monitoring"],
+        "considerations": ["Consider telemetry admission", "Echo if cardiac concern"],
+        "keywords": ["syncope", "passed out", "fainted", "loss of consciousness", "blackout"]
+    },
+    "back pain": {
+        "order_set": "admission",
+        "order_set_name": "Back Pain Workup",
+        "orders": ["CBC", "BMP", "UA", "MRI spine if red flags"],
+        "protocols": ["Cauda equina screening", "Red flag assessment"],
+        "considerations": ["Check for urinary retention", "Neuro exam for weakness"],
+        "keywords": ["back pain", "lower back pain", "spine pain", "sciatica", "leg weakness"]
+    },
+    "diabetic emergency": {
+        "order_set": "dka",
+        "order_set_name": "DKA Protocol",
+        "orders": ["BMP", "CBC", "UA", "ABG", "Serum ketones", "HbA1c"],
+        "protocols": ["DKA/HHS protocol", "Insulin drip protocol"],
+        "considerations": ["IV fluids first", "Monitor potassium closely"],
+        "keywords": ["dka", "diabetic ketoacidosis", "high blood sugar", "hyperglycemia", "diabetic emergency"]
+    },
+    "respiratory distress": {
+        "order_set": "copd",
+        "order_set_name": "Respiratory Distress Workup",
+        "orders": ["ABG", "CBC", "BMP", "Chest X-ray", "BNP"],
+        "protocols": ["BiPAP assessment", "Intubation criteria"],
+        "considerations": ["Immediate respiratory therapy", "Consider ICU if severe"],
+        "keywords": ["respiratory distress", "wheezing", "asthma", "copd exacerbation", "respiratory failure"]
+    },
+    "urinary symptoms": {
+        "order_set": "uti",
+        "order_set_name": "UTI Workup",
+        "orders": ["UA", "Urine culture", "CBC", "BMP"],
+        "protocols": ["UTI treatment guidelines", "Pyelonephritis assessment"],
+        "considerations": ["Consider CT if complicated", "IV antibiotics if systemic symptoms"],
+        "keywords": ["dysuria", "uti", "urinary tract infection", "burning urination", "urinary frequency"]
+    },
+    "cough": {
+        "order_set": "pneumonia",
+        "order_set_name": "Pneumonia/Cough Workup",
+        "orders": ["Chest X-ray", "CBC", "BMP", "Blood cultures if febrile"],
+        "protocols": ["CURB-65 score", "Pneumonia severity index"],
+        "considerations": ["Consider influenza testing", "COVID testing if indicated"],
+        "keywords": ["cough", "pneumonia", "productive cough", "hemoptysis", "lung infection"]
+    }
+}
+
+
+class WorkflowSuggestion(BaseModel):
+    """Individual workflow suggestion"""
+    chief_complaint: str
+    order_set_id: str
+    order_set_name: str
+    suggested_orders: List[str]
+    protocols: List[str]
+    considerations: List[str]
+    confidence: str  # "high", "medium", "low"
+    voice_command: str  # How to order this
+
+
+class ChiefComplaintWorkflowResponse(BaseModel):
+    """Response for chief complaint workflow detection"""
+    patient_id: str
+    detected_complaints: List[str]
+    suggestions: List[WorkflowSuggestion]
+    spoken_summary: str
+    display_summary: str
+    timestamp: str
+
+
+def detect_chief_complaints(patient_data: dict, ambient_text: Optional[str] = None) -> List[tuple]:
+    """
+    Detect chief complaints from patient data and/or ambient conversation.
+    Returns list of (complaint, confidence, source) tuples.
+    """
+    detected = []
+
+    # Check patient's conditions
+    conditions = patient_data.get("conditions", [])
+    for cond in conditions:
+        cond_name = cond.get("name", "").lower() if isinstance(cond, dict) else str(cond).lower()
+        for complaint, workflow in CHIEF_COMPLAINT_WORKFLOWS.items():
+            for keyword in workflow["keywords"]:
+                if keyword in cond_name:
+                    detected.append((complaint, "high", "condition"))
+                    break
+
+    # Check reason for visit if available
+    reason = patient_data.get("reason_for_visit", "").lower()
+    if reason:
+        for complaint, workflow in CHIEF_COMPLAINT_WORKFLOWS.items():
+            for keyword in workflow["keywords"]:
+                if keyword in reason:
+                    detected.append((complaint, "high", "reason_for_visit"))
+                    break
+
+    # Check ambient text if provided
+    if ambient_text:
+        ambient_lower = ambient_text.lower()
+        for complaint, workflow in CHIEF_COMPLAINT_WORKFLOWS.items():
+            for keyword in workflow["keywords"]:
+                if keyword in ambient_lower:
+                    detected.append((complaint, "medium", "ambient"))
+                    break
+
+    # Remove duplicates, prioritizing high confidence
+    seen = set()
+    unique_detected = []
+    for item in detected:
+        if item[0] not in seen:
+            seen.add(item[0])
+            unique_detected.append(item)
+
+    return unique_detected
+
+
+def generate_workflow_suggestions(complaints: List[tuple]) -> List[WorkflowSuggestion]:
+    """Generate workflow suggestions for detected chief complaints"""
+    suggestions = []
+
+    for complaint, confidence, source in complaints:
+        workflow = CHIEF_COMPLAINT_WORKFLOWS.get(complaint)
+        if workflow:
+            suggestions.append(WorkflowSuggestion(
+                chief_complaint=complaint,
+                order_set_id=workflow["order_set"],
+                order_set_name=workflow["order_set_name"],
+                suggested_orders=workflow["orders"],
+                protocols=workflow["protocols"],
+                considerations=workflow["considerations"],
+                confidence=confidence,
+                voice_command=f"order {workflow['order_set']} workup"
+            ))
+
+    return suggestions
+
+
+@app.get("/api/v1/patient/{patient_id}/workflow", response_model=ChiefComplaintWorkflowResponse)
+async def get_chief_complaint_workflow(
+    patient_id: str,
+    request: Request,
+    ambient_text: Optional[str] = None
+):
+    """
+    Chief Complaint Workflow Detection (Feature #94 - Jarvis Wave 1)
+
+    Detects chief complaint and suggests relevant workups/orders.
+    Can use patient data and/or ambient conversation text.
+    """
+    # Fetch patient data
+    patient_url = f"Patient/{patient_id}"
+    patient_data = await fetch_fhir(patient_url)
+
+    name = extract_patient_name(patient_data)
+
+    # Fetch conditions for context
+    try:
+        cond_bundle = await fetch_fhir(f"Condition?patient={patient_id}&_count=10")
+        conditions = extract_conditions(cond_bundle)
+    except:
+        conditions = []
+
+    # Package data for detection
+    analysis_data = {
+        "conditions": [c.model_dump() if hasattr(c, 'model_dump') else {"name": str(c)} for c in conditions],
+        "reason_for_visit": patient_data.get("reason_for_visit", ""),
+    }
+
+    # Detect chief complaints
+    detected = detect_chief_complaints(analysis_data, ambient_text)
+
+    # Generate suggestions
+    suggestions = generate_workflow_suggestions(detected)
+
+    # Generate summaries
+    if suggestions:
+        # Spoken summary (TTS-friendly)
+        complaint_names = [s.chief_complaint for s in suggestions[:2]]
+        spoken_parts = []
+        for s in suggestions[:2]:
+            spoken_parts.append(f"For {s.chief_complaint}, consider {s.order_set_name}. Say '{s.voice_command}' to order.")
+        spoken_summary = " ".join(spoken_parts)
+
+        # Display summary
+        display_lines = []
+        for s in suggestions:
+            display_lines.append(f"📋 {s.chief_complaint.title()}")
+            display_lines.append(f"   → {s.order_set_name}")
+            display_lines.append(f"   Orders: {', '.join(s.suggested_orders[:4])}")
+            display_lines.append(f"   Voice: \"{s.voice_command}\"")
+        display_summary = "\n".join(display_lines)
+    else:
+        spoken_summary = "No specific chief complaint detected. Say 'list order sets' to see available workups."
+        display_summary = "No chief complaint detected.\nSay 'list order sets' for options."
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="AI",
+        action="CHIEF_COMPLAINT_WORKFLOW",
+        patient_id=patient_id,
+        status="success",
+        details={
+            "detected_complaints": [d[0] for d in detected],
+            "suggestions_count": len(suggestions),
+            "ambient_text_provided": ambient_text is not None
+        }
+    )
+
+    return ChiefComplaintWorkflowResponse(
+        patient_id=patient_id,
+        detected_complaints=[d[0] for d in detected],
+        suggestions=suggestions,
+        spoken_summary=spoken_summary,
+        display_summary=display_summary,
+        timestamp=datetime.now().isoformat()
+    )
+
+
+@app.post("/api/v1/workflow/suggest")
+async def suggest_workflow_from_text(
+    request: Request,
+    text: str = None
+):
+    """
+    Suggest workflow based on free text (ambient conversation or manual input).
+    Does not require patient context.
+    """
+    if not text:
+        body = await request.json()
+        text = body.get("text", "")
+
+    if not text:
+        raise HTTPException(status_code=400, detail="No text provided")
+
+    # Detect from text
+    detected = detect_chief_complaints({}, text)
+    suggestions = generate_workflow_suggestions(detected)
+
+    if suggestions:
+        spoken = f"Based on the conversation, consider {suggestions[0].order_set_name}. Say '{suggestions[0].voice_command}'."
+    else:
+        spoken = "No specific workup detected from conversation."
+
+    return {
+        "detected_complaints": [d[0] for d in detected],
+        "suggestions": [s.model_dump() for s in suggestions],
+        "spoken_summary": spoken
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -10434,7 +14849,41 @@ async def transcription_status():
         "features": {
             "speaker_diarization": True,
             "medical_vocabulary": True,
-            "specialty_auto_detection": True
+            "specialty_auto_detection": True,
+            "noise_reduction": NOISE_REDUCTION_AVAILABLE
+        }
+    }
+
+
+@app.get("/api/v1/noise-reduction/status")
+async def noise_reduction_status():
+    """
+    Check RNNoise noise reduction status and configuration.
+
+    RNNoise is Mozilla's open-source ML noise suppression,
+    providing 15-20dB noise reduction (similar to Krisp AI but free).
+
+    Returns:
+        Status and configuration of noise reduction
+    """
+    return {
+        "available": NOISE_REDUCTION_AVAILABLE,
+        "enabled_by_default": NOISE_REDUCTION_AVAILABLE,
+        "technology": "RNNoise (Mozilla ML noise suppression)",
+        "noise_reduction_db": "15-20dB",
+        "features": {
+            "voice_activity_detection": True,
+            "speech_probability": True,
+            "real_time_processing": True,
+            "sample_rate_conversion": "16kHz <-> 48kHz"
+        },
+        "usage": {
+            "enable": "ws://localhost:8002/ws/transcribe?noise_reduction=true",
+            "disable": "ws://localhost:8002/ws/transcribe?noise_reduction=false"
+        },
+        "comparison": {
+            "krisp_ai": "$8/month per user",
+            "rnnoise": "Free, open-source"
         }
     }
 
@@ -10478,17 +14927,19 @@ async def detect_specialty(request: SpecialtyDetectionRequest):
 
 
 @app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
+async def websocket_transcribe(websocket: WebSocket, specialties: str = None, noise_reduction: bool = False):
     """
-    Real-time transcription WebSocket endpoint
+    Real-time transcription WebSocket endpoint with RNNoise noise reduction
 
     Query Parameters:
     - specialties: Comma-separated list of specialties (cardiology, pulmonology, orthopedics, neurology, pediatrics)
       Example: /ws/transcribe?specialties=cardiology,pulmonology
+    - noise_reduction: Enable RNNoise noise cancellation (default: true)
+      Example: /ws/transcribe?noise_reduction=false
 
     Protocol:
-    1. Client connects (optionally with ?specialties=cardiology,pulmonology)
-    2. Server sends: {"type": "connected", "session_id": "...", "provider": "...", "specialties": [...]}
+    1. Client connects (optionally with ?specialties=cardiology,pulmonology&noise_reduction=true)
+    2. Server sends: {"type": "connected", "session_id": "...", "provider": "...", "specialties": [...], "noise_reduction": true/false}
     3. Client optionally sends speaker context:
        {"type": "speaker_context", "clinician": "Dr. Smith", "patient": "John Doe", "others": [...]}
     4. Client optionally sends patient context for specialty detection (informational):
@@ -10497,7 +14948,7 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
     6. Server sends transcription results:
        {"type": "transcript", "text": "...", "is_final": true/false, "speaker": "Dr. Smith"}
     7. Client sends: {"type": "stop"} to end session
-    8. Server sends: {"type": "ended", "full_transcript": "..."}
+    8. Server sends: {"type": "ended", "full_transcript": "...", "noise_reduction_stats": {...}}
     """
     await websocket.accept()
     print(f"🔗 WebSocket accepted from client")
@@ -10507,6 +14958,7 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
     print(f"🎤 Session ID: {session_id}")
     session = None
     detected_specialties = []
+    nr_session = None  # Noise reduction session
 
     # Parse specialties from query parameter
     specialty_list = None
@@ -10516,6 +14968,18 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
         specialty_list = [s for s in specialty_list if s in valid_specialties]
         if specialty_list:
             print(f"📚 Specialty vocabulary requested: {specialty_list}")
+
+    # Setup noise reduction if enabled and available
+    nr_enabled = noise_reduction and NOISE_REDUCTION_AVAILABLE
+    if nr_enabled:
+        try:
+            nr_session = create_noise_reduction_session(session_id)
+            print(f"🔇 RNNoise noise reduction enabled for session {session_id}")
+        except Exception as e:
+            print(f"⚠️ Failed to create noise reduction session: {e}")
+            nr_enabled = False
+    elif noise_reduction and not NOISE_REDUCTION_AVAILABLE:
+        print(f"⚠️ Noise reduction requested but RNNoise not available")
 
     try:
         # Create transcription session
@@ -10528,10 +14992,12 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
             "type": "connected",
             "session_id": session_id,
             "provider": TRANSCRIPTION_PROVIDER,
-            "specialties": specialty_list or []
+            "specialties": specialty_list or [],
+            "noise_reduction": nr_enabled
         })
+        nr_info = " + RNNoise" if nr_enabled else ""
         specialty_info = f" with specialties {specialty_list}" if specialty_list else ""
-        print(f"🎤 Transcription session started: {session_id} ({TRANSCRIPTION_PROVIDER}){specialty_info}")
+        print(f"🎤 Transcription session started: {session_id} ({TRANSCRIPTION_PROVIDER}{nr_info}){specialty_info}")
 
         # Task to forward transcriptions to client
         async def forward_transcriptions():
@@ -10559,8 +15025,19 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
                     break
 
                 if "bytes" in message:
-                    # Binary audio data
-                    await session.send_audio(message["bytes"])
+                    # Binary audio data - apply noise reduction if enabled
+                    audio_data = message["bytes"]
+                    if nr_session and nr_enabled:
+                        try:
+                            denoised_audio, speech_prob = nr_session.process(audio_data)
+                            if denoised_audio:  # Only send if we have complete frames
+                                await session.send_audio(denoised_audio)
+                        except Exception as e:
+                            # On error, fall back to original audio
+                            print(f"⚠️ Noise reduction error: {e}")
+                            await session.send_audio(audio_data)
+                    else:
+                        await session.send_audio(audio_data)
 
                 elif "text" in message:
                     # JSON control message
@@ -10607,13 +15084,23 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
         forward_task.cancel()
         full_transcript = await end_session(session_id)
 
-        # Send final transcript
+        # Get noise reduction stats before cleanup
+        nr_stats = None
+        if nr_session:
+            nr_stats = nr_session.get_stats()
+            nr_session.close()
+            print(f"🔇 Noise reduction stats: {nr_stats.get('avg_speech_probability', 0):.2f} avg speech prob, {nr_stats.get('chunk_count', 0)} chunks")
+
+        # Send final transcript with noise reduction stats
         try:
-            await websocket.send_json({
+            response = {
                 "type": "ended",
                 "session_id": session_id,
                 "full_transcript": full_transcript
-            })
+            }
+            if nr_stats:
+                response["noise_reduction_stats"] = nr_stats
+            await websocket.send_json(response)
         except:
             pass
 
@@ -10630,6 +15117,8 @@ async def websocket_transcribe(websocket: WebSocket, specialties: str = None):
             pass
         if session:
             await end_session(session_id)
+        if nr_session:
+            nr_session.close()
 
     finally:
         try:
@@ -11055,7 +15544,30 @@ async def tts_status():
 
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
-    print("📡 Connected to: Cerner Open Sandbox")
+    print("═" * 50)
+    print("📡 EHR Integrations:")
+    print(f"   • Cerner/Oracle: {'✅ READY' if CERNER_CLIENT_ID else '⚠️  Open sandbox'}")
+    if CERNER_CLIENT_ID:
+        print(f"     Client ID: {CERNER_CLIENT_ID[:8]}...")
+    print(f"   • Epic: {'✅ READY' if EPIC_CLIENT_ID else '❌ Pending'}")
+    print(f"   • Veradigm: {'✅ READY' if VERADIGM_CLIENT_ID else '❌ Pending'}")
+    print(f"   • athenahealth: {'✅ READY' if ATHENA_CLIENT_ID else '❌ Pending'}")
+    print(f"   • NextGen: {'✅ READY' if NEXTGEN_CLIENT_ID else '❌ Pending'}")
+    print(f"   • MEDITECH: {'✅ READY' if MEDITECH_CLIENT_ID else '❌ Pending'}")
+    if MEDITECH_CLIENT_ID:
+        print(f"     Client ID: {MEDITECH_CLIENT_ID[:12]}...")
+    print(f"   • eClinicalWorks: {'✅ READY' if ECLINICALWORKS_CLIENT_ID else '❌ Pending'}")
+    if ECLINICALWORKS_CLIENT_ID:
+        print(f"     Client ID: {ECLINICALWORKS_CLIENT_ID[:12]}...")
+    configured = sum([bool(CERNER_CLIENT_ID), bool(EPIC_CLIENT_ID), bool(VERADIGM_CLIENT_ID), bool(ATHENA_CLIENT_ID), bool(NEXTGEN_CLIENT_ID), bool(MEDITECH_CLIENT_ID), bool(ECLINICALWORKS_CLIENT_ID)])
+    print(f"   → {configured}/7 EHRs configured")
+    print("─" * 50)
+    print("🔬 Demo Server (Full CRUD):")
+    print(f"   • HAPI FHIR: {'✅ READY' if HAPI_FHIR_ENABLED else '❌ Disabled'}")
+    if HAPI_FHIR_ENABLED:
+        print(f"     URL: {HAPI_FHIR_BASE_URL}")
+        print("     ↳ CREATE, READ, UPDATE, DELETE supported")
+    print("═" * 50)
     print("🔗 API: http://localhost:8002")
     print("📱 Android emulator: http://10.0.2.2:8002")
     print(f"🎤 Transcription: {TRANSCRIPTION_PROVIDER} (ws://localhost:8002/ws/transcribe)")

@@ -1,0 +1,13 @@
+{
+  "hooks": {},
+  "permissions": {
+    "allow": [
+      "Bash(cat task_plan.md:*)",
+      "Bash(cat findings.md:*)",
+      "Bash(cat progress.md:*)",
+      "Read(task_plan.md)",
+      "Read(findings.md)",
+      "Read(progress.md)"
+    ]
+  }
+}

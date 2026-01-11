@@ -28,6 +28,32 @@ MDx Vision is an AR smart glasses platform for healthcare documentation. It impl
 
 See [CONVERSATIONS.md](CONVERSATIONS.md) for session history, decisions, and progress tracking.
 
+## Planning with Files (Manus-Style) - Optional
+
+For complex multi-phase tasks, the **three-file planning system** is available:
+
+```
+task_plan.md   - Phase tracking with checkboxes, errors, decisions
+findings.md    - Research discoveries, code snippets, technical decisions
+progress.md    - Session logs, test results, metrics
+```
+
+**When to use:**
+- Major features with 3+ phases (e.g., Minerva Phase 3)
+- Multi-session work where context may be lost
+- Research-heavy tasks
+
+**When NOT to use:**
+- Bug fixes
+- Single-file changes
+- Tasks where you know exactly what to do
+
+**Approach:** Manual, not automatic. No hooks - use planning files intentionally when needed.
+
+**Templates:** `.claude/skills/planning-with-files/templates/`
+
+**Current Planning:** See `task_plan.md` in project root (if exists)
+
 ## Sales & Marketing Materials
 
 See [SALES_MATERIALS.md](SALES_MATERIALS.md) for complete index.
@@ -58,6 +84,16 @@ See [SALES_MATERIALS.md](SALES_MATERIALS.md) for complete index.
 | `GAP_CLOSURE_PLAN.md` | Competitive gap analysis |
 | `INTERNAL_COMPETITIVE_ANALYSIS.md` | Competitor analysis |
 | `INTERNATIONAL_EHR_EXPANSION.md` | International expansion strategy |
+| `PRICING.md` | **Pricing strategy, Redox costs, ROI calculations** |
+| `INVESTOR.md` | **Investor deck content, market size, path to $100M ARR** |
+
+### EHR Integration Documents
+| File | Description |
+|------|-------------|
+| `EHR_IMPLEMENTATIONS.md` | Implementation status for all EHRs |
+| `EHR_ACCESS_GUIDE.md` | Detailed EHR registration instructions |
+| `EHR_AMBULATORY_RESEARCH.md` | DrChrono, Practice Fusion, CPSI research |
+| `EHR_AGGREGATOR_PLATFORMS.md` | Redox, Particle Health, Health Gorilla research |
 
 ### How to View HTML Decks
 ```bash
@@ -74,7 +110,7 @@ cd web && npm run dev  # Then visit http://localhost:5173/[filename].html
 - **Android App**: Native Kotlin app with voice recognition, patient lookup, live transcription
 - **Cerner Integration**: Live FHIR R4 sandbox connection
 - **EHR Proxy**: FastAPI service bridging AR glasses to EHR
-- **Real-time Transcription**: AssemblyAI/Deepgram WebSocket streaming
+- **Real-time Transcription**: AssemblyAI/Deepgram WebSocket streaming with RNNoise noise cancellation
 - **SOAP Note Generation**: AI-powered clinical documentation with ICD-10 codes
 - **Web Dashboard**: Next.js 14 running on port 5173
 
@@ -569,21 +605,58 @@ See `FEATURES.md` for detailed checklist of patent claim implementations.
 89. **RAG Knowledge Management** - Continuous improvement system for the clinical knowledge base; guideline versioning with automatic supersession tracking (current, superseded, deprecated, draft, archived statuses); PubMed ingestion pipeline via NCBI E-utilities API (free, no API key for <3 req/sec); clinician citation feedback loop (very_helpful, helpful, neutral, not_helpful, incorrect ratings); quality scoring based on feedback; low-quality document detection for review; specialty-specific collections with curators; conflict detection between guidelines (dosing, contraindication, recommendation patterns); RSS feed monitoring for medical updates (AHA, CDC MMWR, NEJM, JAMA); scheduled update checks for major sources; analytics tracking (usage patterns, top documents, specialty usage); HIPAA audit logging for all knowledge operations; API endpoints (/api/v1/knowledge/analytics, /api/v1/knowledge/feedback, /api/v1/knowledge/version, /api/v1/knowledge/versions/{id}, /api/v1/knowledge/pubmed/ingest, /api/v1/knowledge/pubmed/search, /api/v1/knowledge/collections, /api/v1/knowledge/conflicts, /api/v1/knowledge/check-updates, /api/v1/knowledge/rss-feeds, /api/v1/knowledge/deprecate/{id})
 90. **Scheduled RAG Updates** - Automated knowledge base updates with review checklists; 5 default schedules (Cardiology Daily, Diabetes Daily, Infectious Disease Daily, CDC MMWR Hourly, Major Sources Weekly); configurable frequency (hourly to weekly); PubMed query schedules, RSS feed monitors, comprehensive guideline checks; pending update queue with priority levels (critical, high, medium, low); 7-item review checklist per update (quality, safety, conflicts, clinical accuracy - 5 required, 2 optional); reviewer sign-off with notes; approve/reject workflow with audit trail; auto-ingest approved updates; bulk ingest all approved; dashboard with status breakdown, priority counts, specialty distribution, next scheduled runs, run history; cron-compatible `/api/v1/updates/run-due` endpoint; HIPAA audit logging; API endpoints (/api/v1/updates/dashboard, /api/v1/updates/pending, /api/v1/updates/schedules, /api/v1/updates/checklist/{id}, /api/v1/updates/{id}/approve, /api/v1/updates/{id}/reject, /api/v1/updates/{id}/ingest, /api/v1/updates/run-due, /api/v1/updates/ingest-all-approved)
 91. **Knowledge Updates Dashboard** - Web UI for managing RAG updates at /dashboard/knowledge; stats cards (Pending Review, Approved, Ingested, Active Schedules); 3 tabs (Pending Updates, Schedules, Run History); pending updates list with priority/status badges, checklist progress indicators; interactive checklist panel with click-to-complete items, reviewer name tracking; approve/reject buttons (approve requires all required checklist items); ingest button for approved updates; bulk "Ingest All Approved" action; schedules table with source type, frequency, last/next run times; play/pause toggle per schedule; manual "Run Now" button per schedule; "Run Due Schedules" bulk action; run history table with timestamps and update counts; dark mode support; responsive grid layout
+92. **Pre-Visit Prep Alert (Jarvis Wave 1)** - Proactive AI briefing when loading a patient; analyzes patient data for care gaps, critical values, trends, and safety concerns; categories: critical (abnormal vitals/labs), care_gap (overdue screenings), trend (worsening values), reminder (polypharmacy, allergy alerts); age/gender-based screening detection (mammogram, colonoscopy, A1c); spoken TTS summary for hands-free operation; HUD-formatted display summary for AR glasses; quick action suggestions (voice commands to act on alerts); auto-triggered on patient load; voice commands ("prep me", "patient prep", "heads up", "what should I know"); critical alerts bypass speech toggle for safety; API endpoint GET /api/v1/patient/{id}/prep; HIPAA audit logging; Android integration with Vuzix HUD support
+93. **Chief Complaint Workflows (Jarvis Wave 1)** - Detects chief complaint and suggests relevant workups/orders; 12 complaint mappings (chest pain, shortness of breath, abdominal pain, fever, headache, altered mental status, syncope, back pain, diabetic emergency, respiratory distress, urinary symptoms, cough); each complaint maps to order_set, suggested_orders, protocols, and clinical considerations; keyword detection from patient conditions and ambient conversation text; TTS-friendly spoken suggestions with voice commands; display summary for HUD; voice commands ("suggest workup", "what workup", "workflow", "workup for [complaint]"); API endpoints GET /api/v1/patient/{id}/workflow and POST /api/v1/workflow/suggest; integrates with existing Order Sets (Feature #45); HIPAA audit logging; Android integration with Vuzix support
+94. **Multi-Turn Clinical Reasoning (Jarvis Wave 1)** - Enhanced AI copilot with multiple reasoning modes for clinical decision support; Teaching mode explains clinical reasoning with educational context and step-by-step logic; Second Opinion mode provides alternative diagnoses, challenges assumptions, and highlights considerations you may have missed; Clarify mode identifies gaps in clinical information and suggests questions to ask; conversation history maintained for contextual back-and-forth dialogue; patient context (conditions, medications, allergies) automatically included; TTS-friendly spoken responses with follow-up prompts; voice commands ("explain why", "teach me", "why do you think", "second opinion", "what else could it be", "challenge", "what am I missing", "clarify", "what should I ask"); API endpoints POST /api/v1/copilot/reason, /api/v1/copilot/teach, /api/v1/copilot/challenge; Android integration with sendCopilotTeachingMode(), sendCopilotSecondOpinion(), sendCopilotClarifyMode(); HIPAA audit logging
+95. **Indirect Commands (Jarvis Wave 1)** - Natural language parsing for conversational queries; translates informal requests like "check that potassium" or "what's his blood pressure" into actionable commands; 25+ lab items with LOINC codes (potassium, sodium, creatinine, hemoglobin, glucose, a1c, troponin, BNP, INR, TSH, CBC, CMP, BMP, lipid panel, etc.); 9 vital items (blood pressure, heart rate, temperature, SpO2, respiratory rate, weight, height, BMI, pain); category keywords for meds, allergies, conditions, procedures, immunizations, care plans, clinical notes; temporal parsing (last, latest, recent, trend, history); alias support (k->potassium, bp->blood pressure, hgb->hemoglobin, o2 sat->oxygen saturation); confidence scoring (high/medium/low); filtered display highlights matching item; TTS spoken results; voice commands ("check the potassium", "what's his blood pressure", "get the cbc", "what was the last creatinine"); API endpoints POST /api/v1/commands/parse, GET /api/v1/commands/suggestions; HIPAA audit logging; Android integration with parseAndExecuteIndirectCommand()
+96. **Care Gap Detection (Jarvis Wave 2)** - Proactive identification of missing screenings, labs, vaccines, and preventive care; comprehensive rules engine with 31 care gap rules based on clinical guidelines; USPSTF screening recommendations (colonoscopy, mammogram, pap smear, lung cancer, AAA screening, depression/anxiety); ADA diabetes care standards (A1c, eye exam, foot exam, urine albumin); AHA/ACC cardiovascular guidelines (lipid panel, blood pressure, heart failure monitoring); CDC/ACIP vaccine recommendations (influenza, pneumococcal, shingles, Tdap, COVID, hepatitis B); KDIGO kidney disease guidelines (eGFR, CKD monitoring); Medicare Annual Wellness Visit; age/gender-based eligibility filtering; condition-based requirements (diabetes, hypertension, CKD, CHF, warfarin therapy); interval tracking (years, months, weeks) with overdue detection; priority scoring (high/medium/low) based on due status; TTS-friendly spoken summary; HUD-formatted display with priority icons (🔴🟡🟢); voice commands ("care gaps", "screenings due", "overdue items", "vaccines due", "labs due", "high priority gaps"); API endpoints GET /api/v1/patient/{id}/care-gaps (with category/priority filters), GET /api/v1/care-gaps/rules; Android integration with fetchCareGaps(), displayCareGaps(); Vuzix HUD support; HIPAA audit logging
+97. **Minerva AI Clinical Assistant** - Conversational AI assistant named after Minerva Diaz; "Hey Minerva" wake word activation; RAG-grounded responses to prevent hallucination; every clinical claim cited from guidelines (AHA, ADA, USPSTF, etc.); multi-turn conversation with patient context; proactive alerts and briefings; clinical reasoning modes (differential, teaching, challenge, clarify); voice commands ("Hey Minerva", "Minerva what do you think?", "Minerva how do I treat...", "Minerva what am I missing?", "Minerva stop"); API endpoints POST /api/v1/minerva/chat, GET /api/v1/minerva/context/{patient_id}, POST /api/v1/minerva/proactive/{patient_id}, POST /api/v1/minerva/reason; TTS responses with professional female voice; HIPAA audit logging for all interactions; see MINERVA.md for full implementation plan
+98. **RNNoise Noise Cancellation** - Mozilla's open-source ML noise suppression integrated into transcription pipeline; provides 15-20dB noise reduction (free alternative to Krisp AI $8/month); real-time processing with minimal latency; voice activity detection with speech probability scores; automatic sample rate conversion (16kHz client ↔ 48kHz RNNoise); enabled by default on all transcription sessions; graceful fallback when unavailable; session-level statistics; WebSocket query parameter `?noise_reduction=true/false` to toggle; API endpoints GET /api/v1/noise-reduction/status, GET /api/v1/transcription/status; module: `ehr-proxy/noise_reduction.py`; requires: `pip install pyrnnoise numpy scipy`
 
 ## Research Documents
 
 | Document | Description |
 |----------|-------------|
+| `MINERVA.md` | **Minerva AI Assistant** - Implementation plan, API design, voice commands, RAG integration |
 | `RACIAL_MEDICINE_DISPARITIES.md` | Comprehensive research on racial disparities in medicine with implementation guidance |
 | `CULTURAL_CARE_PREFERENCES.md` | Research on cultural/religious care preferences with clinical recommendations |
 
 ## Next Up (Recommended)
 
-### Quick Wins
-| Feature | Notes |
-|---------|-------|
-| All medium effort items completed! | 91 features implemented |
+### Current Focus: Minerva AI Assistant (Feature #97)
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 1: Foundation | **COMPLETE** | RAG-integrated chat endpoint, conversation history |
+| Phase 2: Wake Word | **COMPLETE** | "Hey Minerva" activation on Android |
+| Phase 3: Proactive | **COMPLETE** | Proactive alerts via Minerva voice |
+| Phase 4: Reasoning | Pending | Differential, teaching, challenge modes |
+| Phase 5: Actions | Pending | Voice orders, documentation through Minerva |
+| Phase 6: Learning | Pending | Personalization, specialty responses |
+
+See `MINERVA.md` for full implementation checklist.
+
+### Recently Completed
+- **Minerva Phase 3: Proactive Intelligence** (Jan 9, 2025) - Alerts on patient load, "Got it Minerva" acknowledgment, Vuzix HUD integration
+- **Feature #98: RNNoise Noise Cancellation** (Jan 9, 2025) - 15-20dB noise reduction
+
+### EHR Integration Status (Jan 4, 2025)
+
+**Priority Focus (95% hospital + 80% ambulatory market):**
+| EHR Platform | Status | Cost | Notes |
+|--------------|--------|------|-------|
+| **Cerner/Oracle** | READY | FREE | Client ID: `0fab9b20-adc8-4940-bbf6-82034d1d39ab` |
+| **Epic** | Pending | FREE | User has credentials |
+| **Veradigm** | Pending | $99/mo | User has credentials |
+| **athenahealth** | Available | FREE | Self-service sandbox |
+| **eClinicalWorks** | Available | FREE | FHIR APIs available |
+| **NextGen** | Available | FREE | Developer program |
+| **MEDITECH** | Available | FREE | Greenfield Workspace |
+| **DrChrono** | Available | FREE | Cloud EHR |
+
+**Total platforms documented:** 29 (see EHR_ACCESS_GUIDE.md)
+
+See `EHR_ACCESS_GUIDE.md` for detailed setup instructions.
 
 ### Larger Features
-1. Epic/Veradigm live integration (needs credentials)
+1. Epic/Veradigm live integration (credentials being gathered)
 2. Android XR SDK support (Jetpack Compose Glimmer, Gemini integration) - backlog
