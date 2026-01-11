@@ -42,32 +42,33 @@ async def check_drug_interactions(request: DrugInteractionRequest):
     """Check for drug interactions"""
     try:
         drugs = request.drugs
-        
+
         # If text provided, extract drug names first
         if request.text and not drugs:
             drugs = await drug_service.extract_drugs_from_text(request.text)
-        
+
         if not drugs or len(drugs) < 2:
             return DrugInteractionResponse(
                 drugsIdentified=drugs or [],
                 interactions=[],
                 hasContraindications=False
             )
-        
+
         logger.info("Checking drug interactions", drugs=drugs)
-        
+
         interactions = await drug_service.check_interactions(drugs)
-        
+
+        # interactions is a list of dicts, use dict access
         has_contraindications = any(
-            i.severity == "CONTRAINDICATED" for i in interactions
+            i.get("severity") == "CONTRAINDICATED" for i in interactions
         )
-        
+
         return DrugInteractionResponse(
             drugsIdentified=drugs,
             interactions=interactions,
             hasContraindications=has_contraindications
         )
-        
+
     except Exception as e:
         logger.error("Drug interaction check failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
@@ -76,17 +77,19 @@ async def check_drug_interactions(request: DrugInteractionRequest):
 @router.post("/extract-medications")
 async def extract_medications(request: DrugInteractionRequest):
     """Extract medication names from clinical text"""
+    if not request.text:
+        raise HTTPException(status_code=400, detail="Text is required")
+
     try:
-        if not request.text:
-            raise HTTPException(status_code=400, detail="Text is required")
-        
         drugs = await drug_service.extract_drugs_from_text(request.text)
-        
+
         return {
             "medications": drugs,
             "count": len(drugs)
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Medication extraction failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))

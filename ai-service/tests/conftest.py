@@ -52,8 +52,9 @@ def pytest_unconfigure(config):
 
 @pytest.fixture
 def openai_mock():
-    """Get the shared mock OpenAI client - resets call history between tests"""
-    _mock_openai_client.reset_mock()
+    """Get the shared mock OpenAI client for tests"""
+    # Don't call reset_mock() - it can break nested mock chains
+    # Each test sets its own return_value which overwrites previous
     return _mock_openai_client
 
 
@@ -61,14 +62,12 @@ def openai_mock():
 @pytest.fixture
 def drug_mock():
     """Alias for openai_mock - used by drug interaction tests"""
-    _mock_openai_client.reset_mock()
     return _mock_openai_client
 
 
 @pytest.fixture
 def nlp_mock():
     """Alias for openai_mock - used by notes tests"""
-    _mock_openai_client.reset_mock()
     return _mock_openai_client
 
 
