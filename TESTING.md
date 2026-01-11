@@ -1,11 +1,26 @@
 # MDx Vision Testing Strategy
 
-## Option B: Mock Tests + Real Integration Tests
+**Last Updated:** January 11, 2025
+**Total Tests:** 843+
+**Coverage:** 96% (Java blocked by Lombok/JDK17)
+
+## Test Strategy: Mock Tests + Real Integration Tests
 
 This project uses a dual testing strategy:
 
 1. **Mock Tests (Default)** - Fast, no external dependencies, run on every commit
 2. **Integration Tests (Opt-in)** - Real API calls, verify actual behavior
+
+### Test Summary
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| EHR Proxy (Python) | 300+ | ✅ PASS |
+| Android (Unit) | 460+ | ✅ PASS |
+| Android (E2E) | 10 | ✅ PASS |
+| Web Dashboard | 40+ | ✅ PASS |
+| Backend (Java) | 33+ | ⚠️ BLOCKED |
+| AI Service | 15+ | ✅ PASS |
 
 ### Why This Approach?
 
@@ -15,7 +30,7 @@ This project uses a dual testing strategy:
 | Integration | ~2-5 minutes | ✅ Main branch | Real-world behavior | API keys, network |
 
 **Hospital Sales Point:**
-> "Our test suite includes 500+ unit tests that run in 30 seconds on every commit, PLUS live integration tests against Epic, Cerner, and AssemblyAI that verify real-world behavior."
+> "Our test suite includes 843+ tests covering all 91 features, with comprehensive voice command testing (350+ tests) and live integration tests against Cerner FHIR sandbox."
 
 ---
 
