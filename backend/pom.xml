@@ -21,6 +21,7 @@
         <java.version>17</java.version>
         <hapi.fhir.version>7.0.0</hapi.fhir.version>
         <springdoc.version>2.3.0</springdoc.version>
+        <lombok.version>1.18.34</lombok.version>
     </properties>
     
     <dependencies>
