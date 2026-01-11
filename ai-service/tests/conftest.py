@@ -53,8 +53,10 @@ def pytest_unconfigure(config):
 @pytest.fixture
 def openai_mock():
     """Get the shared mock OpenAI client for tests"""
-    # Don't call reset_mock() - it can break nested mock chains
-    # Each test sets its own return_value which overwrites previous
+    # Clear side_effect before each test - side_effect takes precedence over return_value
+    # If a previous test used side_effect=[list], it must be cleared for return_value to work
+    _mock_openai_client.chat.completions.create.side_effect = None
+    _mock_openai_client.chat.completions.create.return_value = None
     return _mock_openai_client
 
 
@@ -62,12 +64,18 @@ def openai_mock():
 @pytest.fixture
 def drug_mock():
     """Alias for openai_mock - used by drug interaction tests"""
+    # Clear side_effect before each test
+    _mock_openai_client.chat.completions.create.side_effect = None
+    _mock_openai_client.chat.completions.create.return_value = None
     return _mock_openai_client
 
 
 @pytest.fixture
 def nlp_mock():
     """Alias for openai_mock - used by notes tests"""
+    # Clear side_effect before each test
+    _mock_openai_client.chat.completions.create.side_effect = None
+    _mock_openai_client.chat.completions.create.return_value = None
     return _mock_openai_client
 
 
