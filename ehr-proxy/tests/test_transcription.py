@@ -267,8 +267,13 @@ class TestProviderConfiguration:
         # Should default to assemblyai if not set
         assert TRANSCRIPTION_PROVIDER in ["assemblyai", "deepgram"]
 
+    @patch.dict(os.environ, {"ASSEMBLYAI_API_KEY": ""}, clear=False)
     def test_provider_requires_api_key(self):
         """Test that providers require API keys"""
+        # Re-import to get fresh module with cleared env
+        import importlib
+        import transcription
+        importlib.reload(transcription)
         from transcription import AssemblyAIProvider
 
         provider = AssemblyAIProvider(api_key=None)

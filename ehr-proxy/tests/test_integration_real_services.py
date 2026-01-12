@@ -270,13 +270,18 @@ class TestClaudeIntegration:
 
         client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
-        message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=500,
-            messages=[
-                {"role": "user", "content": "Patient has BP 180/110, headache, and blurry vision. What should I consider?"}
-            ]
-        )
+        try:
+            message = client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=500,
+                messages=[
+                    {"role": "user", "content": "Patient has BP 180/110, headache, and blurry vision. What should I consider?"}
+                ]
+            )
+        except anthropic.BadRequestError as e:
+            if "credit balance" in str(e):
+                pytest.skip("Anthropic API credits exhausted")
+            raise
 
         content = message.content[0].text
         assert content is not None
@@ -290,13 +295,18 @@ class TestClaudeIntegration:
 
         client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
-        message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=500,
-            messages=[
-                {"role": "user", "content": "Generate differential diagnosis for: 45yo male, chest pain radiating to left arm, diaphoresis, shortness of breath. Return top 5 with likelihood."}
-            ]
-        )
+        try:
+            message = client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=500,
+                messages=[
+                    {"role": "user", "content": "Generate differential diagnosis for: 45yo male, chest pain radiating to left arm, diaphoresis, shortness of breath. Return top 5 with likelihood."}
+                ]
+            )
+        except anthropic.BadRequestError as e:
+            if "credit balance" in str(e):
+                pytest.skip("Anthropic API credits exhausted")
+            raise
 
         content = message.content[0].text
         assert content is not None
@@ -325,7 +335,7 @@ class TestAssemblyAIIntegration:
 class TestEHRProxyEndpoints:
     """Integration tests for EHR Proxy endpoints hitting real Cerner"""
 
-    @pytest.fixture
+    @pytest.fixture(scope="session")
     def base_url(self):
         """EHR Proxy base URL"""
         return os.getenv("EHR_PROXY_URL", "http://localhost:8002")

@@ -120,18 +120,20 @@ class TestVoiceprintSession:
     def test_naive_datetime_handling(self):
         """Should handle naive datetimes correctly"""
         from auth import VoiceprintSession
+        from datetime import timezone
 
-        # Create session with naive datetime (no timezone)
-        naive_time = datetime.now() - timedelta(minutes=3)
+        # Create session with UTC-based naive datetime (code assumes naive = UTC)
+        # Use utcnow() to match the code's assumption
+        naive_utc_time = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=3)
         session = VoiceprintSession(
             device_id="test-device",
             clinician_id="test-clinician",
-            last_verified_at=naive_time,
+            last_verified_at=naive_utc_time,
             confidence_score=0.9,
             re_verify_interval_seconds=300
         )
 
-        # Should handle without error
+        # Should handle without error (3 min < 5 min interval)
         assert session.needs_re_verification() is False
         assert 0 < session.confidence_decay() < 1.0
         assert session.seconds_until_re_verification() > 0

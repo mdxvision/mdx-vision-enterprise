@@ -13,6 +13,7 @@ import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 import asyncio
 import json
+import os
 
 
 class TestTranscriptionResult:
@@ -105,8 +106,12 @@ class TestAssemblyAIProvider:
         assert provider.specialties == ["cardiology"]
 
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ASSEMBLYAI_API_KEY": ""}, clear=False)
     async def test_connect_without_api_key_raises_error(self):
         """Should raise error when no API key"""
+        import importlib
+        import transcription
+        importlib.reload(transcription)
         from transcription import AssemblyAIProvider
 
         provider = AssemblyAIProvider(api_key="")
@@ -205,8 +210,12 @@ class TestDeepgramProvider:
         assert provider.specialties == ["cardiology"]
 
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"DEEPGRAM_API_KEY": ""}, clear=False)
     async def test_connect_without_api_key_raises_error(self):
         """Should raise error when no API key"""
+        import importlib
+        import transcription
+        importlib.reload(transcription)
         from transcription import DeepgramProvider
 
         provider = DeepgramProvider(api_key="")
