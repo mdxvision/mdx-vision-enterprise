@@ -158,12 +158,47 @@
 
 ---
 
-## 11. Multi-Language (if applicable)
+## 11. Multi-Language Commands
 
+### Language Switching
 | Test | Voice Command | Expected Result | Pass |
 |------|---------------|-----------------|------|
-| 11.1 | "Switch to Spanish" | Language changes | [ ] |
-| 11.2 | "Cargar paciente" | Spanish command works | [ ] |
+| 11.1 | "Switch to Spanish" | Language changes to Spanish | [ ] |
+| 11.2 | "Switch to Russian" | Language changes to Russian | [ ] |
+| 11.3 | "Switch to English" | Language changes back to English | [ ] |
+
+### Spanish Full Phrases
+| Test | Voice Command | Expected Result | Pass |
+|------|---------------|-----------------|------|
+| 11.4 | "Cargar paciente" | Loads test patient | [ ] |
+| 11.5 | "Mostrar signos vitales" | Shows vitals | [ ] |
+| 11.6 | "Mostrar alergias" | Shows allergies | [ ] |
+| 11.7 | "Mostrar medicamentos" | Shows medications | [ ] |
+
+### Spanish Single-Word Keywords (NEW)
+| Test | Voice Command | Expected Result | Pass |
+|------|---------------|-----------------|------|
+| 11.8 | "Vitales" | Shows vitals (single word works) | [ ] |
+| 11.9 | "Alergias" | Shows allergies | [ ] |
+| 11.10 | "Medicamentos" | Shows medications | [ ] |
+| 11.11 | "Laboratorios" | Shows labs | [ ] |
+| 11.12 | "Ayuda" | Shows help | [ ] |
+
+### Russian Full Phrases
+| Test | Voice Command | Expected Result | Pass |
+|------|---------------|-----------------|------|
+| 11.13 | "Загрузить пациента" | Loads test patient | [ ] |
+| 11.14 | "Показать витальные" | Shows vitals | [ ] |
+| 11.15 | "Показать аллергии" | Shows allergies | [ ] |
+
+### Russian Single-Word Keywords (NEW)
+| Test | Voice Command | Expected Result | Pass |
+|------|---------------|-----------------|------|
+| 11.16 | "Витальные" | Shows vitals (single word works) | [ ] |
+| 11.17 | "Аллергии" | Shows allergies | [ ] |
+| 11.18 | "Лекарства" | Shows medications | [ ] |
+| 11.19 | "Анализы" | Shows labs | [ ] |
+| 11.20 | "Помощь" | Shows help | [ ] |
 
 ---
 
@@ -191,9 +226,9 @@
 | Worklist | 3 | | |
 | Display & HUD | 4 | | |
 | Gestures | 4 | | |
-| Multi-Language | 2 | | |
+| Multi-Language | 20 | | |
 | Error Handling | 3 | | |
-| **TOTAL** | **55** | | |
+| **TOTAL** | **73** | | |
 
 ---
 
