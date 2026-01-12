@@ -2232,9 +2232,12 @@ class ScheduledUpdateManager:
         updates = []
 
         for update in self.pending_updates.values():
-            if status and update.status.value != status:
+            # Handle both Enum and string values for status/priority
+            status_val = update.status.value if hasattr(update.status, 'value') else update.status
+            priority_val = update.priority.value if hasattr(update.priority, 'value') else update.priority
+            if status and status_val != status:
                 continue
-            if priority and update.priority.value != priority:
+            if priority and priority_val != priority:
                 continue
             if specialty and update.specialty != specialty:
                 continue
@@ -2406,7 +2409,8 @@ class ScheduledUpdateManager:
         update = self.pending_updates[update_id]
 
         if update.status != UpdateStatus.APPROVED:
-            return {"error": f"Update is not approved (status: {update.status.value})"}
+            status_val = update.status.value if hasattr(update.status, 'value') else update.status
+            return {"error": f"Update is not approved (status: {status_val})"}
 
         try:
             # Fetch full content from PubMed if we have a PMID
@@ -2480,8 +2484,11 @@ class ScheduledUpdateManager:
         specialty_counts = {}
 
         for update in self.pending_updates.values():
-            status_counts[update.status.value] = status_counts.get(update.status.value, 0) + 1
-            priority_counts[update.priority.value] = priority_counts.get(update.priority.value, 0) + 1
+            # Handle both Enum and string values for status/priority
+            status_val = update.status.value if hasattr(update.status, 'value') else update.status
+            priority_val = update.priority.value if hasattr(update.priority, 'value') else update.priority
+            status_counts[status_val] = status_counts.get(status_val, 0) + 1
+            priority_counts[priority_val] = priority_counts.get(priority_val, 0) + 1
             if update.specialty:
                 specialty_counts[update.specialty] = specialty_counts.get(update.specialty, 0) + 1
 
