@@ -19,6 +19,9 @@ import asyncio
 # Mark all tests as integration tests requiring EHR credentials
 pytestmark = [pytest.mark.integration, pytest.mark.ehr]
 
+# FHIR requires Accept header for JSON responses
+FHIR_HEADERS = {"Accept": "application/fhir+json"}
+
 
 class TestCernerSandboxIntegration:
     """Integration tests with real Cerner FHIR sandbox"""
@@ -32,7 +35,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_metadata_endpoint(self):
         """Should retrieve Cerner capability statement"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(f"{self.BASE_URL}/metadata")
 
         assert response.status_code == 200
@@ -45,7 +48,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_patient_read(self):
         """Should retrieve patient by ID from Cerner"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.BASE_URL}/Patient/{self.TEST_PATIENT_ID}"
             )
@@ -60,7 +63,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_patient_search_by_name(self):
         """Should search patients by name in Cerner"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.BASE_URL}/Patient",
                 params={"name": "SMART"}
@@ -76,7 +79,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_conditions(self):
         """Should retrieve patient conditions from Cerner"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.BASE_URL}/Condition",
                 params={"patient": self.TEST_PATIENT_ID}
@@ -89,7 +92,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_medications(self):
         """Should retrieve patient medications from Cerner"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.BASE_URL}/MedicationRequest",
                 params={"patient": self.TEST_PATIENT_ID}
@@ -102,7 +105,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_allergies(self):
         """Should retrieve patient allergies from Cerner"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.BASE_URL}/AllergyIntolerance",
                 params={"patient": self.TEST_PATIENT_ID}
@@ -115,7 +118,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_observations_vitals(self):
         """Should retrieve patient vitals from Cerner"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.BASE_URL}/Observation",
                 params={
@@ -131,7 +134,7 @@ class TestCernerSandboxIntegration:
     @pytest.mark.asyncio
     async def test_cerner_observations_labs(self):
         """Should retrieve patient labs from Cerner"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.BASE_URL}/Observation",
                 params={
@@ -154,7 +157,7 @@ class TestEpicSandboxIntegration:
     @pytest.mark.asyncio
     async def test_epic_metadata_endpoint(self):
         """Should retrieve Epic capability statement"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(f"{self.BASE_URL}/metadata")
 
         # Epic may require auth even for metadata
@@ -168,7 +171,7 @@ class TestEpicSandboxIntegration:
     @pytest.mark.asyncio
     async def test_epic_fhir_version(self):
         """Should support FHIR R4"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(f"{self.BASE_URL}/metadata")
 
         if response.status_code == 401:
@@ -186,7 +189,7 @@ class TestFHIRComplianceIntegration:
     @pytest.mark.asyncio
     async def test_fhir_json_content_type(self):
         """Should return application/fhir+json"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(f"{self.CERNER_URL}/metadata")
 
         content_type = response.headers.get("content-type", "")
@@ -195,7 +198,7 @@ class TestFHIRComplianceIntegration:
     @pytest.mark.asyncio
     async def test_fhir_bundle_structure(self):
         """Should return valid Bundle for searches"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.CERNER_URL}/Patient",
                 params={"_count": "5"}
@@ -213,7 +216,7 @@ class TestFHIRComplianceIntegration:
     @pytest.mark.asyncio
     async def test_fhir_error_response(self):
         """Should return OperationOutcome for errors"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             response = await client.get(
                 f"{self.CERNER_URL}/Patient/nonexistent-patient-id-12345"
             )
@@ -296,7 +299,7 @@ class TestEHRPerformance:
         """Should complete patient lookup within acceptable time"""
         import time
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             start = time.time()
             response = await client.get(
                 f"{self.CERNER_URL}/Patient/12724066"
@@ -322,7 +325,7 @@ class TestEHRPerformance:
                 params=params
             )
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, headers=FHIR_HEADERS) as client:
             start = time.time()
 
             # Fetch in parallel
