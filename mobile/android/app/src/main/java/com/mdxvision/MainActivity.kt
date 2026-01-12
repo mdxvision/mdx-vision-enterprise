@@ -729,6 +729,97 @@ class MainActivity : AppCompatActivity() {
         "plan" to listOf("план", "лечение", "рекомендации", "назначения")
     )
 
+    // Spanish single-word keyword aliases (like English "vitals" -> "show vitals")
+    // These allow saying just "vitales" instead of "mostrar signos vitales"
+    private val spanishKeywordAliases = mapOf(
+        // Data display keywords
+        "vitales" to "show vitals",
+        "signos vitales" to "show vitals",
+        "alergias" to "show allergies",
+        "medicamentos" to "show meds",
+        "medicinas" to "show meds",
+        "laboratorios" to "show labs",
+        "análisis" to "show labs",
+        "procedimientos" to "show procedures",
+        "inmunizaciones" to "show immunizations",
+        "vacunas" to "show immunizations",
+        "condiciones" to "show conditions",
+        "diagnósticos" to "show conditions",
+        "planes de cuidado" to "show care plans",
+        "notas" to "clinical notes",
+        // Patient keywords
+        "paciente" to "load patient",
+        "cargar" to "load patient",
+        "buscar" to "find patient",
+        "escanear" to "scan wristband",
+        "resumen" to "patient summary",
+        // Documentation keywords
+        "nota" to "start note",
+        "transcripción" to "live transcribe",
+        "transcribir" to "live transcribe",
+        "generar" to "generate note",
+        // Navigation keywords
+        "cerrar" to "close",
+        "ayuda" to "help",
+        "comandos" to "show commands",
+        // Orders keywords
+        "órdenes" to "show orders",
+        "ordenes" to "show orders",
+        "cancelar" to "cancel order",
+        // Timer
+        "temporizador" to "start timer",
+        "tiempo" to "how long",
+        // Calculator
+        "calcular" to "calculate",
+        "calculadora" to "medical calculator"
+    )
+
+    // Russian single-word keyword aliases (like English "vitals" -> "show vitals")
+    // These allow saying just "витальные" instead of "показать жизненные показатели"
+    private val russianKeywordAliases = mapOf(
+        // Data display keywords
+        "витальные" to "show vitals",
+        "витали" to "show vitals",
+        "аллергии" to "show allergies",
+        "лекарства" to "show meds",
+        "медикаменты" to "show meds",
+        "препараты" to "show meds",
+        "анализы" to "show labs",
+        "лаборатории" to "show labs",
+        "процедуры" to "show procedures",
+        "прививки" to "show immunizations",
+        "вакцины" to "show immunizations",
+        "состояния" to "show conditions",
+        "диагнозы" to "show conditions",
+        "записи" to "clinical notes",
+        // Patient keywords
+        "пациента" to "load patient",
+        "пациент" to "load patient",
+        "загрузить" to "load patient",
+        "найти" to "find patient",
+        "сканировать" to "scan wristband",
+        "информация" to "patient summary",
+        // Documentation keywords
+        "запись" to "start note",
+        "заметка" to "start note",
+        "транскрипция" to "live transcribe",
+        "транскрибировать" to "live transcribe",
+        "создать" to "generate note",
+        // Navigation keywords
+        "закрыть" to "close",
+        "помощь" to "help",
+        "команды" to "show commands",
+        // Orders keywords
+        "назначения" to "show orders",
+        "отменить" to "cancel order",
+        // Timer
+        "таймер" to "start timer",
+        "время" to "how long",
+        // Calculator
+        "рассчитать" to "calculate",
+        "калькулятор" to "medical calculator"
+    )
+
     // ═══════════════════════════════════════════════════════════════════════════
     // AMBIENT CLINICAL INTELLIGENCE - Entity Extraction Patterns
     // ═══════════════════════════════════════════════════════════════════════════
@@ -12396,6 +12487,11 @@ SOFA Score: [X]
      * Translate non-English command to English for processing
      * Supports Spanish (with accent-insensitive matching) and Russian
      * Returns the English equivalent or the original if not found
+     *
+     * Matching priority:
+     * 1. Full phrase commands (e.g., "mostrar signos vitales")
+     * 2. Section aliases (e.g., "subjetivo" -> "subjective")
+     * 3. Single-word keyword aliases (e.g., "vitales" -> "show vitals")
      */
     private fun translateCommand(transcript: String): String {
         val lower = transcript.lowercase()
@@ -12404,7 +12500,7 @@ SOFA Score: [X]
         if (currentLanguage == LANG_SPANISH) {
             val lowerNoAccents = stripAccents(lower)  // For fuzzy matching
 
-            // Check for Spanish command matches (with and without accents)
+            // 1. Check for Spanish full phrase command matches (with and without accents)
             for ((spanish, english) in spanishCommands) {
                 val spanishNoAccents = stripAccents(spanish)
                 if (lower.contains(spanish) || lowerNoAccents.contains(spanishNoAccents)) {
@@ -12416,7 +12512,7 @@ SOFA Score: [X]
                 }
             }
 
-            // Check section aliases for Spanish
+            // 2. Check section aliases for Spanish
             for ((section, aliases) in spanishSectionAliases) {
                 for (alias in aliases) {
                     val aliasNoAccents = stripAccents(alias)
@@ -12429,23 +12525,40 @@ SOFA Score: [X]
                     }
                 }
             }
+
+            // 3. Check single-word keyword aliases for Spanish (e.g., "vitales" -> "show vitals")
+            for ((keyword, english) in spanishKeywordAliases) {
+                val keywordNoAccents = stripAccents(keyword)
+                if (lower.contains(keyword) || lowerNoAccents.contains(keywordNoAccents)) {
+                    // Return the English command directly (keyword triggers full action)
+                    return english
+                }
+            }
         }
 
         // Handle Russian translations
         if (currentLanguage == LANG_RUSSIAN) {
-            // Check for Russian command matches
+            // 1. Check for Russian full phrase command matches
             for ((russian, english) in russianCommands) {
                 if (lower.contains(russian)) {
                     return lower.replace(russian, english)
                 }
             }
 
-            // Check section aliases for Russian
+            // 2. Check section aliases for Russian
             for ((section, aliases) in russianSectionAliases) {
                 for (alias in aliases) {
                     if (lower.contains(alias)) {
                         return lower.replace(alias, section)
                     }
+                }
+            }
+
+            // 3. Check single-word keyword aliases for Russian (e.g., "витальные" -> "show vitals")
+            for ((keyword, english) in russianKeywordAliases) {
+                if (lower.contains(keyword)) {
+                    // Return the English command directly (keyword triggers full action)
+                    return english
                 }
             }
         }
