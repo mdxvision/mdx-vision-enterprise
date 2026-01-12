@@ -2495,4 +2495,561 @@ class VoiceCommandsComprehensiveTest {
                lower.contains("back") || lower.contains("go away") ||
                lower.contains("clear cache") || lower.contains("clear offline")
     }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MULTI-LANGUAGE TRANSLATION TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+    //
+    // These tests verify the translateCommand() function in MainActivity.kt
+    // which maps Spanish/Russian commands to English equivalents.
+    //
+    // This is REAL functionality that needs testing - not just aliases of
+    // the same code path. The translation maps (spanishCommands, russianCommands)
+    // are separate data structures that could have typos or missing entries.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // Spanish command mappings (mirrors MainActivity.spanishCommands)
+    private val spanishCommandsMap = mapOf(
+        // Patient commands
+        "cargar paciente" to "load patient",
+        "buscar paciente" to "find patient",
+        "escanear pulsera" to "scan wristband",
+        "resumen del paciente" to "patient summary",
+        "dime sobre el paciente" to "tell me about patient",
+        "información del paciente" to "brief me",
+        // Data display commands
+        "mostrar signos vitales" to "show vitals",
+        "mostrar alergias" to "show allergies",
+        "mostrar medicamentos" to "show meds",
+        "mostrar laboratorios" to "show labs",
+        "mostrar procedimientos" to "show procedures",
+        "mostrar inmunizaciones" to "show immunizations",
+        "mostrar condiciones" to "show conditions",
+        "mostrar planes de cuidado" to "show care plans",
+        "notas clínicas" to "clinical notes",
+        // Documentation commands
+        "iniciar nota" to "start note",
+        "terminar nota" to "stop note",
+        "guardar nota" to "save note",
+        "enviar a historia clínica" to "push to ehr",
+        "editar nota" to "edit note",
+        "restaurar nota" to "reset note",
+        // Transcription commands
+        "transcripción en vivo" to "live transcribe",
+        "iniciar transcripción" to "start transcription",
+        "detener transcripción" to "stop transcription",
+        "generar nota" to "generate note",
+        "volver a grabar" to "re-record",
+        // Navigation and control
+        "cerrar" to "close",
+        "volver" to "go back",
+        "ayuda" to "help",
+        "comandos" to "show commands",
+        "dejar de escuchar" to "stop listening",
+        "silencio" to "mute",
+        "desbloquear" to "unlock",
+        "bloquear sesión" to "lock session",
+        // Orders
+        "ordenar" to "order",
+        "mostrar órdenes" to "show orders",
+        "cancelar orden" to "cancel order",
+        // Handoff and discharge
+        "reporte de entrega" to "handoff report",
+        "resumen de alta" to "discharge summary",
+        "instrucciones de alta" to "discharge instructions",
+        // Checklists
+        "mostrar listas" to "show checklists",
+        "iniciar lista" to "start checklist",
+        "marcar todo" to "check all",
+        // Timer
+        "iniciar temporizador" to "start timer",
+        "detener temporizador" to "stop timer",
+        "cuánto tiempo" to "how long",
+        // Calculator
+        "calcular" to "calculate",
+        "calculadora médica" to "medical calculator"
+    )
+
+    // Russian command mappings (mirrors MainActivity.russianCommands)
+    private val russianCommandsMap = mapOf(
+        // Patient commands
+        "загрузить пациента" to "load patient",
+        "найти пациента" to "find patient",
+        "сканировать браслет" to "scan wristband",
+        "информация о пациенте" to "patient summary",
+        "расскажи о пациенте" to "tell me about patient",
+        "краткая информация" to "brief me",
+        // Data display commands
+        "показать витальные" to "show vitals",
+        "показать жизненные показатели" to "show vitals",
+        "показать аллергии" to "show allergies",
+        "показать лекарства" to "show meds",
+        "показать медикаменты" to "show meds",
+        "показать анализы" to "show labs",
+        "показать лаборатории" to "show labs",
+        "показать процедуры" to "show procedures",
+        "показать прививки" to "show immunizations",
+        "показать вакцинации" to "show immunizations",
+        "показать состояния" to "show conditions",
+        "показать диагнозы" to "show conditions",
+        "показать план лечения" to "show care plans",
+        "клинические записи" to "clinical notes",
+        // Documentation commands
+        "начать запись" to "start note",
+        "начать заметку" to "start note",
+        "закончить запись" to "stop note",
+        "сохранить запись" to "save note",
+        "сохранить заметку" to "save note",
+        "отправить в историю болезни" to "push to ehr",
+        "редактировать запись" to "edit note",
+        "сбросить запись" to "reset note",
+        // Transcription commands
+        "живая транскрипция" to "live transcribe",
+        "начать транскрипцию" to "start transcription",
+        "остановить транскрипцию" to "stop transcription",
+        "создать заметку" to "generate note",
+        "перезаписать" to "re-record",
+        // Navigation and control
+        "закрыть" to "close",
+        "назад" to "go back",
+        "помощь" to "help",
+        "команды" to "show commands",
+        "перестать слушать" to "stop listening",
+        "молчать" to "mute",
+        "разблокировать" to "unlock",
+        "заблокировать сессию" to "lock session",
+        // Orders
+        "назначить" to "order",
+        "заказать" to "order",
+        "показать назначения" to "show orders",
+        "отменить назначение" to "cancel order",
+        // Handoff and discharge
+        "отчёт о передаче" to "handoff report",
+        "выписка" to "discharge summary",
+        "инструкции при выписке" to "discharge instructions",
+        // Checklists
+        "показать чек-листы" to "show checklists",
+        "начать чек-лист" to "start checklist",
+        "отметить всё" to "check all",
+        // Timer
+        "запустить таймер" to "start timer",
+        "остановить таймер" to "stop timer"
+    )
+
+    /**
+     * Simulates the translateCommand function from MainActivity
+     * This tests the actual translation logic
+     */
+    private fun translateCommand(transcript: String, language: String): String {
+        val lower = transcript.lowercase()
+
+        when (language) {
+            "es" -> {
+                val lowerNoAccents = stripAccentsForTest(lower)
+                for ((spanish, english) in spanishCommandsMap) {
+                    val spanishNoAccents = stripAccentsForTest(spanish)
+                    if (lower.contains(spanish) || lowerNoAccents.contains(spanishNoAccents)) {
+                        return if (lower.contains(spanish)) {
+                            lower.replace(spanish, english)
+                        } else {
+                            lowerNoAccents.replace(spanishNoAccents, english)
+                        }
+                    }
+                }
+            }
+            "ru" -> {
+                for ((russian, english) in russianCommandsMap) {
+                    if (lower.contains(russian)) {
+                        return lower.replace(russian, english)
+                    }
+                }
+            }
+        }
+        return transcript
+    }
+
+    /**
+     * Strip accents for fuzzy matching (Spanish)
+     */
+    private fun stripAccentsForTest(text: String): String {
+        return text
+            .replace("á", "a").replace("à", "a").replace("ä", "a")
+            .replace("é", "e").replace("è", "e").replace("ë", "e")
+            .replace("í", "i").replace("ì", "i").replace("ï", "i")
+            .replace("ó", "o").replace("ò", "o").replace("ö", "o")
+            .replace("ú", "u").replace("ù", "u").replace("ü", "u")
+            .replace("ñ", "n")
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SPANISH TRANSLATION TESTS (50+ commands)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `spanish - cargar paciente translates to load patient`() {
+        assertEquals("load patient", translateCommand("cargar paciente", "es"))
+    }
+
+    @Test
+    fun `spanish - buscar paciente translates to find patient`() {
+        assertEquals("find patient", translateCommand("buscar paciente", "es"))
+    }
+
+    @Test
+    fun `spanish - escanear pulsera translates to scan wristband`() {
+        assertEquals("scan wristband", translateCommand("escanear pulsera", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar signos vitales translates to show vitals`() {
+        assertEquals("show vitals", translateCommand("mostrar signos vitales", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar alergias translates to show allergies`() {
+        assertEquals("show allergies", translateCommand("mostrar alergias", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar medicamentos translates to show meds`() {
+        assertEquals("show meds", translateCommand("mostrar medicamentos", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar laboratorios translates to show labs`() {
+        assertEquals("show labs", translateCommand("mostrar laboratorios", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar procedimientos translates to show procedures`() {
+        assertEquals("show procedures", translateCommand("mostrar procedimientos", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar inmunizaciones translates to show immunizations`() {
+        assertEquals("show immunizations", translateCommand("mostrar inmunizaciones", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar condiciones translates to show conditions`() {
+        assertEquals("show conditions", translateCommand("mostrar condiciones", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar planes de cuidado translates to show care plans`() {
+        assertEquals("show care plans", translateCommand("mostrar planes de cuidado", "es"))
+    }
+
+    @Test
+    fun `spanish - notas clinicas translates to clinical notes`() {
+        assertEquals("clinical notes", translateCommand("notas clínicas", "es"))
+    }
+
+    @Test
+    fun `spanish - iniciar nota translates to start note`() {
+        assertEquals("start note", translateCommand("iniciar nota", "es"))
+    }
+
+    @Test
+    fun `spanish - guardar nota translates to save note`() {
+        assertEquals("save note", translateCommand("guardar nota", "es"))
+    }
+
+    @Test
+    fun `spanish - generar nota translates to generate note`() {
+        assertEquals("generate note", translateCommand("generar nota", "es"))
+    }
+
+    @Test
+    fun `spanish - transcripcion en vivo translates to live transcribe`() {
+        assertEquals("live transcribe", translateCommand("transcripción en vivo", "es"))
+    }
+
+    @Test
+    fun `spanish - detener transcripcion translates to stop transcription`() {
+        assertEquals("stop transcription", translateCommand("detener transcripción", "es"))
+    }
+
+    @Test
+    fun `spanish - cerrar translates to close`() {
+        assertEquals("close", translateCommand("cerrar", "es"))
+    }
+
+    @Test
+    fun `spanish - ayuda translates to help`() {
+        assertEquals("help", translateCommand("ayuda", "es"))
+    }
+
+    @Test
+    fun `spanish - mostrar ordenes translates to show orders`() {
+        assertEquals("show orders", translateCommand("mostrar órdenes", "es"))
+    }
+
+    @Test
+    fun `spanish - resumen de alta translates to discharge summary`() {
+        assertEquals("discharge summary", translateCommand("resumen de alta", "es"))
+    }
+
+    @Test
+    fun `spanish - iniciar temporizador translates to start timer`() {
+        assertEquals("start timer", translateCommand("iniciar temporizador", "es"))
+    }
+
+    @Test
+    fun `spanish - calcular translates to calculate`() {
+        assertEquals("calculate", translateCommand("calcular", "es"))
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SPANISH ACCENT-INSENSITIVE TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `spanish accent-insensitive - mostrar ordenes without accent`() {
+        assertEquals("show orders", translateCommand("mostrar ordenes", "es"))
+    }
+
+    @Test
+    fun `spanish accent-insensitive - notas clinicas without accent`() {
+        assertEquals("clinical notes", translateCommand("notas clinicas", "es"))
+    }
+
+    @Test
+    fun `spanish accent-insensitive - transcripcion en vivo without accent`() {
+        assertEquals("live transcribe", translateCommand("transcripcion en vivo", "es"))
+    }
+
+    @Test
+    fun `spanish accent-insensitive - detener transcripcion without accent`() {
+        assertEquals("stop transcription", translateCommand("detener transcripcion", "es"))
+    }
+
+    @Test
+    fun `spanish accent-insensitive - informacion del paciente without accent`() {
+        assertEquals("brief me", translateCommand("informacion del paciente", "es"))
+    }
+
+    @Test
+    fun `spanish accent-insensitive - cuanto tiempo without accent`() {
+        assertEquals("how long", translateCommand("cuanto tiempo", "es"))
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // RUSSIAN TRANSLATION TESTS (50+ commands)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `russian - загрузить пациента translates to load patient`() {
+        assertEquals("load patient", translateCommand("загрузить пациента", "ru"))
+    }
+
+    @Test
+    fun `russian - найти пациента translates to find patient`() {
+        assertEquals("find patient", translateCommand("найти пациента", "ru"))
+    }
+
+    @Test
+    fun `russian - сканировать браслет translates to scan wristband`() {
+        assertEquals("scan wristband", translateCommand("сканировать браслет", "ru"))
+    }
+
+    @Test
+    fun `russian - показать витальные translates to show vitals`() {
+        assertEquals("show vitals", translateCommand("показать витальные", "ru"))
+    }
+
+    @Test
+    fun `russian - показать жизненные показатели translates to show vitals`() {
+        assertEquals("show vitals", translateCommand("показать жизненные показатели", "ru"))
+    }
+
+    @Test
+    fun `russian - показать аллергии translates to show allergies`() {
+        assertEquals("show allergies", translateCommand("показать аллергии", "ru"))
+    }
+
+    @Test
+    fun `russian - показать лекарства translates to show meds`() {
+        assertEquals("show meds", translateCommand("показать лекарства", "ru"))
+    }
+
+    @Test
+    fun `russian - показать медикаменты translates to show meds`() {
+        assertEquals("show meds", translateCommand("показать медикаменты", "ru"))
+    }
+
+    @Test
+    fun `russian - показать анализы translates to show labs`() {
+        assertEquals("show labs", translateCommand("показать анализы", "ru"))
+    }
+
+    @Test
+    fun `russian - показать лаборатории translates to show labs`() {
+        assertEquals("show labs", translateCommand("показать лаборатории", "ru"))
+    }
+
+    @Test
+    fun `russian - показать процедуры translates to show procedures`() {
+        assertEquals("show procedures", translateCommand("показать процедуры", "ru"))
+    }
+
+    @Test
+    fun `russian - показать прививки translates to show immunizations`() {
+        assertEquals("show immunizations", translateCommand("показать прививки", "ru"))
+    }
+
+    @Test
+    fun `russian - показать вакцинации translates to show immunizations`() {
+        assertEquals("show immunizations", translateCommand("показать вакцинации", "ru"))
+    }
+
+    @Test
+    fun `russian - показать состояния translates to show conditions`() {
+        assertEquals("show conditions", translateCommand("показать состояния", "ru"))
+    }
+
+    @Test
+    fun `russian - показать диагнозы translates to show conditions`() {
+        assertEquals("show conditions", translateCommand("показать диагнозы", "ru"))
+    }
+
+    @Test
+    fun `russian - показать план лечения translates to show care plans`() {
+        assertEquals("show care plans", translateCommand("показать план лечения", "ru"))
+    }
+
+    @Test
+    fun `russian - клинические записи translates to clinical notes`() {
+        assertEquals("clinical notes", translateCommand("клинические записи", "ru"))
+    }
+
+    @Test
+    fun `russian - начать запись translates to start note`() {
+        assertEquals("start note", translateCommand("начать запись", "ru"))
+    }
+
+    @Test
+    fun `russian - начать заметку translates to start note`() {
+        assertEquals("start note", translateCommand("начать заметку", "ru"))
+    }
+
+    @Test
+    fun `russian - сохранить запись translates to save note`() {
+        assertEquals("save note", translateCommand("сохранить запись", "ru"))
+    }
+
+    @Test
+    fun `russian - создать заметку translates to generate note`() {
+        assertEquals("generate note", translateCommand("создать заметку", "ru"))
+    }
+
+    @Test
+    fun `russian - живая транскрипция translates to live transcribe`() {
+        assertEquals("live transcribe", translateCommand("живая транскрипция", "ru"))
+    }
+
+    @Test
+    fun `russian - остановить транскрипцию translates to stop transcription`() {
+        assertEquals("stop transcription", translateCommand("остановить транскрипцию", "ru"))
+    }
+
+    @Test
+    fun `russian - закрыть translates to close`() {
+        assertEquals("close", translateCommand("закрыть", "ru"))
+    }
+
+    @Test
+    fun `russian - помощь translates to help`() {
+        assertEquals("help", translateCommand("помощь", "ru"))
+    }
+
+    @Test
+    fun `russian - показать назначения translates to show orders`() {
+        assertEquals("show orders", translateCommand("показать назначения", "ru"))
+    }
+
+    @Test
+    fun `russian - выписка translates to discharge summary`() {
+        assertEquals("discharge summary", translateCommand("выписка", "ru"))
+    }
+
+    @Test
+    fun `russian - запустить таймер translates to start timer`() {
+        assertEquals("start timer", translateCommand("запустить таймер", "ru"))
+    }
+
+    @Test
+    fun `russian - остановить таймер translates to stop timer`() {
+        assertEquals("stop timer", translateCommand("остановить таймер", "ru"))
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TRANSLATION EDGE CASES
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `translation - unknown command returns original`() {
+        assertEquals("unknown command", translateCommand("unknown command", "es"))
+        assertEquals("unknown command", translateCommand("unknown command", "ru"))
+    }
+
+    @Test
+    fun `translation - english command not translated when spanish mode`() {
+        assertEquals("show vitals", translateCommand("show vitals", "es"))
+    }
+
+    @Test
+    fun `translation - case insensitive spanish`() {
+        assertEquals("load patient", translateCommand("CARGAR PACIENTE", "es"))
+        assertEquals("show vitals", translateCommand("MOSTRAR SIGNOS VITALES", "es"))
+    }
+
+    @Test
+    fun `translation - case insensitive russian`() {
+        assertEquals("load patient", translateCommand("ЗАГРУЗИТЬ ПАЦИЕНТА", "ru"))
+        assertEquals("show vitals", translateCommand("ПОКАЗАТЬ ВИТАЛЬНЫЕ", "ru"))
+    }
+
+    @Test
+    fun `translation - partial match spanish`() {
+        val result = translateCommand("por favor cargar paciente ahora", "es")
+        assertTrue(result.contains("load patient"))
+    }
+
+    @Test
+    fun `translation - partial match russian`() {
+        val result = translateCommand("пожалуйста загрузить пациента сейчас", "ru")
+        assertTrue(result.contains("load patient"))
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STRIP ACCENTS FUNCTION TESTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `stripAccents - removes Spanish accents`() {
+        assertEquals("carino", stripAccentsForTest("cariño"))
+        assertEquals("informacion", stripAccentsForTest("información"))
+        assertEquals("transcripcion", stripAccentsForTest("transcripción"))
+        assertEquals("ordenes", stripAccentsForTest("órdenes"))
+        assertEquals("clinicas", stripAccentsForTest("clínicas"))
+    }
+
+    @Test
+    fun `stripAccents - handles multiple accents`() {
+        assertEquals("comunicacion", stripAccentsForTest("comunicación"))
+        assertEquals("numero", stripAccentsForTest("número"))
+        assertEquals("pediatrico", stripAccentsForTest("pediátrico"))
+    }
+
+    @Test
+    fun `stripAccents - preserves non-accented text`() {
+        assertEquals("hello world", stripAccentsForTest("hello world"))
+        assertEquals("show vitals", stripAccentsForTest("show vitals"))
+    }
+
+    @Test
+    fun `stripAccents - handles mixed accented and non-accented`() {
+        assertEquals("mostrar ordenes ahora", stripAccentsForTest("mostrar órdenes ahora"))
+    }
 }

@@ -471,10 +471,7 @@ class MainActivityTest {
         }
     }
 
-    /**
-     * Patient Data Display Tests
-     */
-    class PatientDisplayTests {
+    // Additional helper functions for order/language/ambient/HUD commands
 
     private fun isOrderLabCommand(cmd: String): Boolean {
         val lower = cmd.lowercase()
