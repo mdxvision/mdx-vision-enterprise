@@ -2681,6 +2681,128 @@ class VoiceCommandsComprehensiveTest {
             .replace("ñ", "n")
     }
 
+    // Spanish single-word keyword aliases (mirrors MainActivity.spanishKeywordAliases)
+    private val spanishKeywordAliasesMap = mapOf(
+        "vitales" to "show vitals",
+        "signos vitales" to "show vitals",
+        "alergias" to "show allergies",
+        "medicamentos" to "show meds",
+        "medicinas" to "show meds",
+        "laboratorios" to "show labs",
+        "análisis" to "show labs",
+        "procedimientos" to "show procedures",
+        "inmunizaciones" to "show immunizations",
+        "vacunas" to "show immunizations",
+        "condiciones" to "show conditions",
+        "diagnósticos" to "show conditions",
+        "planes de cuidado" to "show care plans",
+        "notas" to "clinical notes",
+        "paciente" to "load patient",
+        "cargar" to "load patient",
+        "buscar" to "find patient",
+        "escanear" to "scan wristband",
+        "resumen" to "patient summary",
+        "nota" to "start note",
+        "transcripción" to "live transcribe",
+        "transcribir" to "live transcribe",
+        "generar" to "generate note",
+        "cerrar" to "close",
+        "ayuda" to "help",
+        "comandos" to "show commands",
+        "órdenes" to "show orders",
+        "ordenes" to "show orders",
+        "cancelar" to "cancel order",
+        "temporizador" to "start timer",
+        "tiempo" to "how long",
+        "calcular" to "calculate",
+        "calculadora" to "medical calculator"
+    )
+
+    // Russian single-word keyword aliases (mirrors MainActivity.russianKeywordAliases)
+    private val russianKeywordAliasesMap = mapOf(
+        "витальные" to "show vitals",
+        "витали" to "show vitals",
+        "аллергии" to "show allergies",
+        "лекарства" to "show meds",
+        "медикаменты" to "show meds",
+        "препараты" to "show meds",
+        "анализы" to "show labs",
+        "лаборатории" to "show labs",
+        "процедуры" to "show procedures",
+        "прививки" to "show immunizations",
+        "вакцины" to "show immunizations",
+        "состояния" to "show conditions",
+        "диагнозы" to "show conditions",
+        "записи" to "clinical notes",
+        "пациента" to "load patient",
+        "пациент" to "load patient",
+        "загрузить" to "load patient",
+        "найти" to "find patient",
+        "сканировать" to "scan wristband",
+        "информация" to "patient summary",
+        "запись" to "start note",
+        "заметка" to "start note",
+        "транскрипция" to "live transcribe",
+        "транскрибировать" to "live transcribe",
+        "создать" to "generate note",
+        "закрыть" to "close",
+        "помощь" to "help",
+        "команды" to "show commands",
+        "назначения" to "show orders",
+        "отменить" to "cancel order",
+        "таймер" to "start timer",
+        "время" to "how long",
+        "рассчитать" to "calculate",
+        "калькулятор" to "medical calculator"
+    )
+
+    /**
+     * Simulates the translateCommand function with keyword alias support
+     * Tests the new keyword alias feature that allows single-word commands
+     */
+    private fun translateCommandWithKeywords(transcript: String, language: String): String {
+        val lower = transcript.lowercase()
+
+        when (language) {
+            "es" -> {
+                val lowerNoAccents = stripAccentsForTest(lower)
+                // 1. Check full phrase commands first
+                for ((spanish, english) in spanishCommandsMap) {
+                    val spanishNoAccents = stripAccentsForTest(spanish)
+                    if (lower.contains(spanish) || lowerNoAccents.contains(spanishNoAccents)) {
+                        return if (lower.contains(spanish)) {
+                            lower.replace(spanish, english)
+                        } else {
+                            lowerNoAccents.replace(spanishNoAccents, english)
+                        }
+                    }
+                }
+                // 2. Check keyword aliases
+                for ((keyword, english) in spanishKeywordAliasesMap) {
+                    val keywordNoAccents = stripAccentsForTest(keyword)
+                    if (lower.contains(keyword) || lowerNoAccents.contains(keywordNoAccents)) {
+                        return english
+                    }
+                }
+            }
+            "ru" -> {
+                // 1. Check full phrase commands first
+                for ((russian, english) in russianCommandsMap) {
+                    if (lower.contains(russian)) {
+                        return lower.replace(russian, english)
+                    }
+                }
+                // 2. Check keyword aliases
+                for ((keyword, english) in russianKeywordAliasesMap) {
+                    if (lower.contains(keyword)) {
+                        return english
+                    }
+                }
+            }
+        }
+        return transcript
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // SPANISH TRANSLATION TESTS (50+ commands)
     // ═══════════════════════════════════════════════════════════════════════════
@@ -3020,6 +3142,181 @@ class VoiceCommandsComprehensiveTest {
     fun `translation - partial match russian`() {
         val result = translateCommand("пожалуйста загрузить пациента сейчас", "ru")
         assertTrue(result.contains("load patient"))
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SPANISH SINGLE-WORD KEYWORD ALIAS TESTS
+    // These test the new feature: saying just "vitales" instead of "mostrar signos vitales"
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `spanish keyword - vitales triggers show vitals`() {
+        assertEquals("show vitals", translateCommandWithKeywords("vitales", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - signos vitales triggers show vitals`() {
+        assertEquals("show vitals", translateCommandWithKeywords("signos vitales", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - alergias triggers show allergies`() {
+        assertEquals("show allergies", translateCommandWithKeywords("alergias", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - medicamentos triggers show meds`() {
+        assertEquals("show meds", translateCommandWithKeywords("medicamentos", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - medicinas triggers show meds`() {
+        assertEquals("show meds", translateCommandWithKeywords("medicinas", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - laboratorios triggers show labs`() {
+        assertEquals("show labs", translateCommandWithKeywords("laboratorios", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - análisis triggers show labs`() {
+        assertEquals("show labs", translateCommandWithKeywords("análisis", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - analisis without accent triggers show labs`() {
+        assertEquals("show labs", translateCommandWithKeywords("analisis", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - procedimientos triggers show procedures`() {
+        assertEquals("show procedures", translateCommandWithKeywords("procedimientos", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - vacunas triggers show immunizations`() {
+        assertEquals("show immunizations", translateCommandWithKeywords("vacunas", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - condiciones triggers show conditions`() {
+        assertEquals("show conditions", translateCommandWithKeywords("condiciones", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - diagnósticos triggers show conditions`() {
+        assertEquals("show conditions", translateCommandWithKeywords("diagnósticos", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - ayuda triggers help`() {
+        assertEquals("help", translateCommandWithKeywords("ayuda", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - órdenes triggers show orders`() {
+        assertEquals("show orders", translateCommandWithKeywords("órdenes", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - ordenes without accent triggers show orders`() {
+        assertEquals("show orders", translateCommandWithKeywords("ordenes", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - calcular triggers calculate`() {
+        assertEquals("calculate", translateCommandWithKeywords("calcular", "es"))
+    }
+
+    @Test
+    fun `spanish keyword - temporizador triggers start timer`() {
+        assertEquals("start timer", translateCommandWithKeywords("temporizador", "es"))
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // RUSSIAN SINGLE-WORD KEYWORD ALIAS TESTS
+    // These test the new feature: saying just "витальные" instead of "показать витальные"
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    fun `russian keyword - витальные triggers show vitals`() {
+        assertEquals("show vitals", translateCommandWithKeywords("витальные", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - аллергии triggers show allergies`() {
+        assertEquals("show allergies", translateCommandWithKeywords("аллергии", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - лекарства triggers show meds`() {
+        assertEquals("show meds", translateCommandWithKeywords("лекарства", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - медикаменты triggers show meds`() {
+        assertEquals("show meds", translateCommandWithKeywords("медикаменты", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - препараты triggers show meds`() {
+        assertEquals("show meds", translateCommandWithKeywords("препараты", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - анализы triggers show labs`() {
+        assertEquals("show labs", translateCommandWithKeywords("анализы", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - процедуры triggers show procedures`() {
+        assertEquals("show procedures", translateCommandWithKeywords("процедуры", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - прививки triggers show immunizations`() {
+        assertEquals("show immunizations", translateCommandWithKeywords("прививки", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - вакцины triggers show immunizations`() {
+        assertEquals("show immunizations", translateCommandWithKeywords("вакцины", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - состояния triggers show conditions`() {
+        assertEquals("show conditions", translateCommandWithKeywords("состояния", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - диагнозы triggers show conditions`() {
+        assertEquals("show conditions", translateCommandWithKeywords("диагнозы", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - помощь triggers help`() {
+        assertEquals("help", translateCommandWithKeywords("помощь", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - назначения triggers show orders`() {
+        assertEquals("show orders", translateCommandWithKeywords("назначения", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - таймер triggers start timer`() {
+        assertEquals("start timer", translateCommandWithKeywords("таймер", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - калькулятор triggers medical calculator`() {
+        assertEquals("medical calculator", translateCommandWithKeywords("калькулятор", "ru"))
+    }
+
+    @Test
+    fun `russian keyword - рассчитать triggers calculate`() {
+        assertEquals("calculate", translateCommandWithKeywords("рассчитать", "ru"))
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
