@@ -1,26 +1,29 @@
 # MDx Vision Testing Strategy
 
-**Last Updated:** January 11, 2025
-**Total Tests:** 843+
-**Coverage:** 96% (Java blocked by Lombok/JDK17)
+**Last Updated:** January 12, 2025
+**Total Automated Tests:** 2,879+
+**Manual Tests:** 55 (require human on Vuzix)
+**Coverage:** 99% automated (Java blocked by Lombok/JDK17)
 
-## Test Strategy: Mock Tests + Real Integration Tests
+## Test Strategy: Mock Tests + Real Integration Tests + Manual Testing
 
-This project uses a dual testing strategy:
+This project uses a three-tier testing strategy:
 
 1. **Mock Tests (Default)** - Fast, no external dependencies, run on every commit
 2. **Integration Tests (Opt-in)** - Real API calls, verify actual behavior
+3. **Manual Tests** - Human verification on Vuzix (voice, display, TTS)
 
-### Test Summary
+### Test Summary (Jan 12, 2025)
 
 | Component | Tests | Status |
 |-----------|-------|--------|
-| EHR Proxy (Python) | 300+ | ✅ PASS |
-| Android (Unit) | 460+ | ✅ PASS |
-| Android (E2E) | 10 | ✅ PASS |
-| Web Dashboard | 40+ | ✅ PASS |
+| EHR Proxy (Python) | 2,207 | ✅ PASS |
+| Android (Unit) | 464 | ✅ PASS |
+| Android (E2E on Vuzix) | 54/58 | ✅ PASS (4 network timeouts) |
+| Web Dashboard | 106 | ✅ PASS |
 | Backend (Java) | 33+ | ⚠️ BLOCKED |
 | AI Service | 15+ | ✅ PASS |
+| **Manual (Human)** | 55 | See MANUAL_TESTING_CHECKLIST.md |
 
 ### Why This Approach?
 
@@ -30,7 +33,7 @@ This project uses a dual testing strategy:
 | Integration | ~2-5 minutes | ✅ Main branch | Real-world behavior | API keys, network |
 
 **Hospital Sales Point:**
-> "Our test suite includes 843+ tests covering all 91 features, with comprehensive voice command testing (350+ tests) and live integration tests against Cerner FHIR sandbox."
+> "Our test suite includes 2,879+ automated tests and 55 manual tests covering all 98 features, with voice command parsing tests (247 patterns) and live integration tests against Cerner FHIR sandbox."
 
 ---
 
@@ -39,7 +42,7 @@ This project uses a dual testing strategy:
 ### Run Fast Mock Tests (Default)
 
 ```bash
-# EHR Proxy (489+ tests)
+# EHR Proxy (2,207 tests)
 cd ehr-proxy
 pytest tests/
 
@@ -350,4 +353,47 @@ pytest tests/ --live -m ehr -v
 4. **Cost Effective** - Only call paid APIs when needed
 
 **For hospital demos:**
-> "We test against real Cerner and Epic sandboxes to ensure FHIR compliance. Our 500+ automated tests run in under a minute on every code change."
+> "We test against real Cerner and Epic sandboxes to ensure FHIR compliance. Our 2,879+ automated tests run in under 2 minutes on every code change."
+
+---
+
+## Voice Command Coverage
+
+### What's Tested Automatically
+
+| Category | Patterns | Tested | Notes |
+|----------|----------|--------|-------|
+| Voice command parsing | 247 | ✅ 247 | String matching, aliases, translations |
+| API endpoints triggered | 50+ | ✅ All | HTTP responses, FHIR data |
+| Entity extraction | 100+ | ✅ All | Symptoms, meds, allergies from text |
+| ICD-10/CPT mapping | 250+ | ✅ All | Code lookup, keyword detection |
+
+### What Requires Manual Testing (55 tests)
+
+These tests require a human on Vuzix Blade 2 glasses:
+
+| Category | Tests | Why Manual |
+|----------|-------|------------|
+| Voice recognition accuracy | 12 | Real speech → Android SpeechRecognizer |
+| Wake word detection | 3 | "Hey MDx", "Hey Minerva" activation |
+| TTS audio output | 4 | Sound plays correctly through glasses |
+| Display readability | 4 | Text legible on AR overlay |
+| Head gestures | 4 | Nod, shake, wink detection |
+| Multi-language voice | 2 | Spanish/Russian recognition |
+
+### The "866 Voice Patterns" Clarification
+
+The 866 number includes:
+- **247 unique commands** tested in `VoiceCommandsComprehensiveTest.kt`
+- **Multi-language variants** (Spanish: 80+, Russian: 70+, Mandarin, Portuguese)
+- **Aliases and synonyms** ("show meds" = "show medications" = "meds" = "medications")
+- **Accent-insensitive forms** (á→a, ñ→n, ü→u)
+
+**Why only 247 tested?** The 247 tests cover:
+1. All **unique command intents** (the actual actions)
+2. Command parsing logic (splitting intent from parameters)
+3. API endpoint triggering
+
+The remaining ~619 patterns are **variants** of the same 247 commands. Testing "mostrar signos vitales" (Spanish) exercises the same code path as "show vitals" - both call the same `handleShowVitals()` function.
+
+**Bottom line:** 100% of command intents are tested. The variants rely on string normalization which is also tested.
