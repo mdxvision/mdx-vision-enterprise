@@ -7,6 +7,7 @@ import pytest
 import asyncio
 import json
 import base64
+import os
 from unittest.mock import patch, MagicMock, AsyncMock
 
 
@@ -174,8 +175,12 @@ class TestAssemblyAIProviderConnect:
     """Tests for AssemblyAI connection"""
 
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ASSEMBLYAI_API_KEY": ""}, clear=False)
     async def test_connect_no_api_key(self):
         """Should raise error if no API key"""
+        import importlib
+        import transcription
+        importlib.reload(transcription)
         from transcription import AssemblyAIProvider
 
         provider = AssemblyAIProvider(api_key="")
@@ -315,8 +320,12 @@ class TestDeepgramProviderConnect:
     """Tests for Deepgram connection"""
 
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"DEEPGRAM_API_KEY": ""}, clear=False)
     async def test_connect_no_api_key(self):
         """Should raise error if no API key"""
+        import importlib
+        import transcription
+        importlib.reload(transcription)
         from transcription import DeepgramProvider
 
         provider = DeepgramProvider(api_key="")

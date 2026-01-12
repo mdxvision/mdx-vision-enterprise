@@ -2480,8 +2480,10 @@ class ScheduledUpdateManager:
         specialty_counts = {}
 
         for update in self.pending_updates.values():
-            status_counts[update.status.value] = status_counts.get(update.status.value, 0) + 1
-            priority_counts[update.priority.value] = priority_counts.get(update.priority.value, 0) + 1
+            status_val = update.status.value if hasattr(update.status, 'value') else update.status
+            priority_val = update.priority.value if hasattr(update.priority, 'value') else update.priority
+            status_counts[status_val] = status_counts.get(status_val, 0) + 1
+            priority_counts[priority_val] = priority_counts.get(priority_val, 0) + 1
             if update.specialty:
                 specialty_counts[update.specialty] = specialty_counts.get(update.specialty, 0) + 1
 
