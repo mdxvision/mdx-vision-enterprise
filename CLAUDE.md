@@ -1,209 +1,148 @@
 # CLAUDE.md - MDx Vision Development Context
 
-This file provides context for Claude Code when working on this project.
+> **Quick Reference:** This file provides essential context for Claude Code. For detailed information, see the linked documentation in `docs/`.
 
 ## Project Overview
 
-MDx Vision is an AR smart glasses platform for healthcare documentation. It implements **US Patent 15/237,980** - voice-activated AR glasses that connect to EHR systems.
+MDx Vision is an **AR smart glasses platform for healthcare documentation**. It implements US Patent 15/237,980 - voice-activated AR glasses that connect to EHR systems via FHIR.
 
-**Key Features:**
-- Voice-activated patient lookup from EHR
-- Wake word detection ("Hey MDx" and "Hey Minerva")
-- Real-time transcription via AssemblyAI/Deepgram with RNNoise
-- AI-powered SOAP note generation with RAG
-- Ambient Clinical Intelligence (ACI)
-- Health equity features (racial medicine awareness, cultural care, SDOH)
+**Core Capabilities:** Voice-activated patient lookup, real-time transcription with RNNoise, AI-powered SOAP notes with RAG, Ambient Clinical Intelligence, health equity features, Minerva AI assistant.
 
-## Key Directories
+## Project Structure
 
 ```
-/backend                    # Java Spring Boot + HAPI FHIR
-/ai-service                 # Python AI pipeline
-/ehr-proxy                  # Python FastAPI proxy (port 8002)
-/mobile/android             # Native Android app (Vuzix Blade 2)
+/backend                    # Java Spring Boot (legacy, being replaced)
+/ehr-proxy                  # Python FastAPI (port 8002) - PRIMARY BACKEND
+/mobile/android             # Kotlin app for Vuzix Blade 2
 /web                        # Next.js 14 dashboard (port 5173)
+/docs                       # All documentation
+  ├── development/          # Technical docs (start here)
+  ├── ehr/                  # EHR integration guides
+  ├── clinical/             # Clinical research
+  ├── business/             # Strategy & pricing
+  └── planning/             # Roadmaps & session logs
 ```
 
-## Key Documents
+## Essential Documentation
 
-**Development (docs/development/):**
-- `FEATURES.md` - Complete feature checklist (98+ features)
-- `MINERVA.md` - Minerva AI Assistant implementation plan
-- `VOICE_COMMANDS.md` - Comprehensive voice command reference
-- `TESTING.md` - Test strategy and manual testing checklist
+### For Development Tasks
+- **[SETUP.md](docs/development/SETUP.md)** - Development environment, commands, troubleshooting
+- **[ARCHITECTURE.md](docs/development/ARCHITECTURE.md)** - System design, tech stack, data flows
+- **[API_REFERENCE.md](docs/development/API_REFERENCE.md)** - All API endpoints and test data
+- **[FEATURES.md](docs/development/FEATURES.md)** - Complete feature checklist (98 features)
+- **[TESTING.md](docs/development/TESTING.md)** - Testing strategy (2,879 automated tests)
 
-**EHR Integration (docs/ehr/):**
-- `EHR_ACCESS_GUIDE.md` - Detailed registration instructions (29 platforms)
-- `EHR_IMPLEMENTATIONS.md` - Current integration status
+### For Specific Domains
+- **[VOICE_COMMANDS.md](docs/development/VOICE_COMMANDS.md)** - All voice commands
+- **[MINERVA.md](docs/development/MINERVA.md)** - Minerva AI assistant implementation
+- **[EHR_ACCESS_GUIDE.md](docs/ehr/EHR_ACCESS_GUIDE.md)** - Connect to 29 EHR platforms
+- **[CONVERSATIONS.md](docs/planning/CONVERSATIONS.md)** - Session history & decisions
 
-**Clinical Research (docs/clinical/):**
-- `RACIAL_MEDICINE_DISPARITIES.md` - Racial medicine disparities research
-- `CULTURAL_CARE_PREFERENCES.md` - Cultural care implementation guide
+## Quick Start
 
-**Business (docs/business/):**
-- `SALES_MATERIALS.md` - Index of all sales/marketing materials
-- `PRICING.md`, `INVESTOR.md`, `STRATEGIC_ROADMAP.md`, `GAP_CLOSURE_PLAN.md`
+### Run EHR Proxy (Primary Backend)
+```bash
+cd ehr-proxy
+ASSEMBLYAI_API_KEY=your_key python main.py  # Port 8002
+```
 
-**Planning (docs/planning/):**
-- `CONVERSATIONS.md` - Session logs, decisions, progress tracking
-- `JARVIS_FEATURES_PLAN.md` - Future AI features roadmap
+### Run Web Dashboard
+```bash
+cd web
+npm run dev  # Port 5173
+```
 
-## Current Development Focus
-
-### Working Components
-- **Android App**: Voice recognition, patient lookup, transcription, ambient mode
-- **Cerner Integration**: Live FHIR R4 sandbox (patient ID: 12724066)
-- **EHR Proxy**: FastAPI service with transcription, RAG, health equity APIs
-- **Web Dashboard**: Next.js 14 with billing, DNFB, audit logs, device management
-- **Minerva AI**: Wake word activation, proactive alerts, RAG-grounded responses
-
-### Core Voice Commands
-Patient: "load patient", "find patient", "scan wristband", "show vitals/allergies/meds/labs"
-Documentation: "start note", "live transcribe", "ambient mode", "generate note"
-AI Assistant: "Hey Minerva [question]", "differential diagnosis", "suggest workup"
-See `FEATURES.md` for complete command list.
-
-## Development Commands
-
-### Android Build
+### Build Android App
 ```bash
 cd mobile/android
 export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 ./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### EHR Proxy with Transcription
+**Troubleshooting?** See [SETUP.md](docs/development/SETUP.md#common-issues)
+
+## Current Status
+
+### What's Working
+- ✅ **98 features implemented** (SOAP notes, transcription, health equity, billing, security)
+- ✅ **Cerner/Oracle EHR** live integration (client ID: `0fab9b20-adc8-4940-bbf6-82034d1d39ab`)
+- ✅ **Minerva AI** Phase 1-3 complete (chat, wake word, proactive alerts)
+- ✅ **2,879 automated tests** at 99% pass rate
+
+### Current Focus
+- **Minerva Phase 4-6:** Reasoning modes, voice actions, personalization
+- **Epic/Veradigm:** EHR integration pending credentials
+- See [MINERVA.md](docs/development/MINERVA.md) for detailed roadmap
+
+## Test Patient Data
+
+**Cerner Sandbox Patient:**
+- ID: `12724066`
+- Name: SMARTS SR., NANCYS II
+- DOB: 1990-09-15
+
+More test data in [API_REFERENCE.md](docs/development/API_REFERENCE.md#test-data)
+
+## Key Technologies
+
+- **Mobile:** Kotlin, Android 11, Vuzix SDK 2.9.0
+- **Backend:** Python 3.11+, FastAPI, ChromaDB, RNNoise
+- **AI:** Claude API (Anthropic), AssemblyAI/Deepgram
+- **Web:** Next.js 14, TypeScript, Tailwind CSS
+- **FHIR:** R4 (Patient, Observation, AllergyIntolerance, etc.)
+
+See [ARCHITECTURE.md](docs/development/ARCHITECTURE.md) for details
+
+## Development Guidelines
+
+### Making Changes
+1. **Read existing code first** - Never propose changes to unread code
+2. **Use TodoWrite** for multi-step tasks to track progress
+3. **Avoid over-engineering** - Only implement what's requested
+4. **Security first** - No XSS, SQL injection, or OWASP vulnerabilities
+5. **Test coverage** - Update tests when changing functionality
+
+### File Organization
+- Android: `mobile/android/app/src/main/java/com/mdxvision/`
+- Python: `ehr-proxy/` (main.py, transcription.py, rag_knowledge.py)
+- Web: `web/src/app/dashboard/`
+- Tests: `*/tests/` or `*/src/test/`
+
+### Testing
 ```bash
-cd ehr-proxy
-ASSEMBLYAI_API_KEY=your_key python main.py  # Port 8002
-
-# Or with Deepgram
-TRANSCRIPTION_PROVIDER=deepgram DEEPGRAM_API_KEY=your_key python main.py
+cd ehr-proxy && pytest tests/ -v        # 2,207 Python tests
+cd mobile/android && ./gradlew test     # 464 Android unit tests
+cd web && npm test                       # 106 web tests
 ```
 
-### Web Dashboard
-```bash
-cd web
-npm run dev  # Runs on port 5173
-```
-
-### Android Emulator
-```bash
-# ADB path on this machine
-/opt/homebrew/share/android-commandlinetools/platform-tools/adb
-
-# Install APK
-adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
-
-# Launch app
-adb shell am start -n com.mdxvision.glasses/com.mdxvision.MainActivity
-```
-
-## Testing
-
-**Test Coverage: 2,879+ automated tests (99% pass rate)**
-
-```bash
-# EHR Proxy (2,207 tests) - pytest
-cd ehr-proxy && pytest tests/ -v
-
-# Android Unit (464 tests) - JUnit
-cd mobile/android && ./gradlew test
-
-# Web Dashboard (106 tests) - Vitest
-cd web && npm test
-
-# Android E2E (54 tests) - requires device
-cd mobile/android && ./gradlew connectedAndroidTest
-```
-
-**Test locations:** `backend/src/test/`, `ehr-proxy/tests/`, `web/src/__tests__/`, `mobile/android/app/src/test/`
-**Manual testing checklist:** `docs/development/MANUAL_TESTING_CHECKLIST.md`
-
-## Key Files
-
-**Android:** `MainActivity.kt`, `AudioStreamingService.kt`, `BarcodeScannerActivity.kt`
-**EHR Proxy:** `main.py`, `transcription.py`, `noise_reduction.py`, `medical_vocabulary.py`
-**Backend:** `UnifiedEhrService.java`, `CernerFhirService.java`, `EpicFhirService.java`
-**Web:** `web/src/app/dashboard/` - pages for billing, DNFB, devices, audit, knowledge
-
-## API Endpoints
-
-**EHR Proxy (port 8002):**
-- `/api/v1/patient/{id}` - Get patient summary
-- `/api/v1/patient/search?name=` - Search patients
-- `/api/v1/notes/generate` - Generate SOAP note
-- `/api/v1/minerva/chat` - Minerva AI assistant
-- `/api/v1/copilot/chat` - Clinical co-pilot
-- `/ws/transcribe` - Real-time transcription WebSocket
-
-**Test patient:** Cerner sandbox patient ID `12724066` (SMARTS SR., NANCYS II, DOB: 1990-09-15)
-
-## Architecture
-
-**Data Flow:** Vuzix Glasses → Android App → EHR Proxy (port 8002) → FHIR APIs → EHR
-**Transcription:** Mic → WebSocket → RNNoise → AssemblyAI/Deepgram → Android display
-**Network:** Android emulator uses `10.0.2.2` to reach localhost, Web on port 5173, Backend on port 8080
-
-**HMD Support:** Vuzix Blade 2 (primary), Vuzix Shield, Google Glass Enterprise, RealWear Navigator, Android XR devices
-
-## Environment Variables
-
-```bash
-# Transcription
-TRANSCRIPTION_PROVIDER=assemblyai  # or "deepgram"
-ASSEMBLYAI_API_KEY=your_key
-DEEPGRAM_API_KEY=your_key
-ENABLE_MEDICAL_VOCAB=true  # Enable medical vocabulary boost
-
-# AI Notes
-CLAUDE_API_KEY=your_key
-```
+See [TESTING.md](docs/development/TESTING.md) for comprehensive testing guide
 
 ## Common Issues
 
-### Java not found
-```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17
-```
+| Issue | Solution |
+|-------|----------|
+| Java not found | `export JAVA_HOME=/opt/homebrew/opt/openjdk@17` |
+| ADB not found | `/opt/homebrew/share/android-commandlinetools/platform-tools/adb` |
+| Port 8002 in use | `lsof -ti:8002 \| xargs kill -9` |
+| Emulator mic not working | Extended Controls → Microphone → Enable host audio |
+| WebSocket fails | Use `10.0.2.2` not `localhost` on Android emulator |
 
-### ADB path
-```bash
-/opt/homebrew/share/android-commandlinetools/platform-tools/adb
-```
+**Full troubleshooting:** [SETUP.md](docs/development/SETUP.md#common-issues)
 
-### Port already in use
-```bash
-lsof -ti:8002 | xargs kill -9
-```
+## Getting Help
 
-### Emulator mic not working
-Enable "Virtual microphone uses host audio input" in emulator Extended Controls → Microphone
+- **Features:** See [FEATURES.md](docs/development/FEATURES.md) for what's implemented
+- **APIs:** See [API_REFERENCE.md](docs/development/API_REFERENCE.md) for all endpoints
+- **Setup Issues:** See [SETUP.md](docs/development/SETUP.md)
+- **Architecture Questions:** See [ARCHITECTURE.md](docs/development/ARCHITECTURE.md)
+- **Session History:** See [CONVERSATIONS.md](docs/planning/CONVERSATIONS.md)
 
-### websockets library compatibility
-Use `additional_headers` instead of `extra_headers` for newer versions.
+## Important Notes for Claude Code
 
-## Feature Status
-
-**98 features implemented** - See `FEATURES.md` for complete checklist.
-
-**Key feature categories:**
-- Clinical Documentation: SOAP notes, templates, voice editing, ambient mode
-- Safety & Alerts: Critical vitals/labs, drug interactions, maternal health monitoring
-- Health Equity: Racial medicine awareness, cultural care, SDOH, health literacy, interpreter integration
-- AI Intelligence: Minerva assistant, RAG knowledge system, differential diagnosis, clinical co-pilot
-- Billing & Revenue: Claims submission, DNFB tracking, ICD-10/CPT databases
-- Security: Voiceprint auth, device management, TOTP, encryption, audit logging
-- Workflow: Patient worklist, care gap detection, pre-visit prep, procedure checklists
-
-## Current Focus
-
-**Minerva AI Assistant (Feature #97):**
-- Phase 1-3: COMPLETE (RAG chat, wake word, proactive alerts)
-- Phase 4-6: Pending (reasoning modes, voice actions, learning)
-- See `MINERVA.md` for full implementation plan
-
-**EHR Integration Status:**
-- **Live:** Cerner/Oracle (client ID: 0fab9b20-adc8-4940-bbf6-82034d1d39ab)
-- **Pending:** Epic, Veradigm
-- **Documented:** 29 EHR platforms (see `EHR_ACCESS_GUIDE.md`)
+- **This is a HIPAA-compliant healthcare application** - handle all PHI carefully
+- **Voice-first UI** - Vuzix app has minimal buttons, everything is voice-activated
+- **98 features already implemented** - check [FEATURES.md](docs/development/FEATURES.md) before building something new
+- **Test patient ID 12724066** - use for all Cerner sandbox testing
+- **EHR Proxy (port 8002) is the main backend** - Java backend is legacy
+- **Documentation is organized in `/docs`** - always link to docs for details, keep this file lean
