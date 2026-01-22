@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MDx Vision Ray-Ban</string>
+    <string name="app_name">Minerva Ray-Ban</string>
     <string name="glasses_not_connected">👓 Glasses: Not Connected</string>
     <string name="glasses_connected">👓 Glasses: Connected</string>
     <string name="status_initializing">Status: Initializing...</string>

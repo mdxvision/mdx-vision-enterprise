@@ -256,7 +256,7 @@ class MainActivity : AppCompatActivity() {
 
     // Wake word and continuous listening (Patent Claims 1-4)
     private var isContinuousListening = false
-    private val WAKE_WORD = "mdx"
+    private val WAKE_WORD = "minerva"
     private var awaitingCommand = false
 
     // Live transcription via WebSocket (AssemblyAI/Deepgram)
@@ -973,7 +973,7 @@ class MainActivity : AppCompatActivity() {
         "stop ambient", "end ambient", "finish ambient", "stop listening",
         "cancel ambient", "discard", "never mind",
         "generate note", "create note", "make note", "document this",
-        "hey mdx", "mdx mode", "stop", "delete", "cancel",
+        "hey minerva", "minerva mode", "stop", "delete", "cancel",
         "show entities", "view transcript", "save note",
         "start ambient", "ambient mode"
     )
@@ -2878,11 +2878,11 @@ SOFA Score: [X]
         // Check if running on Vuzix
         if (isVuzixDevice()) {
             Log.d(TAG, "Vuzix device detected - starting HUD service")
-            statusText.text = "MDx Vision - Vuzix Mode"
+            statusText.text = "Minerva - Vuzix Mode"
             startVuzixHudService()
             initializeGestureControl()
         } else {
-            statusText.text = "MDx Vision - Standard Mode"
+            statusText.text = "Minerva - Standard Mode"
         }
 
         checkPermissions()
@@ -2916,7 +2916,7 @@ SOFA Score: [X]
         }
 
         statusText = TextView(this).apply {
-            text = "MDx Vision"
+            text = "Minerva"
             textSize = 20f
             setTextColor(0xFF10B981.toInt())
             layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -3025,7 +3025,7 @@ SOFA Score: [X]
             awaitingCommand = false
             startVoiceRecognition()
         } else {
-            statusText.text = "MDx Vision"
+            statusText.text = "Minerva"
             transcriptText.text = "Tap or speak a command"
             awaitingCommand = false
             try {
@@ -3293,7 +3293,7 @@ SOFA Score: [X]
         // Clear voice navigation tracking
         currentScrollView = null
         currentContentText = null
-        statusText.text = "MDx Vision"
+        statusText.text = "Minerva"
         transcriptText.text = "Tap or speak a command"
     }
 
@@ -3316,7 +3316,7 @@ SOFA Score: [X]
             if (documentationTranscripts.isNotEmpty()) {
                 generateClinicalNote(documentationTranscripts.joinToString(" "))
             } else {
-                statusText.text = "MDx Vision"
+                statusText.text = "Minerva"
                 transcriptText.text = "No transcript captured"
             }
         }
@@ -3424,7 +3424,7 @@ SOFA Score: [X]
         audioStreamingService?.onError = { message ->
             runOnUiThread {
                 Toast.makeText(this, "Transcription error: $message", Toast.LENGTH_SHORT).show()
-                statusText.text = "MDx Vision"
+                statusText.text = "Minerva"
                 speakFeedback("Transcription error")
             }
         }
@@ -3688,14 +3688,14 @@ SOFA Score: [X]
             } else {
                 // No transcript captured
                 hideAciOverlay()
-                statusText.text = "MDx Vision"
+                statusText.text = "Minerva"
                 transcriptText.text = "No transcript captured (${durationSeconds}s session)"
                 speakFeedback("No transcript captured. Try speaking clearly or check connection.")
                 Toast.makeText(this, "No transcript captured - check proxy connection", Toast.LENGTH_LONG).show()
             }
         } else {
             hideAciOverlay()
-            statusText.text = "MDx Vision"
+            statusText.text = "Minerva"
             transcriptText.text = "Ambient mode cancelled"
         }
 
@@ -6045,7 +6045,7 @@ SOFA Score: [X]
         }
 
         dictationBuffer.clear()
-        statusText.text = "MDx Vision"
+        statusText.text = "Minerva"
     }
 
     /**
@@ -6064,7 +6064,7 @@ SOFA Score: [X]
         hideDictationIndicator()
 
         transcriptText.text = "Dictation cancelled"
-        statusText.text = "MDx Vision"
+        statusText.text = "Minerva"
         speakFeedback("Dictation cancelled")
         Log.d(TAG, "Dictation cancelled")
     }
@@ -14769,7 +14769,7 @@ SOFA Score: [X]
                                 } else {
                                     val message = result.optString("message", "Save failed")
                                     Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
-                                    statusText.text = "MDx Vision"
+                                    statusText.text = "Minerva"
                                     speakFeedback("Failed to save note")
                                 }
                             } catch (e: Exception) {
@@ -17364,7 +17364,7 @@ SOFA Score: [X]
             // For now, just prompt - could implement passive verification later
             if (elapsed > reVerifyIntervalMs * 2) {
                 // Way overdue - interrupt session
-                speakFeedback("Please say 'verify me' to continue using MDx Vision.")
+                speakFeedback("Please say 'verify me' to continue using Minerva.")
             }
         } else {
             // Log confidence decay
@@ -23498,7 +23498,7 @@ SOFA Score: [X]
             if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                 initializeSpeechRecognizer()
             } else {
-                Toast.makeText(this, "Permissions required for MDx Vision", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Permissions required for Minerva", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -23662,7 +23662,7 @@ SOFA Score: [X]
                     if (isContinuousListening) startVoiceRecognition()
                 }, 2000)
             } else {
-                statusText.text = "MDx Vision"
+                statusText.text = "Minerva"
                 // Reset to default message after 2 seconds
                 transcriptText.text = errorMessage
                 transcriptText.postDelayed({
@@ -23753,7 +23753,7 @@ SOFA Score: [X]
             } else {
                 // Normal mode - process transcript directly
                 transcriptText.text = "\"$transcript\""
-                statusText.text = "MDx Vision"
+                statusText.text = "Minerva"
                 processTranscript(transcript)
             }
         }
@@ -25406,7 +25406,7 @@ SOFA Score: [X]
                 // Turn off continuous listening mode
                 isContinuousListening = false
                 speechRecognizer.stopListening()
-                statusText.text = "MDx Vision"
+                statusText.text = "Minerva"
                 transcriptText.text = "Voice commands off. Tap MDX MODE to re-enable."
                 speakFeedback("Voice commands disabled")
             }

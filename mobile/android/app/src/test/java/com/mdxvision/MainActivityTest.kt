@@ -108,14 +108,14 @@ class MainActivityTest {
     // Wake Word Tests
 
     @Test
-    fun `wake - should detect HEY MDX wake word`() {
-        val phrase = "hey mdx show vitals"
+    fun `wake - should detect HEY MINERVA wake word`() {
+        val phrase = "hey minerva show vitals"
         assertTrue(containsWakeWord(phrase))
     }
 
     @Test
-    fun `wake - should detect HEY M D X wake word`() {
-        val phrase = "hey m d x load patient"
+    fun `wake - should detect HEY M I N E R V A wake word`() {
+        val phrase = "hey m i n e r v a load patient"
         assertTrue(containsWakeWord(phrase))
     }
 
@@ -127,13 +127,13 @@ class MainActivityTest {
 
     @Test
     fun `wake - should be case insensitive`() {
-        val phrase = "HEY MDX show vitals"
+        val phrase = "HEY MINERVA show vitals"
         assertTrue(containsWakeWord(phrase))
     }
 
     @Test
     fun `wake - should extract command after wake word`() {
-        val phrase = "hey mdx show vitals"
+        val phrase = "hey minerva show vitals"
         val command = extractCommandAfterWakeWord(phrase)
         assertEquals("show vitals", command)
     }
@@ -386,14 +386,14 @@ class MainActivityTest {
 
     private fun containsWakeWord(phrase: String): Boolean {
         val lower = phrase.lowercase()
-        return lower.contains("hey mdx") || lower.contains("hey m d x")
+        return lower.contains("hey minerva") || lower.contains("hey m i n e r v a")
     }
 
     private fun extractCommandAfterWakeWord(phrase: String): String {
         val lower = phrase.lowercase()
         return when {
-            lower.contains("hey mdx") -> lower.substringAfter("hey mdx").trim()
-            lower.contains("hey m d x") -> lower.substringAfter("hey m d x").trim()
+            lower.contains("hey minerva") -> lower.substringAfter("hey minerva").trim()
+            lower.contains("hey m i n e r v a") -> lower.substringAfter("hey m i n e r v a").trim()
             else -> phrase
         }
     }

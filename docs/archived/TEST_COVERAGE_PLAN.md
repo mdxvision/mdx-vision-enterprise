@@ -1,14 +1,15 @@
-# MDx Vision Enterprise - Test Coverage Plan
+# MDx Vision Enterprise - Test Coverage Plan (Roadmap)
 
 > **Created:** 2025-01-05
-> **Status:** In Progress
-> **Goal:** Comprehensive test coverage across all components
+> **Status:** Roadmap (non-authoritative)
+> **Goal:** Track gaps and future coverage improvements
 
 ---
 
 ## Overview
 
-This document tracks the implementation of comprehensive test coverage for the MDx Vision Enterprise platform. Tests are organized by component with clear status tracking.
+This file is a roadmap for coverage gaps and planned work. The source of truth for
+current testing strategy, required regression checks, and CI behavior is `TESTING.md`.
 
 ---
 
@@ -103,10 +104,10 @@ This document tracks the implementation of comprehensive test coverage for the M
 
 | Task | Status | Description |
 |------|--------|-------------|
-| Install Vitest | [ ] | Testing framework |
-| Install React Testing Library | [ ] | Component testing |
-| Configure vitest.config.ts | [ ] | Test configuration |
-| Add test scripts to package.json | [ ] | npm test commands |
+| Install Vitest | [x] | Testing framework |
+| Install React Testing Library | [x] | Component testing |
+| Configure vitest.config.ts | [x] | Test configuration |
+| Add test scripts to package.json | [x] | npm test commands |
 
 ### Page Tests
 
@@ -218,7 +219,7 @@ This document tracks the implementation of comprehensive test coverage for the M
 
 ## Test Coverage Goals
 
-| Component | Current | Target |
+| Component | Current (see `TESTING.md`) | Target |
 |-----------|---------|--------|
 | Backend (Java) | 0% | 70% |
 | EHR Proxy (Python) | ~40% | 80% |

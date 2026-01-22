@@ -77,6 +77,10 @@ pytest tests/ --live -m rag          # ChromaDB/RAG only
 pytest tests/ --live --run-all
 ```
 
+### Known Flaky Integration Tests
+
+- Cerner conditions endpoint (`TestCernerFHIRIntegration.test_patient_conditions`) can intermittently return 5xx/timeout from the sandbox; it is marked `xfail` to avoid blocking merges while still surfacing sandbox instability.
+
 ---
 
 ## Test Categories
@@ -190,6 +194,28 @@ The CI workflow runs:
    - `ASSEMBLYAI_API_KEY`
    - (Optional) `EPIC_CLIENT_ID`, `EPIC_CLIENT_SECRET`
    - (Optional) `ATHENA_API_KEY`
+
+---
+
+## Release Gate (Regression Safety)
+
+These checks must pass before merging feature changes that affect runtime behavior:
+
+### 1) Automated Tests (Required)
+- EHR Proxy: `cd ehr-proxy && pytest tests/`
+- AI Service: `cd ai-service && pytest tests/`
+- Web: `cd web && npm test`
+- Android unit tests: `cd mobile/android && ./gradlew test`
+
+### 2) Vuzix Manual Workflow (Required)
+- Run the on-device checklist and confirm each step: `VUZIX_MINERVA_CHECKLIST.md`
+- Core voice + HUD + Minerva items must pass (wake word, patient load, vitals/labs/meds, Minerva proactive alerts, acknowledgment).
+
+### 3) Integration Tests (Optional, but required for API changes)
+- EHR Proxy live tests: `cd ehr-proxy && pytest tests/ --live`
+
+### 4) Documentation Review (Required for UX/voice changes)
+- Update `MANUAL_TESTING_CHECKLIST.md` and user-facing docs when voice phrases or flows change.
 
 ---
 

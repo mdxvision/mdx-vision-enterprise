@@ -34,7 +34,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="MDx Vision"
+                    android:text="Minerva"
                     android:textColor="@color/primary_green"
                     android:textSize="20sp"
                     android:textStyle="bold" />
@@ -204,7 +204,7 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp"
                 android:paddingTop="8dp"
-                android:text="• \"Hey MDx\" - Activate\n• \"Load patient [name]\" - Search patient\n• \"Show vitals/allergies/meds/labs\"\n• \"Start note\" - Begin documentation\n• \"Copilot [question]\" - Ask AI\n• \"Spanish interpreter\" - Request interpreter\n• \"Literacy screen\" - Assess literacy" />
+                android:text="• \"Hey Minerva\" - Activate\n• \"Load patient [name]\" - Search patient\n• \"Show vitals/allergies/meds/labs\"\n• \"Start note\" - Begin documentation\n• \"Copilot [question]\" - Ask AI\n• \"Spanish interpreter\" - Request interpreter\n• \"Literacy screen\" - Assess literacy" />
         </LinearLayout>
 
     </LinearLayout>

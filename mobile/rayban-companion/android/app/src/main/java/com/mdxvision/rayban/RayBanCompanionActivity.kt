@@ -217,7 +217,7 @@ class RayBanCompanionActivity : AppCompatActivity(), TextToSpeech.OnInitListener
             statusText.text = "Status: Connected"
             streamButton.isEnabled = true
             connectButton.text = "Disconnect"
-            speak("Glasses connected. Say Hey M D X to activate.")
+            speak("Glasses connected. Say Hey Minerva to activate.")
             Toast.makeText(this@RayBanCompanionActivity,
                 "Connected (simulated - SDK not integrated)",
                 Toast.LENGTH_SHORT).show()
@@ -283,7 +283,7 @@ class RayBanCompanionActivity : AppCompatActivity(), TextToSpeech.OnInitListener
 
     private fun simulateTranscription() {
         val sampleCommands = listOf(
-            "Hey MDx",
+                "Hey Minerva",
             "Load patient Smith",
             "Show vitals",
             "Show allergies",
@@ -324,9 +324,9 @@ class RayBanCompanionActivity : AppCompatActivity(), TextToSpeech.OnInitListener
 
         when {
             // Wake word
-            lower.contains("hey mdx") || lower.contains("hey m d x") -> {
-                sendToGlassesDisplay("🎤 MDx Vision Active\nListening...")
-                speak("M D X Vision active")
+            lower.contains("hey minerva") || lower.contains("hey m i n e r v a") -> {
+                sendToGlassesDisplay("🎤 Minerva Active\nListening...")
+                speak("Minerva active")
             }
 
             // Patient commands

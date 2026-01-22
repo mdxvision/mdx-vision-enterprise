@@ -20,23 +20,23 @@ class VoiceCommandParserTest {
     // ==================== WAKE WORD TESTS ====================
 
     @Test
-    fun `wake word MDx is detected`() {
-        assertTrue(parser.containsWakeWord("mdx load patient"))
-        assertTrue(parser.containsWakeWord("MDX show vitals"))
-        assertTrue(parser.containsWakeWord("Mdx live transcribe"))
+    fun `wake word Minerva is detected`() {
+        assertTrue(parser.containsWakeWord("minerva load patient"))
+        assertTrue(parser.containsWakeWord("MINERVA show vitals"))
+        assertTrue(parser.containsWakeWord("Minerva live transcribe"))
     }
 
     @Test
     fun `wake word variations are detected`() {
-        assertTrue(parser.containsWakeWord("m d x load patient"))
-        assertTrue(parser.containsWakeWord("m.d.x show vitals"))
+        assertTrue(parser.containsWakeWord("m i n e r v a load patient"))
+        assertTrue(parser.containsWakeWord("m.i.n.e.r.v.a show vitals"))
     }
 
     @Test
     fun `extracts command after wake word`() {
-        assertEquals("load patient", parser.extractCommandAfterWakeWord("mdx load patient"))
-        assertEquals("show vitals", parser.extractCommandAfterWakeWord("MDX show vitals"))
-        assertEquals("live transcribe", parser.extractCommandAfterWakeWord("m d x live transcribe"))
+        assertEquals("load patient", parser.extractCommandAfterWakeWord("minerva load patient"))
+        assertEquals("show vitals", parser.extractCommandAfterWakeWord("MINERVA show vitals"))
+        assertEquals("live transcribe", parser.extractCommandAfterWakeWord("m i n e r v a live transcribe"))
     }
 
     // ==================== PATIENT COMMAND TESTS ====================
@@ -242,8 +242,8 @@ enum class VoiceCommand {
  */
 class VoiceCommandParser {
 
-    private val wakeWord = "mdx"
-    private val wakeWordVariations = listOf("mdx", "m d x", "m.d.x")
+    private val wakeWord = "minerva"
+    private val wakeWordVariations = listOf("minerva", "m i n e r v a", "m.i.n.e.r.v.a")
 
     // Fuzzy matching for common misrecognitions
     private val patientVariations = listOf("patient", "patine", "patience", "patent")

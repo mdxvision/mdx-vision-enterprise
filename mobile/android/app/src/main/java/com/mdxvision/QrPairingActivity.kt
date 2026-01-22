@@ -96,7 +96,7 @@ class QrPairingActivity : AppCompatActivity() {
         overlayLayout.addView(statusText)
 
         instructionText = TextView(this).apply {
-            text = "Scan the QR code from your MDx Vision dashboard"
+            text = "Scan the QR code from your Minerva dashboard"
             textSize = 16f
             setTextColor(0xFFCCCCCC.toInt())
             setPadding(0, 8, 0, 0)

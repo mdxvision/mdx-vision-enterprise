@@ -184,27 +184,27 @@ class VoiceCommandsComprehensiveTest {
     // ═══════════════════════════════════════════════════════════════════════════
 
     @Test
-    fun `wake - hey mdx`() {
-        assertTrue(containsWakeWord("hey mdx show vitals"))
-        assertTrue(containsWakeWord("hey m d x load patient"))
+    fun `wake - hey minerva`() {
+        assertTrue(containsWakeWord("hey minerva show vitals"))
+        assertTrue(containsWakeWord("hey m i n e r v a load patient"))
     }
 
     @Test
     fun `wake - case insensitive`() {
-        assertTrue(containsWakeWord("HEY MDX show vitals"))
-        assertTrue(containsWakeWord("Hey Mdx load patient"))
+        assertTrue(containsWakeWord("HEY MINERVA show vitals"))
+        assertTrue(containsWakeWord("Hey Minerva load patient"))
     }
 
     @Test
     fun `wake - extract command after wake word`() {
-        assertEquals("show vitals", extractCommandAfterWakeWord("hey mdx show vitals"))
-        assertEquals("load patient", extractCommandAfterWakeWord("hey m d x load patient"))
+        assertEquals("show vitals", extractCommandAfterWakeWord("hey minerva show vitals"))
+        assertEquals("load patient", extractCommandAfterWakeWord("hey m i n e r v a load patient"))
     }
 
     @Test
-    fun `wake - mdx mode toggle`() {
-        assertTrue(isModeCommand("mdx mode"))
-        assertTrue(isModeCommand("hey mdx mode"))
+    fun `wake - minerva mode toggle`() {
+        assertTrue(isModeCommand("minerva mode"))
+        assertTrue(isModeCommand("hey minerva mode"))
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -2009,10 +2009,12 @@ class VoiceCommandsComprehensiveTest {
                lower.contains("medication") || lower.contains("meds") || lower.contains("drugs") ||
                lower.contains("labs") || lower.contains("laboratory") || lower.contains("results") ||
                lower.contains("procedure") || lower.contains("surgery") || lower.contains("operation") ||
-               lower.contains("immunization") || lower.contains("vaccine") || lower.contains("shot") ||
+               lower.contains("immunization") || lower.contains("vaccine") || lower.contains("vaccination") ||
+               lower.contains("shot") ||
                lower.contains("condition") || lower.contains("problem") || lower.contains("diagnos") ||
                lower.contains("care plan") || lower.contains("treatment plan") ||
-               lower.contains("clinical note") || lower.contains("show notes") || lower.contains("patient notes")
+               lower.contains("clinical note") || lower.contains("show notes") || lower.contains("patient notes") ||
+               lower.contains("previous note") || lower.contains("history note")
     }
 
     private fun isNoteCommand(cmd: String): Boolean {
@@ -2036,20 +2038,20 @@ class VoiceCommandsComprehensiveTest {
 
     private fun containsWakeWord(phrase: String): Boolean {
         val lower = phrase.lowercase()
-        return lower.contains("hey mdx") || lower.contains("hey m d x")
+        return lower.contains("hey minerva") || lower.contains("hey m i n e r v a")
     }
 
     private fun extractCommandAfterWakeWord(phrase: String): String {
         val lower = phrase.lowercase()
         return when {
-            lower.contains("hey mdx") -> lower.substringAfter("hey mdx").trim()
-            lower.contains("hey m d x") -> lower.substringAfter("hey m d x").trim()
+            lower.contains("hey minerva") -> lower.substringAfter("hey minerva").trim()
+            lower.contains("hey m i n e r v a") -> lower.substringAfter("hey m i n e r v a").trim()
             else -> phrase
         }
     }
 
     private fun isModeCommand(cmd: String): Boolean {
-        return cmd.lowercase().contains("mdx mode")
+        return cmd.lowercase().contains("minerva mode")
     }
 
     private fun isHelpCommand(cmd: String): Boolean {
@@ -2152,7 +2154,7 @@ class VoiceCommandsComprehensiveTest {
 
     private fun isDictationCommand(cmd: String): Boolean {
         val lower = cmd.lowercase()
-        return lower.contains("dictate") || lower.contains("dictating")
+        return lower.contains("dictate") || lower.contains("dictating") || lower.contains("dictation")
     }
 
     private fun isVoiceTemplateCommand(cmd: String): Boolean {
@@ -2192,7 +2194,9 @@ class VoiceCommandsComprehensiveTest {
         return lower.contains("order set") || lower.contains("what's in") ||
                lower.contains("whats in") || lower.contains("preview") ||
                lower.contains("workup") || lower.contains("bundle") ||
-               lower.contains("protocol")
+               lower.contains("protocol") ||
+               (lower.startsWith("order ") && (lower.contains("admission labs") ||
+                lower.contains("preop labs") || lower.contains("copd exacerbation")))
     }
 
     private fun isVitalEntry(cmd: String): Boolean {
@@ -2271,7 +2275,8 @@ class VoiceCommandsComprehensiveTest {
     private fun isMedRecCommand(cmd: String): Boolean {
         val lower = cmd.lowercase()
         return lower.contains("med rec") || lower.contains("reconcil") ||
-               lower.contains("home med") || lower.contains("compare med")
+               lower.contains("home med") || lower.contains("compare med") ||
+               (lower.contains("comparison") && lower.contains("med"))
     }
 
     private fun isReferralCommand(cmd: String): Boolean {
@@ -2321,7 +2326,8 @@ class VoiceCommandsComprehensiveTest {
         val lower = cmd.lowercase()
         return lower.contains("ambient") || lower.contains("aci") ||
                lower.contains("auto document") || lower.contains("never mind") ||
-               lower.contains("show entities") || lower.contains("what did you")
+               lower.contains("show entities") || lower.contains("what did you") ||
+               lower.contains("stop listening")
     }
 
     private fun isCrudCommand(cmd: String): Boolean {
@@ -2330,6 +2336,7 @@ class VoiceCommandsComprehensiveTest {
                lower.contains("send vital") || lower.contains("send order") ||
                lower.contains("add allergy to") ||
                lower.contains("discontinue") || lower.contains("dc ") ||
+               (lower.contains("stop ") && (lower.contains("med") || lower.contains("metformin"))) ||
                lower.contains("hold") || lower.contains("pause") ||
                lower.contains("sync all") || lower.contains("sync everything")
     }
@@ -2337,6 +2344,7 @@ class VoiceCommandsComprehensiveTest {
     private fun isDeviceCommand(cmd: String): Boolean {
         val lower = cmd.lowercase()
         return lower.contains("pair device") || lower.contains("pair glasses") ||
+               lower.contains("pair this device") ||
                lower.contains("device status") || lower.contains("pairing status")
     }
 
@@ -2352,6 +2360,8 @@ class VoiceCommandsComprehensiveTest {
                lower.contains("who's next") || lower.contains("whos next") ||
                lower.contains("who is next") || lower.contains("next patient") ||
                lower.contains("check in") || lower.contains("mark") ||
+               (lower.contains("patient") && lower.contains("done")) ||
+               (lower.contains("today") && lower.contains("patient")) ||
                lower.contains("start seeing") || lower.contains("begin encounter") ||
                lower.contains("seeing patient")
     }
@@ -2456,6 +2466,7 @@ class VoiceCommandsComprehensiveTest {
                lower.contains("preeclampsia") || lower.contains("pre-eclampsia") ||
                lower.contains("hemorrhage") || lower.contains("postpartum bleeding") ||
                lower.contains("ppd") || lower.contains("edinburgh") ||
+               lower.contains("depression") ||
                lower.contains("disparity")
     }
 
@@ -2482,7 +2493,8 @@ class VoiceCommandsComprehensiveTest {
         return lower.contains("interpreter") || lower.contains("language service") ||
                lower.contains("title vi") || lower.contains("title 6") ||
                lower.contains("clinical phrases") || lower.contains("common phrases") ||
-               lower.contains("patient speaks")
+               lower.contains("patient speaks") || lower.contains("set language") ||
+               lower.contains("language preference")
     }
 
     private fun isControlCommand(cmd: String): Boolean {

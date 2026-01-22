@@ -88,8 +88,8 @@
 
 | Test | Voice Command | Expected Result | Pass |
 |------|---------------|-----------------|------|
-| 4.1 | "Hey MDx" | Wake word activates listening | [ ] |
-| 4.2 | "Hey MDx, load patient" | Chained command works | [ ] |
+| 4.1 | "Hey Minerva" | Wake word activates listening | [ ] |
+| 4.2 | "Hey Minerva, load patient" | Chained command works | [ ] |
 | 4.3 | "Hey Minerva" | Minerva AI activates | [ ] |
 
 ---

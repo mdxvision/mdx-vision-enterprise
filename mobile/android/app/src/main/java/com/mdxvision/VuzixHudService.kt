@@ -165,7 +165,7 @@ class VuzixHudService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "MDx Vision HUD",
+                "Minerva HUD",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Persistent HUD overlay for AR glasses"
@@ -186,7 +186,7 @@ class VuzixHudService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("MDx Vision HUD Active")
+            .setContentTitle("Minerva HUD Active")
             .setContentText("Patient info displayed on glasses")
             .setSmallIcon(android.R.drawable.ic_menu_view)
             .setOngoing(true)
