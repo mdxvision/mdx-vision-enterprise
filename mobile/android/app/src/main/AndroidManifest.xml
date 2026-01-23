@@ -97,6 +97,13 @@
             android:screenOrientation="landscape"
             android:exported="false" />
 
+        <!-- Drone Voice Control Activity (Feature-flagged, default OFF) -->
+        <activity
+            android:name=".drone.DroneControlActivity"
+            android:label="Drone Control"
+            android:screenOrientation="landscape"
+            android:exported="false" />
+
         <!-- Vuzix HUD Overlay Service (Feature #73) -->
         <service
             android:name=".VuzixHudService"

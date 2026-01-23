@@ -3302,6 +3302,32 @@ SOFA Score: [X]
         barcodeLauncher.launch(intent)
     }
 
+    /**
+     * Open Drone Voice Control activity (Feature-flagged)
+     * Voice command: "drone control", "drone mode", "open drone"
+     */
+    private fun openDroneControl() {
+        // Check feature flag
+        if (!com.mdxvision.drone.DroneFeatureFlag.isEnabled(this)) {
+            speakFeedback("Drone control is disabled. Enable it in developer settings.")
+            showDataOverlay("Drone Control", buildString {
+                appendLine("Feature Disabled")
+                appendLine()
+                appendLine("To enable drone control:")
+                appendLine("1. Via ADB:")
+                appendLine("   adb shell am start -n com.mdxvision/.drone.DroneControlActivity")
+                appendLine()
+                appendLine("2. Or run:")
+                appendLine("   DroneFeatureFlag.setEnabled(context, true)")
+            })
+            return
+        }
+
+        // Launch drone control activity
+        val intent = Intent(this, com.mdxvision.drone.DroneControlActivity::class.java)
+        startActivity(intent)
+    }
+
     private fun toggleDocumentationMode() {
         isDocumentationMode = !isDocumentationMode
 
@@ -25489,6 +25515,16 @@ SOFA Score: [X]
                         loadPatientFromHistory(patientNum + 1)
                     }
                 }
+            }
+
+            // ═══════════════════════════════════════════════════════════════════════════
+            // DRONE CONTROL - Dev/test feature (requires feature flag)
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Open drone control: "drone control", "drone mode", "open drone"
+            lower.contains("drone control") || lower.contains("drone mode") ||
+            (lower.contains("open") && lower.contains("drone")) -> {
+                openDroneControl()
             }
 
             // ═══════════════════════════════════════════════════════════════════════════
