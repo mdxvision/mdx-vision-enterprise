@@ -313,6 +313,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include drone voice control router
+from drone import router as drone_router
+app.include_router(drone_router)
+
 # EHR Configuration (from environment)
 CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "")
 CERNER_APPLICATION_ID = os.getenv("CERNER_APPLICATION_ID", "")
