@@ -67,3 +67,10 @@ mobile/android/.gradle/
 **/build/
 **/.idea/
 **/*.iml
+
+# Next.js build artifacts
+.next/
+**/.next/
+web/.next/
+out/
+**/out/
