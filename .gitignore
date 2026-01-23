@@ -74,3 +74,9 @@ mobile/android/.gradle/
 web/.next/
 out/
 **/out/
+
+# Python virtual environments
+.venv/
+**/.venv/
+.venv-*/
+**/.venv-*/
