@@ -2076,6 +2076,7 @@ class WorklistPatient(BaseModel):
     encounter_started_at: Optional[str] = None
     has_critical_alerts: bool = False
     priority: int = 0  # 0=normal, 1=urgent, 2=stat
+    ehr: str = "cerner"  # cerner or epic
 
 class WorklistResponse(BaseModel):
     """Response containing the daily worklist"""
@@ -4179,7 +4180,8 @@ def _init_worklist_for_today():
                     "checked_in_at": None,
                     "encounter_started_at": None,
                     "has_critical_alerts": True,
-                    "priority": 0
+                    "priority": 0,
+                    "ehr": "cerner"
                 },
                 {
                     "patient_id": "12742400",
@@ -4196,7 +4198,8 @@ def _init_worklist_for_today():
                     "checked_in_at": None,
                     "encounter_started_at": None,
                     "has_critical_alerts": False,
-                    "priority": 1
+                    "priority": 1,
+                    "ehr": "cerner"
                 },
                 {
                     "patient_id": "12724067",
@@ -4213,7 +4216,8 @@ def _init_worklist_for_today():
                     "checked_in_at": None,
                     "encounter_started_at": None,
                     "has_critical_alerts": False,
-                    "priority": 0
+                    "priority": 0,
+                    "ehr": "cerner"
                 },
                 {
                     "patient_id": "12724068",
@@ -4230,7 +4234,8 @@ def _init_worklist_for_today():
                     "checked_in_at": None,
                     "encounter_started_at": None,
                     "has_critical_alerts": True,
-                    "priority": 2
+                    "priority": 2,
+                    "ehr": "cerner"
                 },
                 {
                     "patient_id": "12724069",
@@ -4247,7 +4252,44 @@ def _init_worklist_for_today():
                     "checked_in_at": None,
                     "encounter_started_at": None,
                     "has_critical_alerts": False,
-                    "priority": 0
+                    "priority": 0,
+                    "ehr": "cerner"
+                },
+                {
+                    "patient_id": "Tbt3KuCY0B5PSrJvCu2j-PlK.aiทRwdgmSAmH1U2D5rZ4",
+                    "name": "ARGONAUT, JASON",
+                    "date_of_birth": "1985-08-01",
+                    "gender": "male",
+                    "mrn": "E-1032702",
+                    "room": None,
+                    "appointment_time": "11:30",
+                    "appointment_type": "New Patient",
+                    "chief_complaint": "Wellness exam",
+                    "provider": "Dr. Smith",
+                    "status": "scheduled",
+                    "checked_in_at": None,
+                    "encounter_started_at": None,
+                    "has_critical_alerts": False,
+                    "priority": 0,
+                    "ehr": "epic"
+                },
+                {
+                    "patient_id": "erXuFYUfucBZaryVksYEcMg3",
+                    "name": "LOPEZ, CAMILA",
+                    "date_of_birth": "1987-09-12",
+                    "gender": "female",
+                    "mrn": "E-2938471",
+                    "room": None,
+                    "appointment_time": "14:00",
+                    "appointment_type": "Follow-up",
+                    "chief_complaint": "Diabetes management",
+                    "provider": "Dr. Smith",
+                    "status": "scheduled",
+                    "checked_in_at": None,
+                    "encounter_started_at": None,
+                    "has_critical_alerts": True,
+                    "priority": 1,
+                    "ehr": "epic"
                 }
             ]
         }
@@ -6757,6 +6799,51 @@ async def minerva_chat(request: MinervaRequest, req: Request):
             details={"error": str(e)[:100]}
         )
         raise HTTPException(status_code=500, detail=f"Minerva error: {str(e)}")
+
+
+# Minerva status tracking (for web dashboard sync)
+_minerva_status = {
+    "is_listening": False,
+    "is_speaking": False,
+    "current_patient_id": None,
+    "last_activity": None
+}
+
+
+class MinervaStatus(BaseModel):
+    """Minerva real-time status for dashboard sync"""
+    is_listening: bool = False
+    is_speaking: bool = False
+    current_patient_id: Optional[str] = None
+    last_activity: Optional[str] = None
+
+
+@app.get("/api/v1/minerva/status", response_model=MinervaStatus)
+async def minerva_get_status():
+    """
+    Get Minerva's current status for dashboard sync.
+
+    Used by the web dashboard to show real-time Minerva activity
+    when the glasses are being used.
+    """
+    return MinervaStatus(**_minerva_status)
+
+
+@app.post("/api/v1/minerva/status")
+async def minerva_update_status(status: MinervaStatus):
+    """
+    Update Minerva's status (called by Android glasses).
+
+    Allows the glasses to broadcast their state to the web dashboard.
+    """
+    global _minerva_status
+    _minerva_status = {
+        "is_listening": status.is_listening,
+        "is_speaking": status.is_speaking,
+        "current_patient_id": status.current_patient_id,
+        "last_activity": datetime.now().isoformat()
+    }
+    return {"status": "updated"}
 
 
 @app.get("/api/v1/minerva/context/{patient_id}", response_model=MinervaContextResponse)

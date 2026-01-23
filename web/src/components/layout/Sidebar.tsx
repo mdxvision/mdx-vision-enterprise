@@ -15,11 +15,13 @@ import {
   DollarSign,
   Receipt,
   Shield,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Worklist', href: '/dashboard/worklist', icon: ClipboardList },
   { name: 'Sessions', href: '/dashboard/sessions', icon: Mic },
   { name: 'Patients', href: '/dashboard/patients', icon: Users },
   { name: 'Encounters', href: '/dashboard/encounters', icon: Stethoscope },
