@@ -1,0 +1,9 @@
+# DJI Bridge Configuration
+# Copy this file to local.properties and add your keys
+
+# DJI Developer API Key
+# Get from: https://developer.dji.com/user/apps
+# 1. Create account at developer.dji.com
+# 2. Create new app with package: com.mdxvision.djibridge
+# 3. Copy the App Key here
+DJI_API_KEY=your_dji_app_key_here

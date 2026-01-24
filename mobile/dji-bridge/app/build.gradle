@@ -1,0 +1,87 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// Read DJI API key from local.properties
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localProperties.load(new FileInputStream(localPropertiesFile))
+}
+
+android {
+    namespace 'com.mdxvision.djibridge'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.mdxvision.djibridge"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        // DJI App Key - Set in local.properties: DJI_API_KEY=your_key_here
+        manifestPlaceholders["DJI_API_KEY"] = localProperties.getProperty('DJI_API_KEY', 'YOUR_DJI_APP_KEY_HERE')
+
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    packaging {
+        jniLibs {
+            pickFirsts += ['**/*.so']
+        }
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+}
+
+dependencies {
+    // Kotlin
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // DJI Mobile SDK v5 (MSDK 5)
+    implementation 'com.dji:dji-sdk-v5-aircraft:5.7.1'
+    implementation 'com.dji:dji-sdk-v5-networkImp:5.7.1'
+    compileOnly 'com.dji:dji-sdk-v5-aircraft-provided:5.7.1'
+
+    // HTTP Server (NanoHTTPD for embedded server)
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+
+    // JSON
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // Video streaming (RTMP)
+    implementation 'com.github.nicncs:rtmp-rtsp-stream-client-java:2.2.5'
+
+    // Lifecycle
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+}

@@ -277,7 +277,7 @@
             android:layout_height="56dp"
             android:layout_weight="2"
             android:layout_marginStart="8dp"
-            android:text="Hold to Speak"
+            android:text="🎤 Ready"
             android:textColor="@android:color/white"
             android:textSize="16sp"
             android:backgroundTint="#1976D2" />

@@ -21,7 +21,7 @@ class DroneApiClient(
 ) {
     companion object {
         private const val TAG = "DroneApiClient"
-        private const val DEFAULT_BASE_URL = "http://192.168.1.243:8002"
+        private const val DEFAULT_BASE_URL = "http://10.251.30.181:8002"
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         // Singleton instance for shared use

@@ -1,6 +1,7 @@
 package com.mdxvision.drone
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -20,6 +21,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.mdxvision.AudioStreamingService
 import com.mdxvision.R
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -64,6 +66,11 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
 
+    // WebSocket fallback for voice commands (when native speech unavailable)
+    private var useWebSocket = false
+    private var audioStreamingService: AudioStreamingService? = null
+    private var isWebSocketListening = false
+
     // UI State
     private var currentState: DroneUiState = DroneUiState.Idle
     private var lastParsedResponse: ParseResponse? = null
@@ -99,15 +106,29 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         // Initialize API client with server URL from MainActivity
         val serverUrl = getSharedPreferences("MDxVision", MODE_PRIVATE)
-            .getString("server_url", "http://192.168.1.243:8002") ?: "http://192.168.1.243:8002"
+            .getString("server_url", "http://10.251.30.181:8002") ?: "http://10.251.30.181:8002"
         droneApi = DroneApiClient.getInstance(serverUrl)
 
         initViews()
         initSpeech()
         setupListeners()
 
-        // Check drone status on startup
+        // Check drone status on startup, then auto-start listening
         checkDroneStatus()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Auto-restart continuous listening when activity resumes
+        if (currentState != DroneUiState.Disabled && !isListeningActive) {
+            startContinuousListening()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Stop listening when activity pauses
+        stopListening()
     }
 
     private fun initViews() {
@@ -158,93 +179,113 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     private fun initSpeechRecognizer() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(this, "Speech recognition not available", Toast.LENGTH_LONG).show()
+        Log.d(TAG, "initSpeechRecognizer called")
+        val isAvailable = SpeechRecognizer.isRecognitionAvailable(this)
+        Log.d(TAG, "SpeechRecognizer.isRecognitionAvailable = $isAvailable")
+
+        // Vuzix doesn't have standard RecognitionService - use WebSocket directly
+        val isVuzix = android.os.Build.MANUFACTURER.lowercase().contains("vuzix")
+        if (isVuzix) {
+            Log.d(TAG, "Vuzix device detected - using WebSocket transcription")
+            useWebSocket = true
+            pttButton.text = "🎤 Cloud Voice"
+            return
+        }
+
+        if (!isAvailable) {
+            Log.w(TAG, "Native speech not available, using WebSocket fallback")
+            useWebSocket = true
+            pttButton.text = "🎤 Cloud Speech"
             return
         }
 
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    Log.d(TAG, "Ready for speech")
-                    listeningText.text = "Listening..."
-                }
-
-                override fun onBeginningOfSpeech() {
-                    Log.d(TAG, "Speech started")
-                    listeningText.text = "Listening..."
-                }
-
-                override fun onRmsChanged(rmsdB: Float) {
-                    // Could show audio level indicator
-                }
-
-                override fun onBufferReceived(buffer: ByteArray?) {}
-
-                override fun onEndOfSpeech() {
-                    Log.d(TAG, "Speech ended")
-                    listeningText.text = "Processing..."
-                }
-
-                override fun onError(error: Int) {
-                    Log.e(TAG, "Speech error: $error")
-                    hideListening()
-                    val errorMsg = when (error) {
-                        SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                        SpeechRecognizer.ERROR_CLIENT -> "Client error"
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Permission denied"
-                        SpeechRecognizer.ERROR_NETWORK -> "Network error"
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-                        SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected"
-                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy"
-                        SpeechRecognizer.ERROR_SERVER -> "Server error"
-                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
-                        else -> "Unknown error ($error)"
-                    }
-                    if (error != SpeechRecognizer.ERROR_NO_MATCH &&
-                        error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                    ) {
-                        showError(errorMsg)
-                    }
-                }
-
-                override fun onResults(results: Bundle?) {
-                    hideListening()
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val transcript = matches?.firstOrNull()
-                    if (transcript != null) {
-                        Log.d(TAG, "Transcript: $transcript")
-                        onTranscriptReceived(transcript)
-                    } else {
-                        showError("No speech detected")
-                    }
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) {
-                    val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    matches?.firstOrNull()?.let {
-                        listeningText.text = "\"$it\""
-                    }
-                }
-
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
+            Log.d(TAG, "SpeechRecognizer created successfully")
+            setRecognitionListener(createRecognitionListener())
         }
     }
 
+    private fun createRecognitionListener(): RecognitionListener {
+        return object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                Log.d(TAG, "Ready for speech")
+                listeningText.text = "Listening..."
+            }
+
+            override fun onBeginningOfSpeech() {
+                Log.d(TAG, "Speech started")
+                listeningText.text = "Listening..."
+            }
+
+            override fun onRmsChanged(rmsdB: Float) {
+                // Could show audio level indicator
+            }
+
+            override fun onBufferReceived(buffer: ByteArray?) {}
+
+            override fun onEndOfSpeech() {
+                Log.d(TAG, "Speech ended")
+                listeningText.text = "Processing..."
+            }
+
+            override fun onError(error: Int) {
+                Log.e(TAG, "Speech error: $error")
+                hideListening()
+                val errorMsg = when (error) {
+                    SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
+                    SpeechRecognizer.ERROR_CLIENT -> "Client error"
+                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Permission denied"
+                    SpeechRecognizer.ERROR_NETWORK -> "Network error"
+                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
+                    SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected"
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy"
+                    SpeechRecognizer.ERROR_SERVER -> "Server error"
+                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
+                    else -> "Unknown error ($error)"
+                }
+                if (error != SpeechRecognizer.ERROR_NO_MATCH &&
+                    error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                ) {
+                    showError(errorMsg)
+                }
+                // Auto-restart continuous listening
+                startContinuousListening()
+            }
+
+            override fun onResults(results: Bundle?) {
+                hideListening()
+                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                val transcript = matches?.firstOrNull()
+                if (transcript != null) {
+                    Log.d(TAG, "Transcript: $transcript")
+                    onTranscriptReceived(transcript)
+                } else {
+                    // No transcript, restart listening
+                    startContinuousListening()
+                }
+            }
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                matches?.firstOrNull()?.let {
+                    listeningText.text = "\"$it\""
+                }
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle?) {}
+        }
+    }
+
+    private var isListeningActive = false
+
     private fun setupListeners() {
-        // Push-to-talk button
-        pttButton.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    startListening()
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    stopListening()
-                    true
-                }
-                else -> false
+        // Click-to-talk button (toggle mode for Vuzix touchpad compatibility)
+        pttButton.setOnClickListener {
+            Log.d(TAG, "PTT button clicked, isListeningActive=$isListeningActive, speechRecognizer=${speechRecognizer != null}")
+            if (isListeningActive) {
+                stopListening()
+            } else {
+                startListening()
             }
         }
 
@@ -284,6 +325,8 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         adapterInfo.text = "Adapter: ${status.adapterName ?: "Unknown"} (${status.adapterType ?: "?"})"
                         disabledOverlay.visibility = View.GONE
                         updateState(DroneUiState.Idle)
+                        // Auto-start continuous listening
+                        startContinuousListening()
                     } else {
                         showDisabled(status.message ?: "Drone control disabled on server")
                     }
@@ -304,8 +347,101 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         updateState(DroneUiState.Disabled)
     }
 
+    private fun startContinuousListening() {
+        Log.d(TAG, "startContinuousListening called, useWebSocket=$useWebSocket")
+
+        if (useWebSocket) {
+            // Use WebSocket fallback
+            pttButton.postDelayed({
+                if (currentState != DroneUiState.Disabled) {
+                    startWebSocketListening()
+                }
+            }, 300)
+            return
+        }
+
+        if (speechRecognizer == null) {
+            Log.e(TAG, "Cannot start continuous listening - speechRecognizer is null!")
+            return
+        }
+        // Small delay to allow any previous recognition to clean up
+        pttButton.postDelayed({
+            if (currentState != DroneUiState.Disabled) {
+                startListening()
+            }
+        }, 300)
+    }
+
+    private fun startWebSocketListening() {
+        if (isWebSocketListening) {
+            Log.d(TAG, "WebSocket already listening")
+            return
+        }
+
+        if (currentState == DroneUiState.Disabled) {
+            Log.w(TAG, "Cannot start WebSocket listening - disabled")
+            return
+        }
+
+        Log.d(TAG, "Starting WebSocket voice recognition")
+
+        // Configure WebSocket URL from server URL setting
+        val serverUrl = getSharedPreferences("MDxVision", MODE_PRIVATE)
+            .getString("server_url", "http://10.251.30.181:8002") ?: "http://10.251.30.181:8002"
+        val wsUrl = serverUrl.replace("http://", "ws://").replace("https://", "wss://") +
+            "/ws/transcribe?noise_reduction=false"
+        AudioStreamingService.setDeviceUrl(wsUrl)
+        Log.d(TAG, "WebSocket URL configured: $wsUrl")
+
+        // Create audio streaming service with callback
+        audioStreamingService = AudioStreamingService(this) { result ->
+            runOnUiThread {
+                if (result.isFinal && result.text.isNotBlank()) {
+                    Log.d(TAG, "WebSocket transcript: ${result.text}")
+                    isListeningActive = false
+                    hideListening()
+                    onTranscriptReceived(result.text)
+                } else if (!result.isFinal && result.text.isNotBlank()) {
+                    // Show partial transcript
+                    listeningText.text = "\"${result.text}\"..."
+                }
+            }
+        }
+
+        if (audioStreamingService?.startStreaming() == true) {
+            isWebSocketListening = true
+            isListeningActive = true
+            showListening()
+            updateState(DroneUiState.Listening)
+            Log.d(TAG, "WebSocket listening started")
+        } else {
+            Log.e(TAG, "Failed to start WebSocket listening")
+            showError("Failed to connect to cloud speech")
+        }
+    }
+
+    private fun stopWebSocketListening() {
+        if (isWebSocketListening) {
+            audioStreamingService?.stopStreaming()
+            audioStreamingService = null
+            isWebSocketListening = false
+            isListeningActive = false
+            Log.d(TAG, "WebSocket listening stopped")
+        }
+    }
+
     private fun startListening() {
-        if (currentState == DroneUiState.Disabled) return
+        Log.d(TAG, "startListening called, currentState=$currentState, speechRecognizer=${speechRecognizer != null}")
+        if (currentState == DroneUiState.Disabled) {
+            Log.w(TAG, "Cannot start listening - drone control is disabled")
+            return
+        }
+
+        if (speechRecognizer == null) {
+            Log.e(TAG, "Cannot start listening - speechRecognizer is null!")
+            Toast.makeText(this, "Speech recognizer not initialized", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         speechRecognizer?.let { recognizer ->
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -314,26 +450,36 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             }
+            Log.d(TAG, "Starting speech recognition...")
             recognizer.startListening(intent)
+            isListeningActive = true
             showListening()
             updateState(DroneUiState.Listening)
         }
     }
 
     private fun stopListening() {
-        speechRecognizer?.stopListening()
+        Log.d(TAG, "stopListening called")
+        isListeningActive = false
+        if (useWebSocket) {
+            stopWebSocketListening()
+        } else {
+            speechRecognizer?.stopListening()
+        }
+        hideListening()
     }
 
     private fun showListening() {
         listeningText.text = "Listening..."
-        listeningOverlay.visibility = View.VISIBLE
-        pttButton.text = "Listening..."
+        listeningOverlay.visibility = View.GONE  // No overlay for always-on listening
+        pttButton.text = "🎤 Listening"
         pttButton.backgroundTintList = ContextCompat.getColorStateList(this, android.R.color.holo_green_dark)
     }
 
     private fun hideListening() {
+        isListeningActive = false
         listeningOverlay.visibility = View.GONE
-        pttButton.text = "Hold to Speak"
+        pttButton.text = "🎤 Ready"
         pttButton.backgroundTintList = ContextCompat.getColorStateList(this, android.R.color.holo_blue_dark)
     }
 
@@ -342,6 +488,26 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         transcriptCard.visibility = View.VISIBLE
         transcriptText.text = transcript
         hideError()
+
+        val lower = transcript.lowercase().trim()
+
+        // Check if awaiting confirmation and this is confirm/cancel
+        if (currentState is DroneUiState.AwaitingConfirmation) {
+            val pendingResponse = (currentState as DroneUiState.AwaitingConfirmation).response
+            when {
+                lower == "confirm" || lower == "yes" || lower == "affirmative" || lower == "do it" -> {
+                    speak("Confirmed")
+                    confirmCommand(pendingResponse)
+                    return
+                }
+                lower == "cancel" || lower == "no" || lower == "abort" || lower == "never mind" -> {
+                    speak("Cancelled")
+                    updateState(DroneUiState.Idle)
+                    startContinuousListening()
+                    return
+                }
+            }
+        }
 
         // Parse the command
         parseCommand(transcript)
@@ -361,20 +527,25 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         showError("Command not recognized")
                         speak("Command not recognized")
                         updateState(DroneUiState.Error("Command not recognized"))
+                        // Restart listening after a delay
+                        startContinuousListening()
                     } else if (response.requiresConfirmation) {
-                        // Needs confirmation - show confirm button
-                        speak("Confirm ${response.normalizedCommand}?")
+                        // Needs confirmation - say "confirm" or "cancel"
+                        speak("Say confirm or cancel for ${response.normalizedCommand}")
                         updateState(DroneUiState.AwaitingConfirmation(response))
+                        // Keep listening for confirm/cancel
+                        startContinuousListening()
                     } else {
-                        // Safe command - show execute button for manual execution
-                        // (Prioritizing safety over auto-execute)
-                        updateState(DroneUiState.Parsed(response))
+                        // Safe command - auto-execute
+                        speak("Executing ${response.normalizedCommand}")
+                        executeCommand(response, confirm = false)
                     }
                 },
                 onFailure = { error ->
                     Log.e(TAG, "Parse failed", error)
                     showError("Parse failed: ${error.message}")
                     updateState(DroneUiState.Error(error.message ?: "Parse failed"))
+                    startContinuousListening()
                 }
             )
         }
@@ -414,15 +585,19 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                         execResponse.status.isSuccess -> {
                             speak(execResponse.message)
                             updateState(DroneUiState.Executed(execResponse))
+                            // Restart listening after success
+                            startContinuousListening()
                         }
                         execResponse.status.needsConfirmation -> {
                             // Shouldn't happen if we confirmed, but handle it
-                            speak("Please confirm")
+                            speak("Please say confirm or cancel")
                             updateState(DroneUiState.AwaitingConfirmation(response))
+                            startContinuousListening()
                         }
                         else -> {
                             speak(execResponse.message)
                             updateState(DroneUiState.Error(execResponse.message))
+                            startContinuousListening()
                         }
                     }
                 },
@@ -430,6 +605,7 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     Log.e(TAG, "Execute failed", error)
                     showError("Execute failed: ${error.message}")
                     updateState(DroneUiState.Error(error.message ?: "Execute failed"))
+                    startContinuousListening()
                 }
             )
         }
@@ -449,11 +625,13 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     Log.d(TAG, "STOP result: ${response.status} - ${response.message}")
                     showExecuteResult(response)
                     Toast.makeText(this@DroneControlActivity, "STOP executed", Toast.LENGTH_SHORT).show()
+                    startContinuousListening()
                 },
                 onFailure = { error ->
                     Log.e(TAG, "STOP failed", error)
                     showError("STOP failed: ${error.message}")
                     Toast.makeText(this@DroneControlActivity, "STOP failed!", Toast.LENGTH_LONG).show()
+                    startContinuousListening()
                 }
             )
         }
@@ -556,6 +734,7 @@ class DroneControlActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     override fun onDestroy() {
         super.onDestroy()
         speechRecognizer?.destroy()
+        stopWebSocketListening()
         tts?.shutdown()
     }
 }

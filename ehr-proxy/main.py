@@ -4207,21 +4207,53 @@ def _init_worklist_for_today():
                 },
                 {
                     "patient_id": "12724067",
-                    "name": "JOHNSON, MARIA",
-                    "date_of_birth": "1978-07-10",
+                    "name": "JACKSON, TANYA",
+                    "date_of_birth": "1992-03-15",
                     "gender": "female",
                     "mrn": "MRN-12724067",
                     "room": None,
                     "appointment_time": "10:00",
-                    "appointment_type": "Follow-up",
-                    "chief_complaint": "Diabetes management",
+                    "appointment_type": "OB Follow-up",
+                    "chief_complaint": "Prenatal visit - 32 weeks",
                     "provider": "Dr. Smith",
                     "status": "scheduled",
                     "checked_in_at": None,
                     "encounter_started_at": None,
-                    "has_critical_alerts": False,
-                    "priority": 0,
-                    "ehr": "cerner"
+                    "has_critical_alerts": True,
+                    "priority": 1,
+                    "ehr": "cerner",
+                    "health_equity": {
+                        "fitzpatrick_skin_type": 5,
+                        "ancestry": "African American",
+                        "pregnancy": {
+                            "gestational_age_weeks": 32,
+                            "gravida": 2,
+                            "para": 1
+                        },
+                        "alerts": [
+                            {
+                                "type": "maternal_mortality",
+                                "severity": "critical",
+                                "title": "Elevated Maternal Risk",
+                                "message": "Black women face 3-4x higher maternal mortality rate. Lower threshold for escalation. Document ALL patient-reported symptoms. Monitor closely for: preeclampsia, hemorrhage, cardiomyopathy, infection.",
+                                "source": "CDC MMWR, KFF 2023, Johns Hopkins"
+                            },
+                            {
+                                "type": "pulse_oximeter",
+                                "severity": "warning",
+                                "title": "Pulse Oximeter Accuracy",
+                                "message": "SpO2 readings may be 1-4% higher than actual. Critical during labor/delivery - consider ABG.",
+                                "source": "NEJM 2020, FDA Guidance 2025"
+                            },
+                            {
+                                "type": "clinical_bias",
+                                "severity": "warning",
+                                "title": "Symptom Dismissal Risk",
+                                "message": "Research shows Black women's symptoms are more likely to be dismissed. Listen to and document ALL concerns, even if initially reassured.",
+                                "source": "PMC Listen to the Whispers 2023"
+                            }
+                        ]
+                    }
                 },
                 {
                     "patient_id": "12724068",
@@ -4239,7 +4271,27 @@ def _init_worklist_for_today():
                     "encounter_started_at": None,
                     "has_critical_alerts": True,
                     "priority": 2,
-                    "ehr": "cerner"
+                    "ehr": "cerner",
+                    "health_equity": {
+                        "fitzpatrick_skin_type": 5,
+                        "ancestry": "African American",
+                        "alerts": [
+                            {
+                                "type": "pulse_oximeter",
+                                "severity": "warning",
+                                "title": "Pulse Oximeter Accuracy",
+                                "message": "SpO2 readings may be 1-4% higher than actual. Consider ABG for critical decisions.",
+                                "source": "NEJM 2020, FDA Guidance 2025"
+                            },
+                            {
+                                "type": "medication",
+                                "severity": "info",
+                                "title": "Medication Response",
+                                "message": "ACE inhibitors may have reduced efficacy. Consider thiazide diuretic or CCB as first-line for HTN.",
+                                "source": "AHA/ACC Guidelines"
+                            }
+                        ]
+                    }
                 },
                 {
                     "patient_id": "12724069",
@@ -4275,7 +4327,26 @@ def _init_worklist_for_today():
                     "encounter_started_at": None,
                     "has_critical_alerts": False,
                     "priority": 0,
-                    "ehr": "epic"
+                    "ehr": "epic",
+                    "health_equity": {
+                        "religion": "Jehovah's Witness",
+                        "cultural_preferences": {
+                            "blood_products": {
+                                "refuses": ["whole_blood", "rbc", "wbc", "platelets", "plasma"],
+                                "individual_conscience": ["albumin", "immunoglobulins", "cell_salvage"],
+                                "note": "Confirm individual preferences with patient"
+                            }
+                        },
+                        "alerts": [
+                            {
+                                "type": "blood_products",
+                                "severity": "critical",
+                                "title": "Blood Product Restriction",
+                                "message": "Patient is Jehovah's Witness. Refuses whole blood and primary components. Confirm preferences for fractions. Contact JW Hospital Liaison if needed.",
+                                "source": "Patient-reported religious preference"
+                            }
+                        ]
+                    }
                 },
                 {
                     "patient_id": "erXuFYUfucBZaryVksYEcMg3",
@@ -4293,7 +4364,34 @@ def _init_worklist_for_today():
                     "encounter_started_at": None,
                     "has_critical_alerts": True,
                     "priority": 1,
-                    "ehr": "epic"
+                    "ehr": "epic",
+                    "health_equity": {
+                        "ethnicity": "Hispanic/Latino",
+                        "language_preference": "Spanish",
+                        "interpreter_needed": True,
+                        "cultural_preferences": {
+                            "family_involvement": "family_centered",
+                            "decision_making": "Include family in medical decisions",
+                            "communication_style": "indirect",
+                            "primary_family_contact": "Husband - Carlos Lopez"
+                        },
+                        "alerts": [
+                            {
+                                "type": "cultural",
+                                "severity": "info",
+                                "title": "Family-Centered Care",
+                                "message": "Patient prefers family involvement in healthcare decisions (familismo). Include husband Carlos in care discussions.",
+                                "source": "Patient-reported preference"
+                            },
+                            {
+                                "type": "language",
+                                "severity": "info",
+                                "title": "Language Services",
+                                "message": "Spanish interpreter recommended. Avoid medical jargon; use teach-back method.",
+                                "source": "Patient preference"
+                            }
+                        ]
+                    }
                 }
             ]
         }
@@ -4394,6 +4492,12 @@ async def check_in_patient(req: CheckInRequest, request: Request):
         ip_address=ip_address
     )
 
+    # Broadcast to connected clients
+    try:
+        await broadcast_worklist_update(patient, "check_in")
+    except Exception as e:
+        print(f"Broadcast error: {e}")
+
     return {
         "success": True,
         "message": f"Patient {patient['name']} checked in",
@@ -4446,11 +4550,72 @@ async def update_worklist_status(req: UpdateWorklistStatusRequest, request: Requ
         ip_address=ip_address
     )
 
+    # Broadcast to connected clients
+    try:
+        await broadcast_worklist_update(patient, "status_change")
+    except Exception as e:
+        print(f"Broadcast error: {e}")
+
     return {
         "success": True,
         "message": f"Patient {patient['name']} status updated to {req.status}",
         "patient": patient
     }
+
+
+@app.get("/api/v1/health-equity/{patient_id}")
+async def get_health_equity_alerts(patient_id: str, request: Request):
+    """
+    Get health equity alerts and cultural care preferences for a patient.
+
+    Returns racial medicine awareness alerts and cultural care considerations
+    based on patient demographics and preferences.
+    """
+    worklist = _init_worklist_for_today()
+    patients = worklist.get("patients", [])
+
+    # Find patient
+    patient = None
+    for p in patients:
+        if p.get("patient_id") == patient_id:
+            patient = p
+            break
+
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+
+    health_equity = patient.get("health_equity", {})
+
+    # Build response
+    response = {
+        "patient_id": patient_id,
+        "patient_name": patient.get("name"),
+        "has_health_equity_alerts": len(health_equity.get("alerts", [])) > 0,
+        "alerts": health_equity.get("alerts", []),
+        "cultural_preferences": health_equity.get("cultural_preferences", {}),
+        "demographics": {
+            "fitzpatrick_skin_type": health_equity.get("fitzpatrick_skin_type"),
+            "ancestry": health_equity.get("ancestry"),
+            "ethnicity": health_equity.get("ethnicity"),
+            "religion": health_equity.get("religion"),
+            "language_preference": health_equity.get("language_preference"),
+            "interpreter_needed": health_equity.get("interpreter_needed", False)
+        }
+    }
+
+    # Audit
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.VIEW_PATIENT,
+        patient_id=patient_id,
+        patient_name=patient.get("name"),
+        endpoint="/api/v1/health-equity",
+        status="success",
+        details=f"alerts={len(health_equity.get('alerts', []))}",
+        ip_address=ip_address
+    )
+
+    return response
 
 
 @app.get("/api/v1/worklist/next")
@@ -14924,6 +15089,83 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
     )
 
     return result
+
+
+# ============ Real-Time Sync WebSocket (Glasses ↔ Dashboard) ============
+
+class SyncConnectionManager:
+    """Manages WebSocket connections for real-time sync between glasses and dashboard."""
+
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        print(f"🔗 Sync WebSocket connected. Total: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        print(f"🔌 Sync WebSocket disconnected. Total: {len(self.active_connections)}")
+
+    async def broadcast(self, event_type: str, data: dict):
+        """Broadcast event to all connected clients."""
+        message = {
+            "type": event_type,
+            "data": data,
+            "timestamp": datetime.now().isoformat()
+        }
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                print(f"Failed to send to client: {e}")
+                disconnected.append(connection)
+
+        # Clean up disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+sync_manager = SyncConnectionManager()
+
+
+@app.websocket("/ws/sync")
+async def websocket_sync(websocket: WebSocket):
+    """
+    Real-time sync WebSocket for glasses ↔ dashboard communication.
+
+    Events broadcasted:
+    - worklist_update: Patient status changed
+    - patient_loaded: Patient loaded on glasses
+    - minerva_response: Minerva AI response
+    """
+    await sync_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, listen for client messages
+            data = await websocket.receive_json()
+
+            # Client can send events too (e.g., glasses loading a patient)
+            event_type = data.get("type")
+            if event_type:
+                # Broadcast to all other clients
+                await sync_manager.broadcast(event_type, data.get("data", {}))
+
+    except WebSocketDisconnect:
+        sync_manager.disconnect(websocket)
+    except Exception as e:
+        print(f"Sync WebSocket error: {e}")
+        sync_manager.disconnect(websocket)
+
+
+async def broadcast_worklist_update(patient: dict, action: str):
+    """Helper to broadcast worklist updates."""
+    await sync_manager.broadcast("worklist_update", {
+        "action": action,
+        "patient": patient
+    })
 
 
 # ============ Real-Time Transcription WebSocket ============
