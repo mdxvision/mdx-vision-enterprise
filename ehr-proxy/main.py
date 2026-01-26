@@ -394,12 +394,64 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Environment detection for security configuration
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+IS_PRODUCTION = ENVIRONMENT.lower() == "production"
+FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").lower() == "true"
+
+# SSL/TLS Configuration (Issue #20 - HTTPS enforcement)
+SSL_KEYFILE = os.getenv("SSL_KEYFILE", "")
+SSL_CERTFILE = os.getenv("SSL_CERTFILE", "")
+HTTPS_PORT = int(os.getenv("HTTPS_PORT", "8443"))
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Security Headers Middleware (Issue #20 - HIPAA §164.312(e)(1))
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """
+    Add security headers to all responses.
+    HSTS, X-Content-Type-Options, X-Frame-Options, etc.
+    """
+    response = await call_next(request)
+
+    # Always add these security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(self), camera=()"
+
+    # Add HSTS only in production (requires HTTPS)
+    if IS_PRODUCTION or FORCE_HTTPS:
+        # max-age=1 year, includeSubDomains for security, preload for browser lists
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
+    # Content Security Policy (allow necessary sources)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self' wss: https:; "
+        "frame-ancestors 'none'"
+    )
+
+    return response
+
+
+# HTTPS redirect middleware (only in production)
+if IS_PRODUCTION or FORCE_HTTPS:
+    from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+    app.add_middleware(HTTPSRedirectMiddleware)
+    print("🔒 HTTPS redirect enabled (production mode)")
+
 
 # Include drone voice control router
 from drone import router as drone_router
@@ -16236,6 +16288,16 @@ async def tts_status():
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
     print("═" * 50)
+
+    # Security status
+    print("🔒 Security Configuration:")
+    print(f"   • Environment: {ENVIRONMENT}")
+    print(f"   • HTTPS: {'✅ Enabled' if (IS_PRODUCTION and SSL_CERTFILE) else '⚠️  Development (HTTP)'}")
+    if IS_PRODUCTION:
+        print(f"   • HSTS: ✅ Enabled (max-age=1 year)")
+        print(f"   • Security Headers: ✅ Enabled")
+    print("─" * 50)
+
     print("📡 EHR Integrations:")
     print(f"   • Cerner/Oracle: {'✅ READY' if CERNER_CLIENT_ID else '⚠️  Open sandbox'}")
     if CERNER_CLIENT_ID:
@@ -16259,7 +16321,27 @@ if __name__ == "__main__":
         print(f"     URL: {HAPI_FHIR_BASE_URL}")
         print("     ↳ CREATE, READ, UPDATE, DELETE supported")
     print("═" * 50)
-    print("🔗 API: http://localhost:8002")
-    print("📱 Android emulator: http://10.0.2.2:8002")
-    print(f"🎤 Transcription: {TRANSCRIPTION_PROVIDER} (ws://localhost:8002/ws/transcribe)")
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+
+    # HTTPS in production, HTTP in development
+    if IS_PRODUCTION and SSL_CERTFILE and SSL_KEYFILE:
+        # Production: HTTPS with TLS certificates
+        print(f"🔗 API: https://0.0.0.0:{HTTPS_PORT}")
+        print(f"📱 Android: https://your-server:{HTTPS_PORT}")
+        print(f"🎤 Transcription: wss://your-server:{HTTPS_PORT}/ws/transcribe")
+        print("🔒 Running in PRODUCTION mode with HTTPS")
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=HTTPS_PORT,
+            ssl_keyfile=SSL_KEYFILE,
+            ssl_certfile=SSL_CERTFILE
+        )
+    else:
+        # Development: HTTP (no TLS)
+        print("🔗 API: http://localhost:8002")
+        print("📱 Android emulator: http://10.0.2.2:8002")
+        print(f"🎤 Transcription: {TRANSCRIPTION_PROVIDER} (ws://localhost:8002/ws/transcribe)")
+        if IS_PRODUCTION:
+            print("⚠️  WARNING: Production mode without SSL certificates!")
+            print("   Set SSL_KEYFILE and SSL_CERTFILE environment variables.")
+        uvicorn.run(app, host="0.0.0.0", port=8002)
