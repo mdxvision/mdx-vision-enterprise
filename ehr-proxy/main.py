@@ -26,6 +26,16 @@ import uuid
 import base64
 from datetime import datetime, timezone
 
+# Token encryption (HIPAA compliance - §164.312(a)(2)(iv))
+try:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
+    print("⚠️ cryptography not installed - tokens will be stored unencrypted")
+
 # Import transcription service
 from transcription import (
     create_session as create_transcription_session, get_session, end_session, set_session_speaker_context,
@@ -2960,13 +2970,77 @@ class ConsultNote(BaseModel):
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
 
-# Token storage for EHR OAuth sessions (persisted to file)
+# Token storage for EHR OAuth sessions (persisted to file with encryption)
 TOKENS_FILE = os.path.join(os.path.dirname(__file__), ".ehr_tokens.json")
+TOKENS_FILE_ENCRYPTED = os.path.join(os.path.dirname(__file__), ".ehr_tokens.enc")
 ehr_tokens: Dict[str, Dict[str, Any]] = {}
 
-def save_tokens():
-    """Save EHR tokens to file for persistence across restarts"""
+# Encryption key from environment variable
+EHR_TOKEN_ENCRYPTION_KEY = os.getenv("EHR_TOKEN_ENCRYPTION_KEY", "")
+
+def _get_fernet_key() -> Optional[bytes]:
+    """Derive Fernet key from environment variable using PBKDF2"""
+    if not EHR_TOKEN_ENCRYPTION_KEY or not ENCRYPTION_AVAILABLE:
+        return None
     try:
+        # Use PBKDF2 to derive a proper Fernet key from the password
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b"mdxvision_ehr_tokens_v1",  # Static salt (key should be unique per deployment)
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(EHR_TOKEN_ENCRYPTION_KEY.encode()))
+        return key
+    except Exception as e:
+        print(f"⚠️ Failed to derive encryption key: {e}")
+        return None
+
+def _encrypt_tokens(data: dict) -> Optional[bytes]:
+    """Encrypt token data using Fernet (AES-128-CBC with HMAC)"""
+    key = _get_fernet_key()
+    if not key:
+        return None
+    try:
+        f = Fernet(key)
+        json_data = json.dumps(data, default=str).encode()
+        return f.encrypt(json_data)
+    except Exception as e:
+        print(f"⚠️ Encryption failed: {e}")
+        return None
+
+def _decrypt_tokens(encrypted_data: bytes) -> Optional[dict]:
+    """Decrypt token data using Fernet"""
+    key = _get_fernet_key()
+    if not key:
+        return None
+    try:
+        f = Fernet(key)
+        decrypted = f.decrypt(encrypted_data)
+        return json.loads(decrypted.decode())
+    except Exception as e:
+        print(f"⚠️ Decryption failed: {e}")
+        return None
+
+def save_tokens():
+    """Save EHR tokens to file for persistence across restarts (encrypted if key available)"""
+    try:
+        # Try encrypted storage first
+        if EHR_TOKEN_ENCRYPTION_KEY and ENCRYPTION_AVAILABLE:
+            encrypted = _encrypt_tokens(ehr_tokens)
+            if encrypted:
+                with open(TOKENS_FILE_ENCRYPTED, "wb") as f:
+                    f.write(encrypted)
+                # Remove plaintext file if it exists
+                if os.path.exists(TOKENS_FILE):
+                    os.remove(TOKENS_FILE)
+                    print(f"🔒 Migrated tokens to encrypted storage")
+                print(f"🔒 Saved encrypted EHR tokens")
+                return
+
+        # Fallback to plaintext (with warning)
+        if not EHR_TOKEN_ENCRYPTION_KEY:
+            print(f"⚠️ EHR_TOKEN_ENCRYPTION_KEY not set - storing tokens unencrypted (HIPAA risk!)")
         with open(TOKENS_FILE, "w") as f:
             json.dump(ehr_tokens, f, indent=2, default=str)
         print(f"✅ Saved EHR tokens to {TOKENS_FILE}")
@@ -2974,15 +3048,33 @@ def save_tokens():
         print(f"⚠️ Failed to save tokens: {e}")
 
 def load_tokens():
-    """Load EHR tokens from file on startup"""
+    """Load EHR tokens from file on startup (supports both encrypted and plaintext)"""
     global ehr_tokens
     try:
+        # Try encrypted file first
+        if os.path.exists(TOKENS_FILE_ENCRYPTED) and EHR_TOKEN_ENCRYPTION_KEY and ENCRYPTION_AVAILABLE:
+            with open(TOKENS_FILE_ENCRYPTED, "rb") as f:
+                encrypted_data = f.read()
+            decrypted = _decrypt_tokens(encrypted_data)
+            if decrypted:
+                ehr_tokens = decrypted
+                valid = [k for k, v in ehr_tokens.items() if v.get("access_token")]
+                print(f"🔒 Loaded encrypted EHR tokens: {', '.join(valid) if valid else 'none'}")
+                return
+
+        # Fallback to plaintext file (migration path)
         if os.path.exists(TOKENS_FILE):
             with open(TOKENS_FILE, "r") as f:
                 ehr_tokens = json.load(f)
-            # Check which tokens are still valid
             valid = [k for k, v in ehr_tokens.items() if v.get("access_token")]
-            print(f"✅ Loaded EHR tokens: {', '.join(valid) if valid else 'none'}")
+            print(f"✅ Loaded EHR tokens (plaintext): {', '.join(valid) if valid else 'none'}")
+
+            # Auto-migrate to encrypted if key is available
+            if EHR_TOKEN_ENCRYPTION_KEY and ENCRYPTION_AVAILABLE:
+                print(f"🔄 Migrating tokens to encrypted storage...")
+                save_tokens()  # This will encrypt and remove plaintext
+            elif not EHR_TOKEN_ENCRYPTION_KEY:
+                print(f"⚠️ Set EHR_TOKEN_ENCRYPTION_KEY to enable token encryption (HIPAA compliance)")
     except Exception as e:
         print(f"⚠️ Failed to load tokens: {e}")
         ehr_tokens = {}

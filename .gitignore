@@ -22,6 +22,10 @@ target/
 .env.local
 .env.*.local
 
+# EHR OAuth tokens (sensitive - never commit!)
+.ehr_tokens.json
+.ehr_tokens.enc
+
 # Logs
 logs/
 *.log
