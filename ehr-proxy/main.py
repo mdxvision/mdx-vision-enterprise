@@ -14,8 +14,15 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
+
+# Input validation and sanitization (HIPAA/OWASP compliance)
+from validators import (
+    sanitize_text, sanitize_html, sanitize_list, sanitize_dict,
+    validate_patient_id, validate_ehr_name, validate_status,
+    MAX_SHORT_TEXT_LENGTH, MAX_MEDIUM_TEXT_LENGTH, MAX_LONG_TEXT_LENGTH, MAX_NOTE_LENGTH
+)
 from enum import Enum
 import uvicorn
 import os
@@ -2109,12 +2116,38 @@ class CheckInRequest(BaseModel):
     room: Optional[str] = None
     chief_complaint: Optional[str] = None
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('room', 'chief_complaint')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
 class UpdateWorklistStatusRequest(BaseModel):
     """Request to update patient status in worklist"""
     patient_id: str
     status: str  # checked_in, in_room, in_progress, completed, no_show
     room: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v):
+        valid = {'scheduled', 'checked_in', 'in_room', 'in_progress', 'completed', 'no_show'}
+        return validate_status(v, valid)
+
+    @field_validator('room', 'notes')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
 
 class OrderUpdateRequest(BaseModel):
     """Request to update an existing order"""
@@ -2125,6 +2158,24 @@ class OrderUpdateRequest(BaseModel):
     frequency: Optional[str] = None
     notes: Optional[str] = None
     cancel: bool = False
+
+    @field_validator('patient_id', 'order_id')
+    @classmethod
+    def validate_ids(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('priority')
+    @classmethod
+    def validate_priority(cls, v):
+        if v:
+            valid = {'routine', 'urgent', 'stat'}
+            return validate_status(v, valid)
+        return v
+
+    @field_validator('dose', 'frequency', 'notes')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
 
 
 # Differential Diagnosis Models
@@ -2138,6 +2189,38 @@ class DdxRequest(BaseModel):
     medical_history: List[str] = []
     medications: List[str] = []
     allergies: List[str] = []
+
+    @field_validator('chief_complaint')
+    @classmethod
+    def sanitize_chief_complaint(cls, v):
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH)
+
+    @field_validator('symptoms', 'medical_history', 'medications', 'allergies')
+    @classmethod
+    def sanitize_lists(cls, v):
+        return sanitize_list(v, max_items=50, max_item_length=500)
+
+    @field_validator('vitals')
+    @classmethod
+    def sanitize_vitals(cls, v):
+        return sanitize_dict(v) if v else v
+
+    @field_validator('gender')
+    @classmethod
+    def validate_gender(cls, v):
+        if v:
+            valid = {'male', 'female', 'other', 'unknown', 'm', 'f'}
+            if v.lower().strip() not in valid:
+                return 'unknown'
+            return v.lower().strip()
+        return v
+
+    @field_validator('age')
+    @classmethod
+    def validate_age(cls, v):
+        if v is not None and (v < 0 or v > 150):
+            raise ValueError("Age must be between 0 and 150")
+        return v
 
 
 class DifferentialDiagnosis(BaseModel):
@@ -2906,6 +2989,35 @@ class NoteRequest(BaseModel):
     patient_id: Optional[str] = None
     note_type: str = "SOAP"
     chief_complaint: Optional[str] = None
+
+    @field_validator('transcript')
+    @classmethod
+    def sanitize_transcript(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Transcript is required")
+        return sanitize_text(v, MAX_NOTE_LENGTH)
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v) if v else v
+
+    @field_validator('note_type')
+    @classmethod
+    def validate_note_type(cls, v):
+        valid = {'soap', 'soap_note', 'progress', 'progress_note', 'hp', 'consult'}
+        normalized = validate_status(v, valid)
+        # Normalize to standard names
+        if normalized in ('soap', 'soap_note'):
+            return 'SOAP'
+        elif normalized in ('progress', 'progress_note'):
+            return 'PROGRESS'
+        return normalized.upper()
+
+    @field_validator('chief_complaint')
+    @classmethod
+    def sanitize_chief_complaint(cls, v):
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH) if v else v
 
 
 class SOAPNote(BaseModel):
@@ -6739,6 +6851,23 @@ class MinervaRequest(BaseModel):
     patient_id: Optional[str] = None
     conversation_id: Optional[str] = None
     patient_context: Optional[Dict[str, Any]] = None
+
+    @field_validator('message')
+    @classmethod
+    def sanitize_message(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Message is required")
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH)
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v) if v else v
+
+    @field_validator('conversation_id')
+    @classmethod
+    def sanitize_conversation_id(cls, v):
+        return sanitize_text(v, 100) if v else v
 
 class MinervaCitation(BaseModel):
     """Citation from RAG knowledge base"""
