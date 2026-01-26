@@ -43,6 +43,77 @@ except ImportError:
     ENCRYPTION_AVAILABLE = False
     print("⚠️ cryptography not installed - tokens will be stored unencrypted")
 
+# OAuth2 CSRF protection (Issue #19 - RFC 6749 Section 10.12)
+import secrets
+import hmac
+
+# In-memory OAuth2 state storage with expiration
+# Format: {state: {"timestamp": datetime, "ehr": "epic|veradigm|...", "user_hint": optional}}
+_oauth2_states: Dict[str, Dict[str, Any]] = {}
+OAUTH2_STATE_EXPIRY_SECONDS = 300  # 5 minutes
+
+
+def generate_oauth2_state(ehr: str, user_hint: str = None) -> str:
+    """
+    Generate cryptographically secure OAuth2 state parameter.
+    RFC 6749 Section 10.12 - CSRF protection for OAuth2 flows.
+    """
+    # 32 bytes = 256 bits of entropy, URL-safe base64 encoded
+    state = secrets.token_urlsafe(32)
+
+    # Store state with metadata
+    _oauth2_states[state] = {
+        "timestamp": datetime.now(timezone.utc),
+        "ehr": ehr,
+        "user_hint": user_hint
+    }
+
+    # Cleanup expired states (prevent memory leak)
+    _cleanup_expired_oauth2_states()
+
+    return state
+
+
+def validate_oauth2_state(state: str, expected_ehr: str) -> tuple[bool, str]:
+    """
+    Validate OAuth2 state parameter to prevent CSRF attacks.
+    Returns (is_valid, error_message).
+    Uses constant-time comparison to prevent timing attacks.
+    """
+    if not state:
+        return False, "Missing state parameter - potential CSRF attack"
+
+    # Check if state exists
+    stored_state = _oauth2_states.get(state)
+    if not stored_state:
+        return False, "Invalid state parameter - state not found or already used"
+
+    # Check expiration
+    age = (datetime.now(timezone.utc) - stored_state["timestamp"]).total_seconds()
+    if age > OAUTH2_STATE_EXPIRY_SECONDS:
+        del _oauth2_states[state]  # Clean up expired state
+        return False, f"State expired ({age:.0f}s > {OAUTH2_STATE_EXPIRY_SECONDS}s limit)"
+
+    # Verify EHR matches (constant-time comparison)
+    if not hmac.compare_digest(stored_state["ehr"], expected_ehr):
+        return False, f"State EHR mismatch - expected {expected_ehr}"
+
+    # Invalidate state (one-time use to prevent replay attacks)
+    del _oauth2_states[state]
+
+    return True, "State validated successfully"
+
+
+def _cleanup_expired_oauth2_states():
+    """Remove expired OAuth2 states to prevent memory leak."""
+    now = datetime.now(timezone.utc)
+    expired = [
+        state for state, data in _oauth2_states.items()
+        if (now - data["timestamp"]).total_seconds() > OAUTH2_STATE_EXPIRY_SECONDS
+    ]
+    for state in expired:
+        del _oauth2_states[state]
+
 # Import transcription service
 from transcription import (
     create_session as create_transcription_session, get_session, end_session, set_session_speaker_context,
@@ -420,6 +491,9 @@ async def epic_authorize():
     """
     import urllib.parse
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="epic")
+
     # Build authorization URL
     # Using scopes from old working smartConfig.js
     params = {
@@ -427,7 +501,7 @@ async def epic_authorize():
         "client_id": EPIC_CLIENT_ID,
         "redirect_uri": EPIC_REDIRECT_URI,
         "scope": "launch openid fhirUser",
-        "state": uuid.uuid4().hex,
+        "state": state,
         "aud": EPIC_BASE_URL,
     }
 
@@ -437,7 +511,8 @@ async def epic_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with Epic",
         "redirect_uri": EPIC_REDIRECT_URI,
-        "client_id": EPIC_CLIENT_ID
+        "client_id": EPIC_CLIENT_ID,
+        "state": state  # Return state for debugging/logging
     }
 
 
@@ -455,6 +530,7 @@ async def epic_callback(
     # Log callback parameters for debugging
     print(f"🔐 Epic callback received:")
     print(f"   code: {code[:20] if code else 'None'}...")
+    print(f"   state: {state[:20] if state else 'None'}...")
     print(f"   error: {error}")
     print(f"   error_description: {error_description}")
 
@@ -465,6 +541,17 @@ async def epic_callback(
             "error_description": error_description,
             "error_uri": error_uri,
             "hint": "Check Epic app configuration: OAuth 2.0 must be ON, app must be in Ready state"
+        }
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="epic")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered: {state_error}")
+        return {
+            "success": False,
+            "error": "csrf_detected",
+            "error_description": state_error,
+            "hint": "OAuth2 state validation failed. Please restart the authorization flow."
         }
 
     if not code:
@@ -588,13 +675,16 @@ async def veradigm_authorize():
     """
     import urllib.parse
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="veradigm")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": VERADIGM_CLIENT_ID,
         "redirect_uri": VERADIGM_REDIRECT_URI,
         "scope": "launch/patient patient/*.read openid fhirUser",
-        "state": uuid.uuid4().hex,
+        "state": state,
         "aud": VERADIGM_BASE_URL,
     }
 
@@ -604,7 +694,8 @@ async def veradigm_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with Veradigm",
         "redirect_uri": VERADIGM_REDIRECT_URI,
-        "client_id": VERADIGM_CLIENT_ID
+        "client_id": VERADIGM_CLIENT_ID,
+        "state": state
     }
 
 
@@ -615,6 +706,12 @@ async def veradigm_callback(code: str = None, state: str = None, error: str = No
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="veradigm")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (Veradigm): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -723,13 +820,16 @@ async def athena_authorize():
             "message": "Set ATHENA_CLIENT_ID and ATHENA_CLIENT_SECRET in environment"
         }
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="athena")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": ATHENA_CLIENT_ID,
         "redirect_uri": ATHENA_REDIRECT_URI,
         "scope": "openid fhirUser launch/patient patient/*.read",
-        "state": uuid.uuid4().hex,
+        "state": state,
     }
 
     auth_url = f"{ATHENA_AUTH_URL}?{urllib.parse.urlencode(params)}"
@@ -738,7 +838,8 @@ async def athena_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with athenahealth",
         "redirect_uri": ATHENA_REDIRECT_URI,
-        "client_id": ATHENA_CLIENT_ID
+        "client_id": ATHENA_CLIENT_ID,
+        "state": state
     }
 
 
@@ -749,6 +850,12 @@ async def athena_callback(code: str = None, state: str = None, error: str = None
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="athena")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (athenahealth): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -865,13 +972,16 @@ async def nextgen_authorize():
             "message": "Set NEXTGEN_CLIENT_ID and NEXTGEN_CLIENT_SECRET in environment"
         }
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="nextgen")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": NEXTGEN_CLIENT_ID,
         "redirect_uri": NEXTGEN_REDIRECT_URI,
         "scope": "openid fhirUser launch/patient patient/*.read",
-        "state": uuid.uuid4().hex,
+        "state": state,
     }
 
     auth_url = f"{NEXTGEN_AUTH_URL}?{urllib.parse.urlencode(params)}"
@@ -880,7 +990,8 @@ async def nextgen_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with NextGen",
         "redirect_uri": NEXTGEN_REDIRECT_URI,
-        "client_id": NEXTGEN_CLIENT_ID
+        "client_id": NEXTGEN_CLIENT_ID,
+        "state": state
     }
 
 
@@ -891,6 +1002,12 @@ async def nextgen_callback(code: str = None, state: str = None, error: str = Non
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="nextgen")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (NextGen): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -1007,13 +1124,16 @@ async def ecw_authorize():
             "message": "Set ECLINICALWORKS_CLIENT_ID and ECLINICALWORKS_CLIENT_SECRET in environment"
         }
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="ecw")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": ECLINICALWORKS_CLIENT_ID,
         "redirect_uri": ECLINICALWORKS_REDIRECT_URI,
         "scope": "openid fhirUser launch/patient patient/*.read",
-        "state": uuid.uuid4().hex,
+        "state": state,
         "aud": ECLINICALWORKS_BASE_URL,
     }
 
@@ -1023,7 +1143,8 @@ async def ecw_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with eClinicalWorks",
         "redirect_uri": ECLINICALWORKS_REDIRECT_URI,
-        "client_id": ECLINICALWORKS_CLIENT_ID
+        "client_id": ECLINICALWORKS_CLIENT_ID,
+        "state": state
     }
 
 
@@ -1034,6 +1155,12 @@ async def ecw_callback(code: str = None, state: str = None, error: str = None):
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="ecw")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (eClinicalWorks): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -1146,7 +1273,6 @@ async def meditech_authorize():
     """
     import urllib.parse
     import hashlib
-    import secrets
 
     if not MEDITECH_CLIENT_ID:
         return {
@@ -1160,9 +1286,10 @@ async def meditech_authorize():
         hashlib.sha256(code_verifier.encode()).digest()
     ).decode().rstrip('=')
 
-    state = uuid.uuid4().hex
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="meditech")
 
-    # Store code_verifier for later use in token exchange
+    # Store code_verifier for later use in token exchange (keyed by state)
     meditech_pkce_store[state] = code_verifier
 
     # Build authorization URL - Greenfield uses patient/*.read scope with PKCE
@@ -1184,7 +1311,8 @@ async def meditech_authorize():
         "instructions": "Open this URL in a browser to authenticate with MEDITECH",
         "redirect_uri": MEDITECH_REDIRECT_URI,
         "client_id": MEDITECH_CLIENT_ID,
-        "pkce_enabled": True
+        "pkce_enabled": True,
+        "state": state
     }
 
 
@@ -1195,7 +1323,7 @@ async def meditech_callback(code: str = None, state: str = None, error: str = No
     """
     print(f"🔐 MEDITECH callback received:")
     print(f"   code: {code[:20] if code else 'None'}...")
-    print(f"   state: {state}")
+    print(f"   state: {state[:20] if state else 'None'}...")
     print(f"   error: {error}")
     print(f"   error_description: {error_description}")
 
@@ -1207,10 +1335,19 @@ async def meditech_callback(code: str = None, state: str = None, error: str = No
             "hint": "Check MEDITECH app configuration in Greenfield portal"
         }
 
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    # Note: For MEDITECH we validate state but also need to retrieve PKCE verifier
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="meditech")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (MEDITECH): {state_error}")
+        # Clean up any PKCE data for invalid state
+        meditech_pkce_store.pop(state, None)
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
+
     if not code:
         return {"success": False, "error": "No authorization code received"}
 
-    # Get PKCE code_verifier from store
+    # Get PKCE code_verifier from store (state already validated above)
     code_verifier = meditech_pkce_store.pop(state, None) if state else None
     if not code_verifier:
         print(f"   ⚠️ No code_verifier found for state: {state}")
