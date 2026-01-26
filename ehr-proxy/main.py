@@ -9860,6 +9860,25 @@ class RAGQueryRequest(BaseModel):
     specialty: Optional[str] = None
     include_sources: bool = True
 
+    @field_validator('query')
+    @classmethod
+    def sanitize_query(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Query is required")
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH)
+
+    @field_validator('n_results')
+    @classmethod
+    def validate_n_results(cls, v):
+        if v < 1 or v > 50:
+            raise ValueError("n_results must be between 1 and 50")
+        return v
+
+    @field_validator('specialty')
+    @classmethod
+    def sanitize_specialty(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
 
 class RAGQueryResponse(BaseModel):
     """Response from RAG query"""
@@ -9878,6 +9897,36 @@ class RAGAddDocumentRequest(BaseModel):
     source_url: Optional[str] = None
     specialty: Optional[str] = None
     keywords: Optional[List[str]] = None
+
+    @field_validator('title')
+    @classmethod
+    def sanitize_title(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Title is required")
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH)
+
+    @field_validator('content')
+    @classmethod
+    def sanitize_content(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Content is required")
+        return sanitize_text(v, MAX_NOTE_LENGTH)
+
+    @field_validator('source_type')
+    @classmethod
+    def validate_source_type(cls, v):
+        valid = {'custom', 'guideline', 'research', 'textbook', 'protocol', 'formulary'}
+        return validate_status(v, valid)
+
+    @field_validator('source_name', 'source_url', 'specialty')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
+    @field_validator('keywords')
+    @classmethod
+    def sanitize_keywords(cls, v):
+        return sanitize_list(v, max_items=20, max_item_length=50) if v else []
 
 
 class RAGStatsResponse(BaseModel):
@@ -14749,6 +14798,22 @@ class VitalWriteRequest(BaseModel):
     performer_name: str = ""
     device_type: str = "AR_GLASSES"
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('vital_type')
+    @classmethod
+    def validate_vital_type(cls, v):
+        valid = {'blood_pressure', 'heart_rate', 'temperature', 'respiratory_rate', 'oxygen_saturation', 'weight', 'height', 'pain_level'}
+        return validate_status(v, valid)
+
+    @field_validator('value', 'unit', 'performer_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
 
 class OrderWriteRequest(BaseModel):
     """Request model for pushing orders to EHR as FHIR ServiceRequest or MedicationRequest"""
@@ -14772,6 +14837,33 @@ class OrderWriteRequest(BaseModel):
     requester_name: str = ""
     notes: str = ""
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('order_type')
+    @classmethod
+    def validate_order_type(cls, v):
+        valid = {'lab', 'imaging', 'medication'}
+        return validate_status(v, valid).upper()
+
+    @field_validator('priority')
+    @classmethod
+    def validate_priority(cls, v):
+        valid = {'routine', 'urgent', 'stat', 'asap'}
+        return validate_status(v, valid)
+
+    @field_validator('code', 'display_name', 'body_site', 'dose', 'frequency', 'duration', 'route', 'requester_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
+    @field_validator('notes')
+    @classmethod
+    def sanitize_notes(cls, v):
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH) if v else v
+
 
 class AllergyWriteRequest(BaseModel):
     """Request model for pushing allergies to EHR as FHIR AllergyIntolerance"""
@@ -14784,6 +14876,39 @@ class AllergyWriteRequest(BaseModel):
     recorder_name: str = ""
     reactions: List[str] = []  # List of reaction manifestations
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('substance', 'recorder_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
+    @field_validator('reaction_type')
+    @classmethod
+    def validate_reaction_type(cls, v):
+        valid = {'allergy', 'intolerance'}
+        return validate_status(v, valid)
+
+    @field_validator('criticality')
+    @classmethod
+    def validate_criticality(cls, v):
+        valid = {'low', 'high', 'unable-to-assess'}
+        return validate_status(v, valid)
+
+    @field_validator('category')
+    @classmethod
+    def validate_category(cls, v):
+        valid = {'food', 'medication', 'environment', 'biologic'}
+        return validate_status(v, valid)
+
+    @field_validator('reactions')
+    @classmethod
+    def sanitize_reactions(cls, v):
+        return sanitize_list(v, max_items=20, max_item_length=200) if v else []
+
 
 class MedicationUpdateRequest(BaseModel):
     """Request model for updating medication status (HIPAA-compliant soft delete)"""
@@ -14792,6 +14917,29 @@ class MedicationUpdateRequest(BaseModel):
     new_status: str  # active, on-hold, cancelled, stopped, completed, entered-in-error
     reason: str = ""
     performer_name: str = ""
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('medication_id')
+    @classmethod
+    def validate_medication_id(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Medication ID is required")
+        return sanitize_text(v, MAX_PATIENT_ID_LENGTH)
+
+    @field_validator('new_status')
+    @classmethod
+    def validate_status(cls, v):
+        valid = {'active', 'on-hold', 'cancelled', 'stopped', 'completed', 'entered-in-error'}
+        return validate_status(v, valid)
+
+    @field_validator('reason', 'performer_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
