@@ -404,10 +404,28 @@ SSL_KEYFILE = os.getenv("SSL_KEYFILE", "")
 SSL_CERTFILE = os.getenv("SSL_CERTFILE", "")
 HTTPS_PORT = int(os.getenv("HTTPS_PORT", "8443"))
 
+# CORS Configuration (Issue #15 - Restrict from wildcard)
+# In production, set ALLOWED_ORIGINS to your specific domains
+# Example: ALLOWED_ORIGINS=https://dashboard.mdxvision.com,https://app.mdxvision.com
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+if _allowed_origins_env:
+    ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
+else:
+    # Development defaults - localhost variants
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://10.0.2.2:8002",  # Android emulator
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
