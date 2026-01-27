@@ -42,6 +42,136 @@ CONFIDENCE_THRESHOLD = float(os.getenv("DIFFERENTIAL_CONFIDENCE_THRESHOLD", "0.1
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Built-in Clinical Guidelines (for when RAG/ChromaDB unavailable)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BUILT_IN_GUIDELINES = {
+    "chest pain": {
+        "guidelines": [
+            {
+                "source": "ACC/AHA",
+                "title": "2021 Chest Pain Guidelines",
+                "content": "For acute chest pain, initial evaluation should include 12-lead ECG within 10 minutes, "
+                           "troponin measurement, and risk stratification. High-sensitivity troponin preferred. "
+                           "HEART score can guide disposition. Red flags: ST elevation, hemodynamic instability, "
+                           "new heart failure."
+            },
+            {
+                "source": "ESC",
+                "title": "Acute Coronary Syndrome Management",
+                "content": "Rule out ACS in all patients with chest pain. Serial troponins at 0 and 3 hours. "
+                           "Consider PE in patients with dyspnea, tachycardia, or risk factors. "
+                           "D-dimer for low-probability PE. CT angiography if intermediate probability."
+            }
+        ],
+        "differentials": ["ACS/MI", "Pulmonary Embolism", "Aortic Dissection", "Pneumothorax", "GERD", "Musculoskeletal", "Anxiety"]
+    },
+    "shortness of breath": {
+        "guidelines": [
+            {
+                "source": "ATS/ERS",
+                "title": "Dyspnea Evaluation Guidelines",
+                "content": "Acute dyspnea workup: chest X-ray, ECG, BNP/NT-proBNP, pulse oximetry. "
+                           "Consider ABG if hypoxic. BNP >100 suggests heart failure. "
+                           "D-dimer for PE evaluation. Peak flow for asthma/COPD."
+            }
+        ],
+        "differentials": ["Heart Failure", "COPD Exacerbation", "Pneumonia", "Pulmonary Embolism", "Asthma", "Anxiety"]
+    },
+    "headache": {
+        "guidelines": [
+            {
+                "source": "AAN",
+                "title": "Headache Evaluation Guidelines",
+                "content": "Red flags (SNOOP): Systemic symptoms, Neurologic signs, Onset sudden (thunderclap), "
+                           "Older age >50, Pattern change. Thunderclap headache requires emergent CT and LP "
+                           "to rule out SAH. New headache with fever needs LP for meningitis."
+            }
+        ],
+        "differentials": ["Migraine", "Tension Headache", "Subarachnoid Hemorrhage", "Meningitis", "Intracranial Mass", "Temporal Arteritis"]
+    },
+    "abdominal pain": {
+        "guidelines": [
+            {
+                "source": "ACG",
+                "title": "Acute Abdominal Pain Evaluation",
+                "content": "Location guides differential: RUQ (biliary), RLQ (appendicitis), LLQ (diverticulitis), "
+                           "epigastric (pancreatitis, PUD). Lipase for pancreatitis (3x ULN diagnostic). "
+                           "CT abdomen/pelvis for unclear etiology. Pregnancy test in women of childbearing age."
+            }
+        ],
+        "differentials": ["Appendicitis", "Cholecystitis", "Pancreatitis", "Bowel Obstruction", "Diverticulitis", "PUD", "Ectopic Pregnancy"]
+    },
+    "fever": {
+        "guidelines": [
+            {
+                "source": "IDSA",
+                "title": "Fever Evaluation",
+                "content": "Fever workup: CBC, CMP, blood cultures x2, urinalysis, chest X-ray. "
+                           "Consider LP if meningeal signs. Procalcitonin can help distinguish bacterial from viral. "
+                           "Source control critical in sepsis."
+            }
+        ],
+        "differentials": ["Pneumonia", "UTI/Pyelonephritis", "Sepsis", "Viral Syndrome", "Cellulitis", "Endocarditis", "Meningitis"]
+    },
+    "syncope": {
+        "guidelines": [
+            {
+                "source": "ACC/AHA/HRS",
+                "title": "2017 Syncope Guidelines",
+                "content": "Cardiac syncope has highest mortality. ECG mandatory. High-risk features: "
+                           "abnormal ECG, structural heart disease, exertional syncope, family history sudden death. "
+                           "San Francisco Syncope Rule or Canadian Syncope Risk Score for risk stratification."
+            }
+        ],
+        "differentials": ["Vasovagal", "Orthostatic Hypotension", "Cardiac Arrhythmia", "Structural Heart Disease", "PE", "Seizure"]
+    }
+}
+
+
+def get_built_in_guidelines(chief_complaint: str) -> Tuple[str, List[Dict]]:
+    """Get built-in guidelines for a chief complaint when RAG unavailable"""
+    complaint_lower = chief_complaint.lower()
+
+    # Match chief complaint to built-in guidelines
+    matched_key = None
+    for key in BUILT_IN_GUIDELINES:
+        if key in complaint_lower or complaint_lower in key:
+            matched_key = key
+            break
+
+    if not matched_key:
+        # Try partial matches
+        for key in BUILT_IN_GUIDELINES:
+            if any(word in complaint_lower for word in key.split()):
+                matched_key = key
+                break
+
+    if not matched_key:
+        return "No specific guidelines available for this presentation.", []
+
+    guidelines_data = BUILT_IN_GUIDELINES[matched_key]
+
+    # Format context
+    context_parts = []
+    citations = []
+
+    for i, guideline in enumerate(guidelines_data["guidelines"], 1):
+        context_parts.append(f"[{i}] {guideline['source']}: {guideline['title']}")
+        context_parts.append(f"   {guideline['content']}")
+        context_parts.append("")
+
+        citations.append({
+            "index": str(i),
+            "source": guideline["source"],
+            "title": guideline["title"],
+            "url": ""
+        })
+
+    return "\n".join(context_parts), citations
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Data Models
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -338,38 +468,37 @@ class DifferentialDiagnosisEngine:
 
         return '\n'.join(parts)
 
-    def _get_rag_context(self, query: str, specialty: Optional[str] = None) -> Tuple[str, List[Dict]]:
-        """Get RAG context for the query"""
-        if not self._rag_engine or not self._rag_engine.initialized:
-            return "No guideline context available.", []
+    def _get_rag_context(self, query: str, specialty: Optional[str] = None, chief_complaint: str = "") -> Tuple[str, List[Dict]]:
+        """Get RAG context for the query, with built-in guidelines fallback"""
+        # Try RAG first if available
+        if self._rag_engine and self._rag_engine.initialized:
+            try:
+                from rag import get_augmented_prompt
+                augmented_prompt, sources = get_augmented_prompt(query, n_results=5)
 
-        try:
-            from rag import get_augmented_prompt
-            augmented_prompt, sources = get_augmented_prompt(query, n_results=5)
+                if sources:
+                    rag_context = ""
+                    citations = []
 
-            if not sources:
-                return "No specific guidelines found for this presentation.", []
+                    for i, source in enumerate(sources, 1):
+                        rag_context += f"[{i}] {source.get('source_name', 'Unknown')}: {source.get('title', 'Unknown')}\n"
+                        content = source.get('content', '')[:400]
+                        rag_context += f"   {content}...\n\n"
 
-            rag_context = ""
-            citations = []
+                        citations.append({
+                            "index": str(i),
+                            "source": source.get('source_name', 'Unknown'),
+                            "title": source.get('title', 'Unknown'),
+                            "url": source.get('source_url', '')
+                        })
 
-            for i, source in enumerate(sources, 1):
-                rag_context += f"[{i}] {source.get('source_name', 'Unknown')}: {source.get('title', 'Unknown')}\n"
-                content = source.get('content', '')[:400]
-                rag_context += f"   {content}...\n\n"
+                    return rag_context, citations
 
-                citations.append({
-                    "index": str(i),
-                    "source": source.get('source_name', 'Unknown'),
-                    "title": source.get('title', 'Unknown'),
-                    "url": source.get('source_url', '')
-                })
+            except Exception as e:
+                logger.warning(f"RAG retrieval error, falling back to built-in: {e}")
 
-            return rag_context, citations
-
-        except Exception as e:
-            logger.error(f"RAG retrieval error: {e}")
-            return "Error retrieving guidelines.", []
+        # Fallback to built-in guidelines
+        return get_built_in_guidelines(chief_complaint or query)
 
     async def generate_differential(
         self,
@@ -407,8 +536,11 @@ class DifferentialDiagnosisEngine:
         if patient_context.symptoms:
             rag_query += " ".join(patient_context.symptoms[:3])
 
-        # Get RAG context
-        rag_context, citations = self._get_rag_context(rag_query)
+        # Get RAG context (with built-in fallback for common complaints)
+        rag_context, citations = self._get_rag_context(
+            rag_query,
+            chief_complaint=patient_context.chief_complaint
+        )
         rag_enhanced = bool(citations)
 
         # Build prompts
