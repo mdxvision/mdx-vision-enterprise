@@ -162,6 +162,13 @@ from token_refresh import (
     TokenRefreshService, TokenRefreshJob, EHRToken, TokenStatus
 )
 
+# Import PHI Encryption Service (Issue #49)
+from phi_encryption import (
+    get_encryption_service, PHIEncryptionService, PHIFieldType,
+    EncryptedValue, EncryptionError, DecryptionError,
+    encrypt_patient_name, encrypt_ssn, encrypt_mrn, encrypt_clinical_note, decrypt_phi
+)
+
 # Import noise reduction (RNNoise - Krisp AI alternative)
 try:
     from noise_reduction import (
@@ -2466,6 +2473,165 @@ async def revoke_token(ehr: str):
         return {"message": f"Token for {ehr} has been revoked"}
     else:
         raise HTTPException(status_code=404, detail=f"No token found for {ehr}")
+
+
+# ============================================================================
+# PHI ENCRYPTION ENDPOINTS (Issue #49 - HIPAA-Compliant Field Encryption)
+# ============================================================================
+
+@app.get("/api/v1/encryption/status")
+async def get_encryption_status():
+    """
+    Get PHI encryption service status and key information.
+
+    Returns current key ID, rotation status, and compliance info.
+
+    HIPAA Compliance:
+    - §164.312(a)(2)(iv) - Encryption and Decryption controls
+    """
+    service = get_encryption_service()
+    status = service.get_key_status()
+
+    return {
+        "status": "active",
+        "encryption_enabled": True,
+        "algorithm": "AES-256 (Fernet)",
+        **status,
+        "compliance": {
+            "hipaa": "§164.312(a)(2)(iv) - Encryption and Decryption",
+            "soc2": "Type II - Encryption at Rest",
+            "pci_dss": "Requirement 3.4 - Cryptographic Protection"
+        }
+    }
+
+
+@app.get("/api/v1/encryption/keys")
+async def list_encryption_keys():
+    """
+    List all encryption keys (metadata only, no key data).
+
+    Shows key IDs, creation dates, expiry, and rotation status.
+    Used for key lifecycle management and audit.
+    """
+    service = get_encryption_service()
+    keys = service.key_manager.list_keys()
+
+    return {
+        "keys": keys,
+        "total": len(keys),
+        "rotation_policy": f"{service.key_manager.KEY_ROTATION_DAYS} days"
+    }
+
+
+@app.post("/api/v1/encryption/rotate")
+async def rotate_encryption_key():
+    """
+    Rotate the PHI encryption key.
+
+    Creates a new active key while keeping old keys for decryption.
+    Old encrypted data remains readable; new data uses new key.
+
+    IMPORTANT: After rotation, consider re-encrypting sensitive
+    data with the new key for maximum security.
+
+    Returns:
+        Rotation status with old and new key IDs
+    """
+    service = get_encryption_service()
+
+    try:
+        result = service.rotate_key()
+        return {
+            "success": True,
+            **result
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Key rotation failed: {str(e)}"
+        )
+
+
+class EncryptRequest(BaseModel):
+    """Request body for encryption endpoint."""
+    plaintext: str
+    field_type: str = "generic_phi"
+
+
+@app.post("/api/v1/encryption/encrypt")
+async def encrypt_phi_value(request: EncryptRequest):
+    """
+    Encrypt a PHI value (for testing/development).
+
+    Args:
+        plaintext: Value to encrypt
+        field_type: PHI field type (patient_name, ssn, mrn, etc.)
+
+    Returns:
+        Encrypted value in storage format
+
+    Note: In production, use the Python API directly for better security.
+    """
+    service = get_encryption_service()
+
+    try:
+        # Map string to enum
+        field_type = PHIFieldType(request.field_type)
+        encrypted = service.encrypt_string(request.plaintext, field_type)
+
+        return {
+            "success": True,
+            "encrypted": encrypted,
+            "field_type": request.field_type
+        }
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid field_type. Valid types: {[t.value for t in PHIFieldType]}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Encryption failed: {str(e)}"
+        )
+
+
+class DecryptRequest(BaseModel):
+    """Request body for decryption endpoint."""
+    encrypted: str
+
+
+@app.post("/api/v1/encryption/decrypt")
+async def decrypt_phi_value(request: DecryptRequest):
+    """
+    Decrypt a PHI value (for testing/development).
+
+    Args:
+        encrypted: Encrypted JSON string from encrypt endpoint
+
+    Returns:
+        Decrypted plaintext
+
+    Note: In production, use the Python API directly for better security.
+    """
+    service = get_encryption_service()
+
+    try:
+        plaintext = service.decrypt_string(request.encrypted)
+        return {
+            "success": True,
+            "plaintext": plaintext
+        }
+    except DecryptionError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Decryption failed: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Decryption error: {str(e)}"
+        )
 
 
 # Minimal patient endpoint for Samsung (returns compact data from actual EHR)
