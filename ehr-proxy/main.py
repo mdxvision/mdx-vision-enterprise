@@ -450,7 +450,16 @@ async def lifespan(app: FastAPI):
     await get_fhir_client()
     logger.info("FHIR client initialized with retry logic")
 
+    # Startup: Initialize critical alert manager (Issue #105)
+    from critical_alerts import get_alert_manager, shutdown_alert_manager
+    await get_alert_manager()
+    logger.info("Critical alert manager initialized with escalation workflow")
+
     yield  # Application runs here
+
+    # Shutdown: Cleanup critical alert manager
+    await shutdown_alert_manager()
+    logger.info("Critical alert manager shut down")
 
     # Shutdown: Cleanup FHIR client
     await close_fhir_client()
@@ -8945,6 +8954,259 @@ async def minerva_proactive_alerts(patient_id: str, request: Request):
         display_summary=display_summary,
         acknowledgment_phrase="Got it, Minerva"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CRITICAL VALUE ALERTS - VOICE ANNOUNCEMENTS (Issue #105)
+# Real-time proactive voice announcements for critical lab values and vital signs
+# with acknowledgment tracking and escalation workflow
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from critical_alerts import (
+    CriticalAlertManager, CriticalAlert, AlertSeverity, AlertCategory,
+    AcknowledgmentMethod, CriticalAlertVoiceResponse, CriticalAlertResponse,
+    CriticalAlertRequest, CriticalAlertAcknowledgment,
+    get_alert_manager
+)
+
+
+@app.post("/api/v1/critical-alerts/voice/{patient_id}", response_model=CriticalAlertVoiceResponse)
+async def get_critical_alert_voice(patient_id: str):
+    """
+    Get Minerva voice announcement for pending critical alerts.
+
+    This endpoint returns TTS-ready speech for any critical values that
+    need immediate clinician attention. Called automatically when:
+    - Patient is loaded
+    - New critical lab results arrive
+    - Critical vital signs are recorded
+
+    The response includes:
+    - spoken_message: Full TTS script for Minerva
+    - has_critical: True if life-threatening values present
+    - acknowledgment_phrase: How to acknowledge ("Got it, Minerva")
+
+    Example spoken output:
+        "Critical alert for Nancy. Potassium is 6.8 mEq/L. Consider
+        repletion protocol. Say 'got it Minerva' to acknowledge."
+    """
+    manager = await get_alert_manager()
+
+    # Get patient name
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        patient_name = extract_patient_name(patient_data) if patient_data else "the patient"
+    except Exception:
+        patient_name = "the patient"
+
+    return await manager.get_voice_announcement(patient_id, patient_name)
+
+
+@app.post("/api/v1/critical-alerts/detect/{patient_id}")
+async def detect_critical_values(patient_id: str):
+    """
+    Scan patient's latest labs and vitals for critical values.
+
+    Automatically creates alerts for any values exceeding critical thresholds.
+    Returns list of newly detected critical alerts.
+
+    Call this endpoint:
+    - On patient load
+    - When new lab results are received
+    - Periodically for real-time monitoring
+    """
+    manager = await get_alert_manager()
+    new_alerts: List[dict] = []
+
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        patient_name = extract_patient_name(patient_data)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Fetch recent labs
+    try:
+        lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=20&_sort=-date")
+        labs = extract_labs(lab_bundle)
+    except Exception:
+        labs = []
+
+    # Check each lab for critical values
+    for lab in labs:
+        if not isinstance(lab, dict):
+            continue
+
+        name = lab.get("name", "")
+        value = lab.get("value", "")
+        unit = lab.get("unit", "")
+
+        is_critical, is_abnormal, interpretation = check_critical_value(name, value)
+
+        if is_critical:
+            # Create alert
+            alert = await manager.create_and_queue_alert(
+                patient_id=patient_id,
+                patient_name=patient_name,
+                category=AlertCategory.LAB,
+                severity=AlertSeverity.CRITICAL,
+                value_name=name,
+                value=str(value),
+                unit=unit,
+            )
+            new_alerts.append(alert.to_dict())
+
+    # Fetch recent vitals
+    try:
+        vital_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=10&_sort=-date")
+        vitals = extract_vitals(vital_bundle)
+    except Exception:
+        vitals = []
+
+    # Check each vital for critical values
+    for vital in vitals:
+        if not isinstance(vital, dict):
+            continue
+
+        name = vital.get("name", "")
+        value = vital.get("value", "")
+        unit = vital.get("unit", "")
+
+        is_critical, is_abnormal, interpretation = check_critical_vital(name, value)
+
+        if is_critical:
+            alert = await manager.create_and_queue_alert(
+                patient_id=patient_id,
+                patient_name=patient_name,
+                category=AlertCategory.VITAL,
+                severity=AlertSeverity.CRITICAL,
+                value_name=name,
+                value=str(value),
+                unit=unit,
+            )
+            new_alerts.append(alert.to_dict())
+
+    # Audit log
+    if new_alerts:
+        audit_logger._log_event(
+            event_type="CLINICAL",
+            action="CRITICAL_VALUE_DETECTED",
+            patient_id=patient_id,
+            status="alert",
+            details={
+                "alert_count": len(new_alerts),
+                "values": [a["value_name"] for a in new_alerts]
+            }
+        )
+
+    return {
+        "patient_id": patient_id,
+        "new_alerts": len(new_alerts),
+        "alerts": new_alerts,
+        "message": f"Detected {len(new_alerts)} critical values" if new_alerts else "No critical values detected"
+    }
+
+
+@app.post("/api/v1/critical-alerts/acknowledge")
+async def acknowledge_critical_alert(request: CriticalAlertAcknowledgment):
+    """
+    Acknowledge a specific critical alert.
+
+    Can be triggered by:
+    - Voice command: "Got it, Minerva"
+    - UI button press
+
+    Returns success status.
+    """
+    manager = await get_alert_manager()
+
+    method = AcknowledgmentMethod.VOICE if request.method == "voice" else AcknowledgmentMethod.BUTTON
+
+    success = await manager.acknowledge_alert(
+        request.alert_id,
+        request.clinician_id,
+        method
+    )
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found or already acknowledged")
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="CLINICAL",
+        action="CRITICAL_ALERT_ACKNOWLEDGED",
+        status="success",
+        details={
+            "alert_id": request.alert_id,
+            "clinician_id": request.clinician_id,
+            "method": request.method
+        }
+    )
+
+    return {"status": "acknowledged", "alert_id": request.alert_id}
+
+
+@app.post("/api/v1/critical-alerts/acknowledge-all/{patient_id}")
+async def acknowledge_all_patient_alerts(patient_id: str, clinician_id: str = "unknown"):
+    """
+    Acknowledge all pending critical alerts for a patient.
+
+    This is called when the clinician says "Got it, Minerva" to
+    acknowledge all current alerts at once.
+    """
+    manager = await get_alert_manager()
+
+    count = await manager.acknowledge_patient_alerts(
+        patient_id,
+        clinician_id,
+        AcknowledgmentMethod.VOICE
+    )
+
+    # Audit log
+    if count > 0:
+        audit_logger._log_event(
+            event_type="CLINICAL",
+            action="CRITICAL_ALERTS_BULK_ACKNOWLEDGED",
+            patient_id=patient_id,
+            status="success",
+            details={
+                "count": count,
+                "clinician_id": clinician_id
+            }
+        )
+
+    return {
+        "status": "acknowledged",
+        "patient_id": patient_id,
+        "alerts_acknowledged": count
+    }
+
+
+@app.get("/api/v1/critical-alerts/pending/{patient_id}")
+async def get_pending_critical_alerts(patient_id: str):
+    """
+    Get all pending (unacknowledged) critical alerts for a patient.
+
+    Used by UI to display alert badges and dashboard.
+    """
+    manager = await get_alert_manager()
+    pending = await manager.get_pending_alerts(patient_id)
+
+    return {
+        "patient_id": patient_id,
+        "pending_count": len(pending),
+        "has_critical": any(a.severity == AlertSeverity.CRITICAL for a in pending),
+        "alerts": [a.to_dict() for a in pending]
+    }
+
+
+@app.get("/api/v1/critical-alerts/stats")
+async def get_critical_alert_stats():
+    """Get critical alert system statistics for monitoring"""
+    manager = await get_alert_manager()
+    return manager.stats
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
