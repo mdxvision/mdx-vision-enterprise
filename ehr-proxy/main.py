@@ -148,6 +148,14 @@ from audit import audit_logger, AuditAction, log_audit_event, log_phi_access
 # Import FHIR AuditEvent logging (Issue #108)
 from fhir_audit import fhir_audit_logger, AuditEventAction, FHIRAuditEventFactory
 
+# Import Request Signing (Issue #97 - Device Authentication)
+from request_signing import (
+    get_device_registry, get_signature_verifier,
+    RequestSigner, DeviceRegistry, SignatureVerifier,
+    SignatureError, InvalidSignatureError, ExpiredTimestampError,
+    UnknownDeviceError, RevokedDeviceError, DeviceStatus
+)
+
 # Import noise reduction (RNNoise - Krisp AI alternative)
 try:
     from noise_reduction import (
@@ -2157,6 +2165,192 @@ async def get_device_status(device_id: str):
         "has_session": device.session_token is not None,
         "last_seen": device.last_seen.isoformat() if device.last_seen else None
     }
+
+
+# ============================================================================
+# REQUEST SIGNING ENDPOINTS (Issue #97 - Device Authentication)
+# ============================================================================
+
+class DeviceSigningRequest(BaseModel):
+    """Request to register a device for request signing."""
+    device_name: str
+    device_type: str  # glasses, web, mobile
+
+
+@app.post("/api/v1/auth/signing/register")
+async def register_device_for_signing(request: DeviceSigningRequest):
+    """
+    Register a new device and get signing credentials.
+
+    Returns device_id and secret_key for HMAC-SHA256 request signing.
+    The secret_key is only returned ONCE - store it securely!
+    """
+    registry = get_device_registry()
+    device_id, secret_key = registry.register_device(
+        device_name=request.device_name,
+        device_type=request.device_type
+    )
+
+    return {
+        "device_id": device_id,
+        "secret_key": secret_key,
+        "message": "Store the secret_key securely - it will not be shown again!",
+        "signing_instructions": {
+            "algorithm": "HMAC-SHA256",
+            "headers_required": [
+                "X-MDx-Device-ID",
+                "X-MDx-Timestamp",
+                "X-MDx-Signature"
+            ],
+            "canonical_format": "METHOD\\nPATH\\nTIMESTAMP\\nSHA256(BODY)",
+            "timestamp_format": "YYYY-MM-DDTHH:MM:SSZ",
+            "max_timestamp_age_seconds": 300
+        }
+    }
+
+
+@app.get("/api/v1/auth/signing/devices")
+async def list_signing_devices(include_revoked: bool = False):
+    """List all registered signing devices."""
+    registry = get_device_registry()
+    return {
+        "devices": registry.list_devices(include_revoked=include_revoked)
+    }
+
+
+@app.post("/api/v1/auth/signing/devices/{device_id}/revoke")
+async def revoke_signing_device(device_id: str, reason: str = "Manual revocation"):
+    """
+    Revoke a device's signing credentials.
+
+    Use this when a device is lost, stolen, or compromised.
+    """
+    registry = get_device_registry()
+    device = registry.get_device(device_id)
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if device.status == DeviceStatus.REVOKED:
+        raise HTTPException(status_code=400, detail="Device already revoked")
+
+    registry.revoke_device(device_id, reason)
+
+    return {
+        "message": f"Device {device_id} has been revoked",
+        "reason": reason
+    }
+
+
+@app.post("/api/v1/auth/signing/devices/{device_id}/rotate-key")
+async def rotate_signing_key(device_id: str):
+    """
+    Rotate a device's signing key.
+
+    Use this periodically or after suspected key exposure.
+    Returns the new secret_key - store it securely!
+    """
+    registry = get_device_registry()
+    device = registry.get_device(device_id)
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if device.status == DeviceStatus.REVOKED:
+        raise HTTPException(status_code=400, detail="Cannot rotate key for revoked device")
+
+    new_secret = registry.rotate_key(device_id)
+
+    return {
+        "device_id": device_id,
+        "secret_key": new_secret,
+        "message": "Store the new secret_key securely - it will not be shown again!"
+    }
+
+
+@app.post("/api/v1/auth/signing/verify")
+async def verify_signature_test(
+    request: Request,
+    x_mdx_device_id: str = Header(None, alias="X-MDx-Device-ID"),
+    x_mdx_timestamp: str = Header(None, alias="X-MDx-Timestamp"),
+    x_mdx_signature: str = Header(None, alias="X-MDx-Signature")
+):
+    """
+    Test endpoint to verify request signature.
+
+    Use this to test your signing implementation before using protected endpoints.
+    """
+    if not all([x_mdx_device_id, x_mdx_timestamp, x_mdx_signature]):
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required headers: X-MDx-Device-ID, X-MDx-Timestamp, X-MDx-Signature"
+        )
+
+    verifier = get_signature_verifier()
+    body = await request.body()
+
+    try:
+        device = verifier.verify_request(
+            device_id=x_mdx_device_id,
+            timestamp=x_mdx_timestamp,
+            signature=x_mdx_signature,
+            method=request.method,
+            path=request.url.path,
+            body=body if body else None
+        )
+
+        return {
+            "verified": True,
+            "device_id": device.device_id,
+            "device_name": device.device_name,
+            "device_type": device.device_type,
+            "message": "Signature verified successfully!"
+        }
+    except UnknownDeviceError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except RevokedDeviceError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ExpiredTimestampError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except InvalidSignatureError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+# Dependency for signature-protected endpoints
+async def verify_request_signature(
+    request: Request,
+    x_mdx_device_id: str = Header(None, alias="X-MDx-Device-ID"),
+    x_mdx_timestamp: str = Header(None, alias="X-MDx-Timestamp"),
+    x_mdx_signature: str = Header(None, alias="X-MDx-Signature")
+):
+    """
+    FastAPI dependency to verify request signatures on protected endpoints.
+
+    Usage:
+        @app.get("/api/v1/protected")
+        async def protected_endpoint(device = Depends(verify_request_signature)):
+            return {"device": device.device_id}
+    """
+    # Skip verification if headers not provided (backward compatibility)
+    # TODO: Make mandatory after migration period
+    if not all([x_mdx_device_id, x_mdx_timestamp, x_mdx_signature]):
+        return None
+
+    verifier = get_signature_verifier()
+    body = await request.body()
+
+    try:
+        return verifier.verify_request(
+            device_id=x_mdx_device_id,
+            timestamp=x_mdx_timestamp,
+            signature=x_mdx_signature,
+            method=request.method,
+            path=request.url.path,
+            body=body if body else None
+        )
+    except SignatureError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
 
 # Minimal patient endpoint for Samsung (returns compact data from actual EHR)
 @app.get("/api/v1/patient/{patient_id}/quick")
