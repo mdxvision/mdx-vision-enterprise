@@ -31,6 +31,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
+from contextlib import asynccontextmanager
 
 # Input validation and sanitization (HIPAA/OWASP compliance)
 from validators import (
@@ -432,10 +433,30 @@ def check_medication_interactions(medications: list) -> list:
 
     return interactions
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Lifecycle Events - Session Manager Startup/Shutdown (Issue #10 - Memory Leak Fix)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle - startup and shutdown"""
+    # Startup: Initialize TTL-based session managers
+    from session_manager import get_transcription_session_manager, shutdown_session_managers as shutdown_managers
+    await get_transcription_session_manager()
+    logger.info("Session managers initialized with TTL-based cleanup")
+
+    yield  # Application runs here
+
+    # Shutdown: Cleanup session managers
+    await shutdown_managers()
+    logger.info("Session managers shut down")
+
+
 app = FastAPI(
     title="MDx Vision EHR Proxy",
     description="Unified EHR access for AR glasses",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Environment detection for security configuration
