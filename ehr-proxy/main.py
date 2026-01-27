@@ -440,12 +440,21 @@ def check_medication_interactions(medications: list) -> list:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle - startup and shutdown"""
-    # Startup: Initialize TTL-based session managers
+    # Startup: Initialize TTL-based session managers (Issue #10)
     from session_manager import get_transcription_session_manager, shutdown_session_managers as shutdown_managers
     await get_transcription_session_manager()
     logger.info("Session managers initialized with TTL-based cleanup")
 
+    # Startup: Initialize FHIR retry client (Issue #24)
+    from fhir_retry import get_fhir_client, close_fhir_client
+    await get_fhir_client()
+    logger.info("FHIR client initialized with retry logic")
+
     yield  # Application runs here
+
+    # Shutdown: Cleanup FHIR client
+    await close_fhir_client()
+    logger.info("FHIR client shut down")
 
     # Shutdown: Cleanup session managers
     await shutdown_managers()
@@ -5035,6 +5044,40 @@ async def get_ehr_status():
             "note": "Epic + Cerner + Veradigm = ~75% hospital, athena + NextGen = ~25% ambulatory"
         }
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FHIR Retry Statistics (Issue #24 - Monitoring)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/fhir/retry-stats")
+async def get_fhir_retry_stats():
+    """Get FHIR API retry statistics for monitoring"""
+    from fhir_retry import get_stats, get_config
+
+    stats = get_stats()
+    config = get_config()
+
+    return {
+        "stats": stats.to_dict(),
+        "config": {
+            "max_attempts": config.max_attempts,
+            "min_wait_seconds": config.min_wait,
+            "max_wait_seconds": config.max_wait,
+            "multiplier": config.multiplier,
+            "timeout_seconds": config.timeout,
+            "retryable_status_codes": list(config.retryable_status_codes),
+            "non_retryable_status_codes": list(config.non_retryable_status_codes),
+        }
+    }
+
+
+@app.post("/api/v1/fhir/retry-stats/reset")
+async def reset_fhir_retry_stats():
+    """Reset FHIR API retry statistics"""
+    from fhir_retry import reset_stats
+    reset_stats()
+    return {"status": "reset", "message": "Retry statistics have been reset"}
 
 
 @app.get("/api/v1/patient/search", response_model=List[SearchResult])

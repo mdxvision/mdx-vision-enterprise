@@ -40,6 +40,9 @@ dlib>=19.24.0
 # Rate Limiting (Issue #16 - OWASP API4:2023)
 slowapi>=0.1.9
 
+# Retry with Exponential Backoff (Issue #24 - FHIR reliability)
+tenacity>=8.2.0
+
 # Utilities
 pydantic>=2.5.0
 python-dotenv>=1.0.0
