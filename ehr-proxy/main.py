@@ -9210,6 +9210,211 @@ async def get_critical_alert_stats():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# DIFFERENTIAL DIAGNOSIS WITH RAG (Issue #116)
+# "Minerva, what do you think?" - AI-assisted differential diagnosis with citations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Import differential diagnosis module
+try:
+    from differential_diagnosis import (
+        DifferentialDiagnosisEngine,
+        get_differential_engine,
+        shutdown_differential_engine,
+        PatientContext,
+        DifferentialRequest,
+        DifferentialResponse,
+        FollowUpRequest,
+        FollowUpResponse
+    )
+    DIFFERENTIAL_AVAILABLE = True
+except ImportError:
+    DIFFERENTIAL_AVAILABLE = False
+    print("Warning: differential_diagnosis module not available")
+
+
+@app.post("/api/v1/minerva/differential", response_model=DifferentialResponse)
+async def minerva_differential_diagnosis(
+    request: DifferentialRequest,
+    req: Request
+):
+    """
+    "Minerva, what do you think?" - Generate differential diagnosis with RAG (Issue #116).
+
+    Analyzes patient's clinical context (symptoms, vitals, labs, history) to generate
+    a ranked differential diagnosis using RAG to incorporate relevant medical literature.
+
+    Features:
+    - Ranked differential with likelihood percentages
+    - Supporting and against features for each diagnosis
+    - Recommended tests to distinguish between diagnoses
+    - Red flags and "can't miss" diagnoses prominently displayed
+    - Citations from clinical guidelines via RAG
+    - Voice-friendly spoken summary for Minerva TTS
+
+    Usage:
+        POST /api/v1/minerva/differential
+        {
+            "patient_context": {
+                "patient_id": "12724066",
+                "chief_complaint": "chest pain",
+                "symptoms": ["chest pain", "shortness of breath", "diaphoresis"],
+                "vital_signs": {"heart_rate": {"value": 110, "unit": "bpm"}},
+                "past_medical_history": ["hypertension", "diabetes"]
+            },
+            "include_citations": true,
+            "include_cant_miss": true
+        }
+    """
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    # Audit log
+    ip_address = req.client.host if req.client else None
+    audit_logger.log_note_operation(
+        action="GENERATE_DIFFERENTIAL",
+        note_type="DDX_RAG",
+        status="processing",
+        details=f"Patient: {request.patient_context.patient_id}, CC: {request.patient_context.chief_complaint[:50]}",
+        ip_address=ip_address
+    )
+
+    try:
+        engine = await get_differential_engine()
+        result = await engine.generate_differential(
+            patient_context=request.patient_context,
+            max_diagnoses=request.max_diagnoses,
+            include_citations=request.include_citations
+        )
+
+        # Audit success
+        audit_logger.log_note_operation(
+            action="GENERATE_DIFFERENTIAL",
+            note_type="DDX_RAG",
+            status="success",
+            details=f"Generated {len(result.diagnoses)} diagnoses, RAG={result.rag_enhanced}",
+            ip_address=ip_address
+        )
+
+        return DifferentialResponse(
+            patient_id=result.patient_id,
+            chief_complaint=result.chief_complaint,
+            diagnoses=[d.to_dict() for d in result.diagnoses],
+            clinical_summary=result.clinical_summary,
+            spoken_summary=result.spoken_summary,
+            confidence=result.confidence,
+            rag_enhanced=result.rag_enhanced,
+            timestamp=result.timestamp,
+            follow_up_suggestions=result.follow_up_suggestions,
+            red_flag_summary=result.red_flag_summary
+        )
+
+    except Exception as e:
+        audit_logger.log_note_operation(
+            action="GENERATE_DIFFERENTIAL",
+            note_type="DDX_RAG",
+            status="failure",
+            details=str(e)[:100],
+            ip_address=ip_address
+        )
+        raise HTTPException(status_code=500, detail=f"Differential diagnosis error: {str(e)}")
+
+
+@app.post("/api/v1/minerva/differential/follow-up", response_model=FollowUpResponse)
+async def minerva_differential_follow_up(
+    request: FollowUpRequest,
+    req: Request
+):
+    """
+    Answer follow-up questions about the differential diagnosis.
+
+    Supports:
+    - "Why do you think that?" - Explain clinical reasoning
+    - "What else could this be?" - Additional considerations
+    - Custom clinical questions
+
+    Usage:
+        POST /api/v1/minerva/differential/follow-up
+        {
+            "patient_id": "12724066",
+            "question": "Why do you think that?"
+        }
+    """
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    try:
+        engine = await get_differential_engine()
+        result = await engine.answer_follow_up(
+            patient_id=request.patient_id,
+            question=request.question,
+            previous_differential=None  # Engine will use cache
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Follow-up error: {str(e)}")
+
+
+@app.get("/api/v1/minerva/differential/{patient_id}")
+async def get_cached_differential(patient_id: str):
+    """
+    Get cached differential diagnosis for a patient.
+
+    Returns the most recent differential generated for this patient
+    during the current session.
+    """
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    engine = await get_differential_engine()
+    cached = engine.get_cached_differential(patient_id)
+
+    if not cached:
+        raise HTTPException(
+            status_code=404,
+            detail="No cached differential found. Ask 'What do you think?' to generate one."
+        )
+
+    return DifferentialResponse(
+        patient_id=cached.patient_id,
+        chief_complaint=cached.chief_complaint,
+        diagnoses=[d.to_dict() for d in cached.diagnoses],
+        clinical_summary=cached.clinical_summary,
+        spoken_summary=cached.spoken_summary,
+        confidence=cached.confidence,
+        rag_enhanced=cached.rag_enhanced,
+        timestamp=cached.timestamp,
+        follow_up_suggestions=cached.follow_up_suggestions,
+        red_flag_summary=cached.red_flag_summary
+    )
+
+
+@app.delete("/api/v1/minerva/differential/{patient_id}")
+async def clear_differential_cache(patient_id: str):
+    """Clear cached differential for a patient"""
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    engine = await get_differential_engine()
+    engine.clear_cache(patient_id)
+
+    return {"status": "cleared", "patient_id": patient_id}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # JARVIS-LIKE AI FEATURES - INDIRECT COMMANDS (Feature #96)
 # Natural language parsing to translate conversational commands into actions
 # Examples: "check that potassium" -> show_labs, "what's his blood pressure" -> show_vitals
