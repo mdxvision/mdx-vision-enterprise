@@ -13,7 +13,13 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import httpx
+
+# Rate Limiting (Issue #16 - OWASP API4:2023)
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
 
@@ -429,6 +435,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rate Limiting (Issue #16 - OWASP API4:2023 Unrestricted Resource Consumption)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Rate limit configuration (requests per minute)
+RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100/minute")
+RATE_LIMIT_AUTH = os.getenv("RATE_LIMIT_AUTH", "10/minute")  # OAuth2 endpoints
+RATE_LIMIT_FHIR = os.getenv("RATE_LIMIT_FHIR", "60/minute")  # FHIR/EHR endpoints
+RATE_LIMIT_AI = os.getenv("RATE_LIMIT_AI", "30/minute")  # AI/Minerva endpoints
+RATE_LIMIT_WRITE = os.getenv("RATE_LIMIT_WRITE", "20/minute")  # Write operations
+
+# Custom key function: use device_id header if available, otherwise IP
+def get_rate_limit_key(request: Request) -> str:
+    """Get rate limit key from device_id header or IP address."""
+    device_id = request.headers.get("X-Device-ID")
+    if device_id:
+        return f"device:{device_id}"
+    return get_remote_address(request)
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_rate_limit_key)
+app.state.limiter = limiter
+
+# Custom rate limit exceeded handler with proper headers
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit exceeded with proper 429 response."""
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": "Too many requests. Please slow down.",
+            "retry_after": exc.detail
+        }
+    )
+    response.headers["Retry-After"] = str(60)  # Retry after 60 seconds
+    response.headers["X-RateLimit-Limit"] = exc.detail
+    response.headers["X-RateLimit-Remaining"] = "0"
+    return response
+
 
 # Security Headers Middleware (Issue #20 - HIPAA §164.312(e)(1))
 @app.middleware("http")
@@ -554,7 +600,8 @@ EPIC_TEST_PATIENTS = {
 }
 
 @app.get("/auth/epic/authorize")
-async def epic_authorize():
+@limiter.limit(RATE_LIMIT_AUTH)
+async def epic_authorize(request: Request):
     """
     Initiate Epic OAuth2 authorization flow.
     Redirects user to Epic login page.
@@ -587,7 +634,9 @@ async def epic_authorize():
 
 
 @app.get("/auth/epic/callback")
+@limiter.limit(RATE_LIMIT_AUTH)
 async def epic_callback(
+    request: Request,
     code: str = None,
     state: str = None,
     error: str = None,
@@ -4215,6 +4264,7 @@ async def search_patients(name: str, request: Request, ehr: str = "cerner"):
 
 
 @app.get("/api/v1/patient/{patient_id}", response_model=PatientSummary)
+@limiter.limit(RATE_LIMIT_FHIR)
 async def get_patient(patient_id: str, request: Request, ehr: str = "cerner"):
     """Get patient summary by ID - optimized for AR glasses
 
@@ -7304,7 +7354,8 @@ async def generate_minerva_response(
 
 
 @app.post("/api/v1/minerva/chat", response_model=MinervaResponse)
-async def minerva_chat(request: MinervaRequest, req: Request):
+@limiter.limit(RATE_LIMIT_AI)
+async def minerva_chat(body: MinervaRequest, request: Request):
     """
     Minerva AI Clinical Assistant chat endpoint (Feature #97).
 
@@ -7323,11 +7374,11 @@ async def minerva_chat(request: MinervaRequest, req: Request):
         }
     """
     # Validate input
-    if not request.message or not request.message.strip():
+    if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="Message is required")
 
     # Generate or use conversation ID
-    conversation_id = request.conversation_id or str(uuid.uuid4())[:8]
+    conversation_id = body.conversation_id or str(uuid.uuid4())[:8]
 
     # Get conversation history
     conversation_history = minerva_conversations.get(conversation_id, [])
@@ -7336,26 +7387,26 @@ async def minerva_chat(request: MinervaRequest, req: Request):
     audit_logger._log_event(
         event_type="AI",
         action="MINERVA_CHAT",
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         status="processing",
         details={
-            "message_length": len(request.message),
+            "message_length": len(body.message),
             "conversation_id": conversation_id,
-            "has_patient_context": bool(request.patient_context or request.patient_id)
+            "has_patient_context": bool(body.patient_context or body.patient_id)
         }
     )
 
     try:
         # Generate response
         result = await generate_minerva_response(
-            message=request.message,
-            patient_context=request.patient_context,
+            message=body.message,
+            patient_context=body.patient_context,
             conversation_history=conversation_history
         )
 
         # Store conversation history
         minerva_conversations[conversation_id] = conversation_history + [
-            {"role": "user", "content": request.message},
+            {"role": "user", "content": body.message},
             {"role": "assistant", "content": result["response"]}
         ]
 
@@ -7367,7 +7418,7 @@ async def minerva_chat(request: MinervaRequest, req: Request):
         audit_logger._log_event(
             event_type="AI",
             action="MINERVA_CHAT",
-            patient_id=request.patient_id,
+            patient_id=body.patient_id,
             status="success",
             details={
                 "conversation_id": conversation_id,
@@ -7391,7 +7442,7 @@ async def minerva_chat(request: MinervaRequest, req: Request):
         audit_logger._log_event(
             event_type="AI",
             action="MINERVA_CHAT",
-            patient_id=request.patient_id,
+            patient_id=body.patient_id,
             status="failure",
             details={"error": str(e)[:100]}
         )
@@ -15490,6 +15541,7 @@ async def push_note_endpoint(note_id: str, request: Request, x_device_id: Option
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/v1/vitals/push")
+@limiter.limit(RATE_LIMIT_WRITE)
 async def push_vital(request: VitalWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a captured vital sign to the EHR as a FHIR Observation.
@@ -15524,6 +15576,7 @@ async def push_vital(request: VitalWriteRequest, http_request: Request, x_device
 
 
 @app.post("/api/v1/orders/push")
+@limiter.limit(RATE_LIMIT_WRITE)
 async def push_order(request: OrderWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push an order to the EHR as a FHIR ServiceRequest (lab/imaging) or MedicationRequest (meds).
@@ -15560,6 +15613,7 @@ async def push_order(request: OrderWriteRequest, http_request: Request, x_device
 
 
 @app.post("/api/v1/allergies/push")
+@limiter.limit(RATE_LIMIT_WRITE)
 async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a new allergy to the EHR as a FHIR AllergyIntolerance.
