@@ -145,6 +145,9 @@ from medical_vocabulary import (
 # Import HIPAA audit logging
 from audit import audit_logger, AuditAction, log_audit_event, log_phi_access
 
+# Import FHIR AuditEvent logging (Issue #108)
+from fhir_audit import fhir_audit_logger, AuditEventAction, FHIRAuditEventFactory
+
 # Import noise reduction (RNNoise - Krisp AI alternative)
 try:
     from noise_reduction import (
@@ -4608,6 +4611,16 @@ async def get_patient(patient_id: str, request: Request, ehr: str = "cerner"):
         user_name=user_name,
         ip_address=ip_address,
         user_agent=user_agent
+    )
+
+    # FHIR AuditEvent: Log patient access (Issue #108)
+    fhir_audit_logger.log_patient_access(
+        patient_id=patient_id,
+        success=True,
+        clinician_id=user_id,
+        clinician_name=user_name,
+        device_id=request.headers.get("X-Device-ID"),
+        ip_address=ip_address
     )
 
     return summary
@@ -15705,6 +15718,18 @@ async def push_vital(request: VitalWriteRequest, http_request: Request, x_device
         ip_address=ip_address
     )
 
+    # FHIR AuditEvent: Log observation create (Issue #108)
+    fhir_audit_logger.log_resource_write(
+        action=AuditEventAction.CREATE,
+        resource_type="Observation",
+        patient_id=request.patient_id,
+        resource_id=result.get("fhir_id"),
+        success=result.get("success", False),
+        clinician_id=http_request.headers.get("X-User-Id"),
+        ip_address=ip_address,
+        description=f"Created vital sign: {request.vital_type}"
+    )
+
     return result
 
 
@@ -15742,6 +15767,18 @@ async def push_order(request: OrderWriteRequest, http_request: Request, x_device
         ip_address=ip_address
     )
 
+    # FHIR AuditEvent: Log order create (Issue #108)
+    fhir_audit_logger.log_resource_write(
+        action=AuditEventAction.CREATE,
+        resource_type=resource_type,
+        patient_id=request.patient_id,
+        resource_id=result.get("fhir_id"),
+        success=result.get("success", False),
+        clinician_id=http_request.headers.get("X-User-Id"),
+        ip_address=ip_address,
+        description=f"Created order: {request.order_type} - {request.display_name}"
+    )
+
     return result
 
 
@@ -15772,6 +15809,18 @@ async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_de
         status="success" if result.get("success") else "failure",
         details=f"Allergy: {request.substance} (criticality: {request.criticality})",
         ip_address=ip_address
+    )
+
+    # FHIR AuditEvent: Log allergy create (Issue #108)
+    fhir_audit_logger.log_resource_write(
+        action=AuditEventAction.CREATE,
+        resource_type="AllergyIntolerance",
+        patient_id=request.patient_id,
+        resource_id=result.get("fhir_id"),
+        success=result.get("success", False),
+        clinician_id=http_request.headers.get("X-User-Id"),
+        ip_address=ip_address,
+        description=f"Created allergy: {request.substance}"
     )
 
     return result
@@ -16576,6 +16625,98 @@ async def get_patient_audit_trail(
         "page_size": page_size,
         "entries": entries
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FHIR AUDITEVENT API (Issue #108 - HIPAA §164.312(b))
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/fhir/AuditEvent")
+async def query_fhir_audit_events(
+    patient: Optional[str] = Query(None, description="Filter by patient ID"),
+    action: Optional[str] = Query(None, description="Filter by action (C, R, U, D, E)"),
+    outcome: Optional[str] = Query(None, description="Filter by outcome (0, 4, 8, 12)"),
+    date_ge: Optional[str] = Query(None, alias="date", description="Start date (ISO 8601)"),
+    date_le: Optional[str] = Query(None, description="End date (ISO 8601)"),
+    _count: int = Query(100, ge=1, le=1000, description="Maximum results"),
+    _offset: int = Query(0, ge=0, description="Skip first N results")
+):
+    """
+    Query FHIR R4 AuditEvent resources.
+
+    Returns a FHIR Bundle of AuditEvent resources matching the query parameters.
+    Implements FHIR Search for AuditEvent as per https://www.hl7.org/fhir/auditevent.html
+
+    HIPAA: §164.312(b) requires audit controls to record and examine activity.
+    """
+    bundle = fhir_audit_logger.query_events(
+        patient_id=patient,
+        action=action,
+        outcome=outcome,
+        start_date=date_ge,
+        end_date=date_le,
+        limit=_count,
+        offset=_offset
+    )
+
+    return bundle
+
+
+@app.get("/api/v1/fhir/AuditEvent/_stats")
+async def get_fhir_audit_stats():
+    """
+    Get FHIR AuditEvent statistics.
+
+    Returns counts of audit events by type, action, and outcome.
+    Note: Using _stats instead of $stats for URL compatibility.
+    """
+    total = fhir_audit_logger.get_event_count()
+    bundle = fhir_audit_logger.query_events(limit=10000)
+
+    # Calculate stats
+    by_action = {}
+    by_outcome = {}
+    by_resource = {}
+
+    for entry in bundle.get("entry", []):
+        resource = entry.get("resource", {})
+
+        action = resource.get("action", "unknown")
+        by_action[action] = by_action.get(action, 0) + 1
+
+        outcome = resource.get("outcome", "unknown")
+        by_outcome[outcome] = by_outcome.get(outcome, 0) + 1
+
+        # Extract resource type from entity
+        for entity in resource.get("entity", []):
+            ref = entity.get("what", {}).get("reference", "")
+            if "/" in ref:
+                res_type = ref.split("/")[0]
+                by_resource[res_type] = by_resource.get(res_type, 0) + 1
+
+    return {
+        "total_events": total,
+        "by_action": by_action,
+        "by_outcome": by_outcome,
+        "by_resource_type": by_resource,
+        "retention_policy": "7 years (HIPAA requirement)",
+        "immutable": True
+    }
+
+
+@app.get("/api/v1/fhir/AuditEvent/{event_id}")
+async def get_fhir_audit_event(event_id: str):
+    """
+    Get a specific FHIR AuditEvent by ID.
+    """
+    # Search in recent events
+    bundle = fhir_audit_logger.query_events(limit=10000)
+    for entry in bundle.get("entry", []):
+        resource = entry.get("resource", {})
+        if resource.get("id") == event_id:
+            return resource
+
+    raise HTTPException(status_code=404, detail="AuditEvent not found")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
