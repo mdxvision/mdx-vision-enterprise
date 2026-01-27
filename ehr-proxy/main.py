@@ -627,14 +627,18 @@ async def add_security_headers(request, call_next):
         # max-age=1 year, includeSubDomains for security, preload for browser lists
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
 
-    # Content Security Policy (allow necessary sources)
+    # Content Security Policy (Issue #91 - OWASP XSS Prevention)
+    # Allows necessary sources for healthcare dashboard functionality
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: https:; "
-        "connect-src 'self' wss: https:; "
-        "frame-ancestors 'none'"
+        "font-src 'self' data:; "
+        "connect-src 'self' wss: https://api.assemblyai.com https://api.anthropic.com https:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
     )
 
     return response
