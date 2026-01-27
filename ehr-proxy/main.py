@@ -156,6 +156,12 @@ from request_signing import (
     UnknownDeviceError, RevokedDeviceError, DeviceStatus
 )
 
+# Import Token Refresh Service (Issue #65)
+from token_refresh import (
+    get_token_service, get_refresh_job,
+    TokenRefreshService, TokenRefreshJob, EHRToken, TokenStatus
+)
+
 # Import noise reduction (RNNoise - Krisp AI alternative)
 try:
     from noise_reduction import (
@@ -2350,6 +2356,116 @@ async def verify_request_signature(
         )
     except SignatureError as e:
         raise HTTPException(status_code=401, detail=str(e))
+
+
+# ============================================================================
+# TOKEN REFRESH ENDPOINTS (Issue #65 - OAuth2 Token Management)
+# ============================================================================
+
+@app.get("/api/v1/auth/tokens")
+async def list_tokens():
+    """
+    List all stored OAuth2 tokens with their status.
+
+    Returns token status for each EHR platform including:
+    - Expiration time
+    - Whether refresh is needed
+    - Refresh token availability
+    """
+    service = get_token_service()
+    return {"tokens": service.list_tokens()}
+
+
+@app.get("/api/v1/auth/tokens/{ehr}")
+async def get_token_status(ehr: str):
+    """
+    Get detailed status of a specific EHR token.
+
+    Args:
+        ehr: EHR platform name (epic, cerner, veradigm, etc.)
+    """
+    service = get_token_service()
+    status = service.get_token_status(ehr)
+
+    if status["status"] == "not_found":
+        raise HTTPException(status_code=404, detail=f"No token found for {ehr}")
+
+    return status
+
+
+@app.post("/api/v1/auth/tokens/{ehr}/refresh")
+async def refresh_token(ehr: str):
+    """
+    Manually refresh an OAuth2 token.
+
+    Use this when a token is expiring soon or has expired.
+    Requires a valid refresh token to be stored.
+
+    Args:
+        ehr: EHR platform name (epic, cerner, veradigm, etc.)
+    """
+    service = get_token_service()
+
+    # Check if token exists
+    token = service.get_token(ehr)
+    if not token:
+        raise HTTPException(status_code=404, detail=f"No token found for {ehr}")
+
+    if not token.refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No refresh token available for {ehr}. Re-authentication required."
+        )
+
+    # Attempt refresh
+    success, message = await service.refresh_token(ehr)
+
+    if success:
+        return {
+            "success": True,
+            "message": message,
+            "token_status": service.get_token_status(ehr)
+        }
+    else:
+        raise HTTPException(status_code=400, detail=message)
+
+
+@app.post("/api/v1/auth/tokens/refresh-all")
+async def refresh_all_expiring_tokens():
+    """
+    Check all tokens and refresh any that are expiring soon.
+
+    This is called automatically by the background job, but can
+    also be triggered manually.
+    """
+    service = get_token_service()
+    results = await service.check_and_refresh_expiring()
+
+    return {
+        "checked": results["checked"],
+        "refreshed": len(results["refreshed"]),
+        "failed": len(results["failed"]),
+        "skipped": len(results["skipped"]),
+        "details": results
+    }
+
+
+@app.delete("/api/v1/auth/tokens/{ehr}")
+async def revoke_token(ehr: str):
+    """
+    Revoke and remove a stored token.
+
+    Use this on logout or when token should be invalidated.
+
+    Args:
+        ehr: EHR platform name
+    """
+    service = get_token_service()
+
+    if service.revoke_token(ehr):
+        return {"message": f"Token for {ehr} has been revoked"}
+    else:
+        raise HTTPException(status_code=404, detail=f"No token found for {ehr}")
 
 
 # Minimal patient endpoint for Samsung (returns compact data from actual EHR)
