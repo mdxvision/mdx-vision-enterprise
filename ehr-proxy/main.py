@@ -162,11 +162,16 @@ from token_refresh import (
     TokenRefreshService, TokenRefreshJob, EHRToken, TokenStatus
 )
 
-# Import PHI Encryption Service (Issue #49)
+# Import PHI Encryption Service (Issues #49, #50)
 from phi_encryption import (
     get_encryption_service, PHIEncryptionService, PHIFieldType,
-    EncryptedValue, EncryptionError, DecryptionError,
-    encrypt_patient_name, encrypt_ssn, encrypt_mrn, encrypt_clinical_note, decrypt_phi
+    EncryptedValue, EncryptionError, DecryptionError, RateLimitExceededError,
+    SensitivityTier, FIELD_SENSITIVITY_MAP,
+    encrypt_patient_name, encrypt_ssn, encrypt_mrn, encrypt_clinical_note, decrypt_phi,
+    encrypt_email, encrypt_phone, encrypt_address,
+    encrypt_searchable_mrn, encrypt_searchable_ssn,
+    create_mrn_search_token, create_ssn_search_token,
+    get_field_sensitivity
 )
 
 # Import noise reduction (RNNoise - Krisp AI alternative)
@@ -2632,6 +2637,178 @@ async def decrypt_phi_value(request: DecryptRequest):
             status_code=500,
             detail=f"Decryption error: {str(e)}"
         )
+
+
+# ============================================================================
+# SEARCHABLE ENCRYPTION ENDPOINTS (Issue #50 - HMAC Search Tokens)
+# ============================================================================
+
+class SearchableEncryptRequest(BaseModel):
+    """Request body for searchable encryption endpoint."""
+    plaintext: str
+    field_type: str = "mrn"
+
+
+@app.post("/api/v1/encryption/encrypt-searchable")
+async def encrypt_searchable_value(request: SearchableEncryptRequest):
+    """
+    Encrypt a value and create an HMAC search token (Issue #50).
+
+    Use this for fields that need to be searched without decryption.
+    Store the encrypted value in one column and the search token in another.
+
+    Args:
+        plaintext: Value to encrypt
+        field_type: PHI field type (mrn, ssn, patient_name, etc.)
+
+    Returns:
+        encrypted: The encrypted value (store for data)
+        search_token: HMAC token (store for lookups)
+    """
+    service = get_encryption_service()
+
+    try:
+        field_type = PHIFieldType(request.field_type)
+        encrypted, search_token = service.encrypt_searchable(
+            request.plaintext, field_type
+        )
+
+        return {
+            "success": True,
+            "encrypted": encrypted,
+            "search_token": search_token,
+            "field_type": request.field_type,
+            "usage": {
+                "encrypted": "Store in encrypted_column for data retrieval",
+                "search_token": "Store in search_token_column for lookups"
+            }
+        }
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid field_type. Valid types: {[t.value for t in PHIFieldType]}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Encryption failed: {str(e)}"
+        )
+
+
+class CreateSearchTokenRequest(BaseModel):
+    """Request body for creating search tokens."""
+    plaintext: str
+    field_type: str = "mrn"
+
+
+@app.post("/api/v1/encryption/search-token")
+async def create_search_token(request: CreateSearchTokenRequest):
+    """
+    Create a search token for looking up encrypted values.
+
+    Use this to create tokens for database queries.
+
+    Args:
+        plaintext: Value to create token for
+        field_type: PHI field type
+
+    Returns:
+        search_token: HMAC token to use in WHERE clause
+    """
+    service = get_encryption_service()
+
+    try:
+        field_type = PHIFieldType(request.field_type)
+        token = service.create_search_token(request.plaintext, field_type)
+
+        return {
+            "search_token": token,
+            "field_type": request.field_type
+        }
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid field_type"
+        )
+
+
+@app.get("/api/v1/encryption/sensitivity/{field_type}")
+async def get_sensitivity_tier(field_type: str):
+    """
+    Get sensitivity tier information for a field type (Issue #50).
+
+    Returns tier level and description for compliance documentation.
+    """
+    return get_field_sensitivity(field_type)
+
+
+@app.get("/api/v1/encryption/sensitivity")
+async def list_sensitivity_tiers():
+    """
+    List all field types and their sensitivity tiers.
+    """
+    return {
+        "tiers": {
+            "TIER_1_HIGHEST": {
+                "level": 1,
+                "description": "Highest sensitivity - SSN, patient name, DOB, insurance ID",
+                "fields": [f for f, t in FIELD_SENSITIVITY_MAP.items() if t == SensitivityTier.TIER_1_HIGHEST]
+            },
+            "TIER_2_HIGH": {
+                "level": 2,
+                "description": "High sensitivity - MRN, email, phone, clinical notes",
+                "fields": [f for f, t in FIELD_SENSITIVITY_MAP.items() if t == SensitivityTier.TIER_2_HIGH]
+            },
+            "TIER_3_MODERATE": {
+                "level": 3,
+                "description": "Moderate sensitivity - Emergency contacts",
+                "fields": [f for f, t in FIELD_SENSITIVITY_MAP.items() if t == SensitivityTier.TIER_3_MODERATE]
+            }
+        },
+        "compliance": "Per HIPAA §164.308(a)(3)(i) - Workforce Access Controls"
+    }
+
+
+# ============================================================================
+# RATE LIMITING & AUDIT ENDPOINTS (Issue #50 - Anti-Exfiltration)
+# ============================================================================
+
+@app.get("/api/v1/encryption/rate-limit/{user_id}")
+async def get_rate_limit_status(user_id: str):
+    """
+    Get rate limit status for a user (Issue #50).
+
+    Shows decryption counts and remaining quota.
+    """
+    service = get_encryption_service()
+    return service.get_rate_limit_stats(user_id)
+
+
+@app.get("/api/v1/encryption/audit/stats")
+async def get_audit_stats(hours: int = 24):
+    """
+    Get decryption audit statistics (Issue #50).
+
+    Shows aggregated decryption activity for compliance monitoring.
+    """
+    service = get_encryption_service()
+    return service.get_audit_stats(hours)
+
+
+@app.get("/api/v1/encryption/audit/recent")
+async def get_recent_audit_entries(user_id: Optional[str] = None, limit: int = 100):
+    """
+    Get recent decryption audit entries (Issue #50).
+
+    Shows detailed audit log for compliance review.
+    """
+    service = get_encryption_service()
+    entries = service.get_recent_audit_entries(user_id, min(limit, 1000))
+    return {
+        "entries": entries,
+        "count": len(entries),
+        "filter": {"user_id": user_id} if user_id else None
+    }
 
 
 # Minimal patient endpoint for Samsung (returns compact data from actual EHR)
