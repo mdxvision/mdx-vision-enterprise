@@ -14,7 +14,16 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import httpx
+
+# Error Handling (Issue #30 - OWASP CWE-209)
+from error_handling import (
+    generate_correlation_id, get_safe_error_response, log_error_with_context,
+    get_safe_third_party_error, ErrorCode, contains_sensitive_info,
+    sanitize_error_message
+)
 
 # Rate Limiting (Issue #16 - OWASP API4:2023)
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -476,6 +485,127 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     return response
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Global Exception Handlers (Issue #30 - OWASP CWE-209, CWE-211)
+# Sanitize all error responses to prevent information disclosure
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all handler for unhandled exceptions.
+    Never expose internal details - log them server-side instead.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Log full error details server-side
+    log_error_with_context(
+        error=exc,
+        correlation_id=correlation_id,
+        context={
+            "path": str(request.url.path),
+            "method": request.method,
+            "client": request.client.host if request.client else "unknown"
+        }
+    )
+
+    # Return sanitized response to client
+    safe_response = get_safe_error_response(
+        status_code=500,
+        correlation_id=correlation_id,
+        error_code=ErrorCode.INTERNAL_ERROR
+    )
+
+    return JSONResponse(status_code=500, content=safe_response)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Handle HTTP exceptions with sanitized messages.
+    Allow some detail for 4xx errors but sanitize 5xx.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Log for 5xx errors or if detail contains sensitive info
+    if exc.status_code >= 500 or contains_sensitive_info(str(exc.detail)):
+        log_error_with_context(
+            error=exc,
+            correlation_id=correlation_id,
+            context={"path": str(request.url.path)},
+            level="warning" if exc.status_code < 500 else "error"
+        )
+
+    # Get sanitized response
+    safe_response = get_safe_error_response(
+        status_code=exc.status_code,
+        original_error=str(exc.detail) if exc.detail else None,
+        correlation_id=correlation_id
+    )
+
+    return JSONResponse(status_code=exc.status_code, content=safe_response)
+
+
+@app.exception_handler(HTTPException)
+async def fastapi_http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Handle FastAPI HTTP exceptions with sanitized messages.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Log for 5xx errors or if detail contains sensitive info
+    if exc.status_code >= 500 or contains_sensitive_info(str(exc.detail)):
+        log_error_with_context(
+            error=exc,
+            correlation_id=correlation_id,
+            context={"path": str(request.url.path)},
+            level="warning" if exc.status_code < 500 else "error"
+        )
+
+    # Get sanitized response
+    safe_response = get_safe_error_response(
+        status_code=exc.status_code,
+        original_error=str(exc.detail) if exc.detail else None,
+        correlation_id=correlation_id
+    )
+
+    return JSONResponse(status_code=exc.status_code, content=safe_response)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handle request validation errors with field-level details.
+    Sanitize field values but allow field names.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Extract first error for user-friendly message
+    errors = exc.errors()
+    if errors:
+        first_error = errors[0]
+        field = ".".join(str(loc) for loc in first_error.get("loc", []))
+        msg = first_error.get("msg", "Invalid value")
+
+        # Sanitize the message (remove any sensitive info)
+        safe_msg = sanitize_error_message(msg)
+        if field and not contains_sensitive_info(field):
+            user_message = f"Invalid value for field '{field}': {safe_msg}"
+        else:
+            user_message = f"Validation error: {safe_msg}"
+    else:
+        user_message = "Invalid request data"
+
+    safe_response = get_safe_error_response(
+        status_code=422,
+        original_error=user_message,
+        error_code=ErrorCode.INVALID_FORMAT,
+        correlation_id=correlation_id
+    )
+
+    return JSONResponse(status_code=422, content=safe_response)
+
+
 # Security Headers Middleware (Issue #20 - HIPAA §164.312(e)(1))
 @app.middleware("http")
 async def add_security_headers(request, call_next):
@@ -729,15 +859,13 @@ async def epic_callback(
                 print(f"   Response: {error_text[:500]}")
                 return {
                     "success": False,
-                    "error": f"Token exchange failed: {token_response.status_code}",
-                    "details": error_text
+                    "error": "Authentication failed. Please try again."
                 }
     except Exception as e:
         print(f"❌ Epic callback exception: {str(e)}")
         return {
             "success": False,
-            "error": "Exception during token exchange",
-            "details": str(e)
+            "error": "Authentication failed. Please try again."
         }
 
 
@@ -2211,13 +2339,13 @@ async def get_patient_quick(patient_id: str, ehr: str = "cerner"):
         }
     except Exception as e:
         print(f"Error in quick patient fetch: {e}")
-        # Return error response
+        # Return error response (sanitized - no internal details)
         return {
             "patient_id": patient_id,
             "name": "Error loading patient",
-            "error": str(e),
+            "error": "Unable to load patient data",
             "ehr": ehr,
-            "display_text": f"Error loading patient from {ehr.upper()}:\n{str(e)}"
+            "display_text": f"Unable to load patient from {ehr.upper()}. Please try again."
         }
 
 
@@ -6185,7 +6313,7 @@ async def generate_clinical_note(request: NoteRequest):
         return response
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Note generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Note generation temporarily unavailable")
 
 
 @app.post("/api/v1/notes/quick")
@@ -6510,7 +6638,7 @@ async def generate_differential_diagnosis(request: DdxRequest, req: Request):
                 details=str(fallback_error)[:100],
                 ip_address=ip_address
             )
-            raise HTTPException(status_code=500, detail=f"DDx generation failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Differential diagnosis service temporarily unavailable")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6758,7 +6886,7 @@ async def copilot_chat(request: CopilotRequest, req: Request):
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Co-pilot error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Clinical co-pilot temporarily unavailable")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -7060,7 +7188,7 @@ async def copilot_multiturn_reason(request: MultiTurnRequest, req: Request):
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Reasoning error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Reasoning service temporarily unavailable")
 
 
 @app.post("/api/v1/copilot/teach")
@@ -7446,7 +7574,7 @@ async def minerva_chat(body: MinervaRequest, request: Request):
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Minerva error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Minerva AI temporarily unavailable")
 
 
 # Minerva status tracking (for web dashboard sync)
@@ -7634,7 +7762,7 @@ async def minerva_get_context(patient_id: str, ehr: str = "cerner", req: Request
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Failed to get patient context: {str(e)}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve patient context")
 
 
 @app.delete("/api/v1/minerva/conversation/{conversation_id}")
@@ -7792,7 +7920,7 @@ async def minerva_proactive_alerts(patient_id: str, request: Request):
         if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
             raise HTTPException(status_code=404, detail="Patient not found")
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Patient not found")
 
     # Extract patient name
     patient_name = extract_patient_name(patient_data)
@@ -9356,7 +9484,7 @@ async def get_pre_visit_prep(patient_id: str, request: Request):
         if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
             raise HTTPException(status_code=404, detail="Patient not found")
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Patient not found")
 
     # Extract basic info
     name = extract_patient_name(patient_data)
@@ -9486,7 +9614,7 @@ async def get_care_gaps(
         if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
             raise HTTPException(status_code=404, detail="Patient not found")
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Patient not found")
 
     # Extract basic info
     name = extract_patient_name(patient_data)
@@ -10647,10 +10775,11 @@ async def check_rss_feed(feed_name: str):
                 "note": "Use /api/v1/knowledge/pubmed/ingest to add relevant articles"
             }
     except Exception as e:
+        print(f"Feed check error: {e}")
         return {
             "feed": feed_name,
             "status": "error",
-            "error": str(e)
+            "error": "Unable to check feed status"
         }
 
 
@@ -15358,14 +15487,14 @@ async def push_resource_to_ehr(resource_type: str, resource: dict) -> dict:
                 error_body = response.text
                 return {
                     "success": False,
-                    "error": f"EHR returned status {response.status_code}",
-                    "status_code": response.status_code,
-                    "details": error_body[:500]
+                    "error": "EHR service temporarily unavailable",
+                    "status_code": response.status_code
                 }
     except httpx.TimeoutException:
         return {"success": False, "error": "EHR request timed out"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        print(f"EHR request error: {e}")
+        return {"success": False, "error": "Unable to complete EHR request"}
 
 
 @app.post("/api/v1/notes/save")
@@ -15701,11 +15830,12 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
             else:
                 result = {
                     "success": False,
-                    "error": f"EHR returned status {response.status_code}",
+                    "error": "EHR service temporarily unavailable",
                     "status_code": response.status_code
                 }
     except Exception as e:
-        result = {"success": False, "error": str(e)}
+        print(f"Medication update error: {e}")
+        result = {"success": False, "error": "Unable to update medication status"}
 
     # HIPAA Audit: Log medication status change
     ip_address = http_request.client.host if http_request.client else None
@@ -16172,7 +16302,7 @@ async def websocket_transcribe_with_provider(websocket: WebSocket, provider: str
     except Exception as e:
         print(f"Transcription error: {e}")
         try:
-            await websocket.send_json({"type": "error", "message": str(e)})
+            await websocket.send_json({"type": "error", "message": "Transcription service temporarily unavailable"})
         except:
             pass
         if session:
@@ -16483,12 +16613,13 @@ async def text_to_speech(request: TTSRequest):
         # gTTS not installed - try pyttsx3 or return error
         return {
             "success": False,
-            "error": "TTS library not available. Install with: pip install gTTS"
+            "error": "Text-to-speech service not available"
         }
     except Exception as e:
+        print(f"TTS error: {e}")
         return {
             "success": False,
-            "error": str(e)
+            "error": "Text-to-speech service temporarily unavailable"
         }
 
 @app.get("/api/v1/tts/status")
