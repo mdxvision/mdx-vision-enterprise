@@ -455,6 +455,18 @@ async def lifespan(app: FastAPI):
     await get_alert_manager()
     print("✅ Critical alert manager initialized (Issue #105)")
 
+    # Startup: Auto-initialize RAG with ChromaDB Docker
+    try:
+        if RAG_AVAILABLE and not rag_engine.initialized:
+            success = await rag_engine.initialize()
+            if success:
+                doc_count = rag_engine.collection.count() if rag_engine.collection else 0
+                print(f"✅ RAG engine auto-initialized with {doc_count} documents")
+            else:
+                print("⚠️  RAG engine initialization failed (ChromaDB may not be running)")
+    except Exception as e:
+        print(f"⚠️  RAG auto-init skipped: {e}")
+
     yield  # Application runs here
 
     # Shutdown: Cleanup critical alert manager
@@ -17093,7 +17105,7 @@ async def push_note_endpoint(note_id: str, request: Request, x_device_id: Option
 
 @app.post("/api/v1/vitals/push")
 @limiter.limit(RATE_LIMIT_WRITE)
-async def push_vital(request: VitalWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
+async def push_vital(body: VitalWriteRequest, request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a captured vital sign to the EHR as a FHIR Observation.
 
@@ -17107,19 +17119,19 @@ async def push_vital(request: VitalWriteRequest, http_request: Request, x_device
         await require_fresh_voiceprint(x_device_id)
 
     # Build FHIR Observation
-    observation = build_observation(request.model_dump(), request.patient_id)
+    observation = build_observation(body.model_dump(), body.patient_id)
 
     # Push to EHR
     result = await push_resource_to_ehr("Observation", observation)
 
     # HIPAA Audit: Log vital push
-    ip_address = http_request.client.host if http_request.client else None
+    ip_address = request.client.host if request.client else None
     audit_logger.log_phi_access(
         action=AuditAction.PUSH_VITAL,
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         endpoint="/api/v1/vitals/push",
         status="success" if result.get("success") else "failure",
-        details=f"Vital: {request.vital_type} = {request.value} {request.unit}",
+        details=f"Vital: {body.vital_type} = {body.value} {body.unit}",
         ip_address=ip_address
     )
 
@@ -17127,12 +17139,12 @@ async def push_vital(request: VitalWriteRequest, http_request: Request, x_device
     fhir_audit_logger.log_resource_write(
         action=AuditEventAction.CREATE,
         resource_type="Observation",
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         resource_id=result.get("fhir_id"),
         success=result.get("success", False),
-        clinician_id=http_request.headers.get("X-User-Id"),
+        clinician_id=request.headers.get("X-User-Id"),
         ip_address=ip_address,
-        description=f"Created vital sign: {request.vital_type}"
+        description=f"Created vital sign: {body.vital_type}"
     )
 
     return result
@@ -17140,7 +17152,7 @@ async def push_vital(request: VitalWriteRequest, http_request: Request, x_device
 
 @app.post("/api/v1/orders/push")
 @limiter.limit(RATE_LIMIT_WRITE)
-async def push_order(request: OrderWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
+async def push_order(body: OrderWriteRequest, request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push an order to the EHR as a FHIR ServiceRequest (lab/imaging) or MedicationRequest (meds).
 
@@ -17151,24 +17163,24 @@ async def push_order(request: OrderWriteRequest, http_request: Request, x_device
         await require_fresh_voiceprint(x_device_id)
 
     # Determine resource type and build appropriate FHIR resource
-    if request.order_type.upper() == "MEDICATION":
-        resource = build_medication_request(request.model_dump(), request.patient_id)
+    if body.order_type.upper() == "MEDICATION":
+        resource = build_medication_request(body.model_dump(), body.patient_id)
         resource_type = "MedicationRequest"
     else:
-        resource = build_service_request(request.model_dump(), request.patient_id)
+        resource = build_service_request(body.model_dump(), body.patient_id)
         resource_type = "ServiceRequest"
 
     # Push to EHR
     result = await push_resource_to_ehr(resource_type, resource)
 
     # HIPAA Audit: Log order push
-    ip_address = http_request.client.host if http_request.client else None
+    ip_address = request.client.host if request.client else None
     audit_logger.log_phi_access(
         action=AuditAction.PUSH_ORDER,
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         endpoint="/api/v1/orders/push",
         status="success" if result.get("success") else "failure",
-        details=f"Order: {request.order_type} - {request.display_name}",
+        details=f"Order: {body.order_type} - {body.display_name}",
         ip_address=ip_address
     )
 
@@ -17176,12 +17188,12 @@ async def push_order(request: OrderWriteRequest, http_request: Request, x_device
     fhir_audit_logger.log_resource_write(
         action=AuditEventAction.CREATE,
         resource_type=resource_type,
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         resource_id=result.get("fhir_id"),
         success=result.get("success", False),
-        clinician_id=http_request.headers.get("X-User-Id"),
+        clinician_id=request.headers.get("X-User-Id"),
         ip_address=ip_address,
-        description=f"Created order: {request.order_type} - {request.display_name}"
+        description=f"Created order: {body.order_type} - {body.display_name}"
     )
 
     return result
@@ -17189,7 +17201,7 @@ async def push_order(request: OrderWriteRequest, http_request: Request, x_device
 
 @app.post("/api/v1/allergies/push")
 @limiter.limit(RATE_LIMIT_WRITE)
-async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
+async def push_allergy(body: AllergyWriteRequest, request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a new allergy to the EHR as a FHIR AllergyIntolerance.
 
@@ -17200,19 +17212,19 @@ async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_de
         await require_fresh_voiceprint(x_device_id)
 
     # Build FHIR AllergyIntolerance
-    allergy_resource = build_allergy_intolerance(request.model_dump(), request.patient_id)
+    allergy_resource = build_allergy_intolerance(body.model_dump(), body.patient_id)
 
     # Push to EHR
     result = await push_resource_to_ehr("AllergyIntolerance", allergy_resource)
 
     # HIPAA Audit: Log allergy creation
-    ip_address = http_request.client.host if http_request.client else None
+    ip_address = request.client.host if request.client else None
     audit_logger.log_phi_access(
         action=AuditAction.PUSH_ALLERGY,
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         endpoint="/api/v1/allergies/push",
         status="success" if result.get("success") else "failure",
-        details=f"Allergy: {request.substance} (criticality: {request.criticality})",
+        details=f"Allergy: {body.substance} (criticality: {body.criticality})",
         ip_address=ip_address
     )
 
@@ -17220,19 +17232,19 @@ async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_de
     fhir_audit_logger.log_resource_write(
         action=AuditEventAction.CREATE,
         resource_type="AllergyIntolerance",
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         resource_id=result.get("fhir_id"),
         success=result.get("success", False),
-        clinician_id=http_request.headers.get("X-User-Id"),
+        clinician_id=request.headers.get("X-User-Id"),
         ip_address=ip_address,
-        description=f"Created allergy: {request.substance}"
+        description=f"Created allergy: {body.substance}"
     )
 
     return result
 
 
 @app.put("/api/v1/medications/{med_id}/status")
-async def update_medication_status(med_id: str, request: MedicationUpdateRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
+async def update_medication_status(med_id: str, body: MedicationUpdateRequest, request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Update medication status (HIPAA-compliant soft delete).
 
@@ -17249,12 +17261,12 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
     update_resource = {
         "resourceType": "MedicationRequest",
         "id": med_id,
-        "status": request.new_status,
-        "subject": {"reference": f"Patient/{request.patient_id}"}
+        "status": body.new_status,
+        "subject": {"reference": f"Patient/{body.patient_id}"}
     }
 
-    if request.reason:
-        update_resource["statusReason"] = {"text": request.reason}
+    if body.reason:
+        update_resource["statusReason"] = {"text": body.reason}
 
     # Attempt PUT to EHR
     try:
@@ -17272,8 +17284,8 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
                 result = {
                     "success": True,
                     "medication_id": med_id,
-                    "new_status": request.new_status,
-                    "message": f"Medication status updated to {request.new_status}"
+                    "new_status": body.new_status,
+                    "message": f"Medication status updated to {body.new_status}"
                 }
             elif response.status_code == 403:
                 # Sandbox read-only
@@ -17281,7 +17293,7 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
                     "success": True,
                     "simulated": True,
                     "medication_id": med_id,
-                    "new_status": request.new_status,
+                    "new_status": body.new_status,
                     "message": "EHR sandbox is read-only - status change validated but not persisted",
                     "status_code": 403
                 }
@@ -17296,13 +17308,13 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
         result = {"success": False, "error": "Unable to update medication status"}
 
     # HIPAA Audit: Log medication status change
-    ip_address = http_request.client.host if http_request.client else None
+    ip_address = request.client.host if request.client else None
     audit_logger.log_phi_access(
         action=AuditAction.UPDATE_MEDICATION,
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         endpoint=f"/api/v1/medications/{med_id}/status",
         status="success" if result.get("success") else "failure",
-        details=f"Status: {request.new_status}, Reason: {request.reason or 'N/A'}",
+        details=f"Status: {body.new_status}, Reason: {body.reason or 'N/A'}",
         ip_address=ip_address
     )
 
