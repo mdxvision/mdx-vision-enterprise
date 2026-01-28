@@ -32,13 +32,118 @@ except ImportError:
     HTTPX_AVAILABLE = False
 
 # ChromaDB for vector storage
+# Strategy: Try in-process first, fall back to HTTP client for Docker
+CHROMADB_AVAILABLE = False
+CHROMADB_MODE = None  # "in_process" or "http"
+
 try:
     import chromadb
     from chromadb.config import Settings
     CHROMADB_AVAILABLE = True
-except ImportError:
-    CHROMADB_AVAILABLE = False
-    print("Warning: chromadb not installed. Run: pip install chromadb")
+    CHROMADB_MODE = "in_process"
+except (ImportError, Exception):
+    pass
+
+if not CHROMADB_AVAILABLE and HTTPX_AVAILABLE:
+    # Fallback: use ChromaDB Docker container via REST API
+    CHROMADB_MODE = "http"
+    CHROMADB_AVAILABLE = True  # Will verify connection at init time
+
+
+class ChromaDBHttpCollection:
+    """Lightweight ChromaDB collection wrapper using REST API.
+    Talks to ChromaDB Docker container without requiring the chromadb Python package.
+    """
+
+    def __init__(self, base_url: str, collection_name: str):
+        self.base_url = base_url.rstrip("/")
+        self.collection_name = collection_name
+        self._collection_id = None
+
+    def _ensure_collection(self):
+        """Create or get collection, cache the ID."""
+        if self._collection_id:
+            return
+        import httpx
+        # Create or get collection
+        resp = httpx.post(
+            f"{self.base_url}/api/v1/collections",
+            json={"name": self.collection_name, "metadata": {"description": "MDx Vision Medical Knowledge Base"}},
+            timeout=10.0
+        )
+        if resp.status_code in (200, 201):
+            self._collection_id = resp.json().get("id")
+        else:
+            # Try getting existing
+            resp = httpx.get(f"{self.base_url}/api/v1/collections/{self.collection_name}", timeout=10.0)
+            if resp.status_code == 200:
+                self._collection_id = resp.json().get("id")
+            else:
+                raise ConnectionError(f"ChromaDB: Cannot create/get collection: {resp.status_code} {resp.text}")
+
+    def count(self) -> int:
+        self._ensure_collection()
+        import httpx
+        resp = httpx.get(
+            f"{self.base_url}/api/v1/collections/{self._collection_id}/count",
+            timeout=10.0
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        return 0
+
+    def upsert(self, ids: list, embeddings: list, documents: list, metadatas: list):
+        self._ensure_collection()
+        import httpx
+        resp = httpx.post(
+            f"{self.base_url}/api/v1/collections/{self._collection_id}/upsert",
+            json={
+                "ids": ids,
+                "embeddings": embeddings,
+                "documents": documents,
+                "metadatas": metadatas
+            },
+            timeout=30.0
+        )
+        if resp.status_code not in (200, 201):
+            raise Exception(f"ChromaDB upsert failed: {resp.status_code} {resp.text}")
+
+    def query(self, query_embeddings: list, n_results: int = 5, where: dict = None, include: list = None):
+        self._ensure_collection()
+        import httpx
+        body = {
+            "query_embeddings": query_embeddings,
+            "n_results": n_results,
+            "include": include or ["documents", "metadatas", "distances"],
+        }
+        if where:
+            body["where"] = where
+        resp = httpx.post(
+            f"{self.base_url}/api/v1/collections/{self._collection_id}/query",
+            json=body,
+            timeout=30.0
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        raise Exception(f"ChromaDB query failed: {resp.status_code} {resp.text}")
+
+
+class ChromaDBHttpClient:
+    """Minimal ChromaDB HTTP client for Docker container."""
+
+    def __init__(self, host: str = "localhost", port: int = 8100):
+        self.base_url = f"http://{host}:{port}"
+
+    def heartbeat(self) -> bool:
+        import httpx
+        try:
+            resp = httpx.get(f"{self.base_url}/api/v1/heartbeat", timeout=5.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    def get_or_create_collection(self, name: str, metadata: dict = None):
+        return ChromaDBHttpCollection(self.base_url, name)
 
 # Sentence transformers for embeddings (lighter than OpenAI)
 try:
@@ -801,8 +906,20 @@ class RAGEngine:
             return False
 
         try:
-            # Initialize ChromaDB
-            self.client = chromadb.PersistentClient(path=self.persist_directory)
+            # Initialize ChromaDB - try HTTP (Docker) first, then in-process
+            if CHROMADB_MODE == "http":
+                chroma_host = os.environ.get("CHROMADB_HOST", "localhost")
+                chroma_port = int(os.environ.get("CHROMADB_PORT", "8100"))
+                self.client = ChromaDBHttpClient(host=chroma_host, port=chroma_port)
+                if not self.client.heartbeat():
+                    print(f"ChromaDB Docker container not reachable at {chroma_host}:{chroma_port}")
+                    print("Start it with: docker compose up -d")
+                    return False
+                print(f"🐳 Connected to ChromaDB Docker container at {chroma_host}:{chroma_port}")
+            else:
+                # In-process mode (requires full chromadb package)
+                self.client = chromadb.PersistentClient(path=self.persist_directory)
+                print(f"📦 ChromaDB running in-process at {self.persist_directory}")
 
             # Get or create collection
             self.collection = self.client.get_or_create_collection(
@@ -816,10 +933,11 @@ class RAGEngine:
             self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
             self.initialized = True
-            print(f"RAG engine initialized. Documents in collection: {self.collection.count()}")
+            doc_count = self.collection.count()
+            print(f"RAG engine initialized. Documents in collection: {doc_count}")
 
             # Ingest built-in guidelines if collection is empty
-            if self.collection.count() == 0:
+            if doc_count == 0:
                 self._ingest_built_in_guidelines()
 
             return True
