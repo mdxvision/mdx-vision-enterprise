@@ -9588,6 +9588,30 @@ class ConflictResolutionRequest(BaseModel):
     resolution_notes: str
 
 
+class OpenFDAIngestRequest(BaseModel):
+    drug_name: str
+    max_labels: int = 3
+
+
+class OpenFDABatchRequest(BaseModel):
+    drug_names: List[str]
+
+
+class ClinicalTrialsIngestRequest(BaseModel):
+    condition: str
+    max_trials: int = 10
+    status: Optional[str] = "RECRUITING"
+    specialty: Optional[str] = None
+
+
+class RxNormIngestRequest(BaseModel):
+    drug_name: str
+
+
+class RxNormBatchRequest(BaseModel):
+    drug_names: List[str]
+
+
 @app.get("/api/v1/knowledge/analytics")
 async def knowledge_analytics():
     """
@@ -9771,6 +9795,203 @@ async def search_pubmed(query: str, max_results: int = 10):
                 "abstract_preview": a.abstract[:200] + "..." if len(a.abstract) > 200 else a.abstract
             }
             for a in articles
+        ]
+    }
+
+
+# ─── OpenFDA Drug Label Endpoints (Tier 1) ────────────────────────────────────
+
+@app.post("/api/v1/knowledge/openfda/ingest")
+async def ingest_openfda_drug(request: OpenFDAIngestRequest):
+    """
+    Search OpenFDA and ingest drug labels (indications, contraindications,
+    warnings, dosing, interactions, adverse reactions).
+    Free API, no key required.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import ingest_from_openfda
+
+    count, ids = await ingest_from_openfda(
+        drug_name=request.drug_name,
+        max_labels=request.max_labels
+    )
+
+    log_phi_access(
+        action="OPENFDA_INGEST",
+        patient_id="N/A",
+        details=f"Ingested {count} drug labels for: {request.drug_name}"
+    )
+
+    return {
+        "labels_ingested": count,
+        "label_ids": ids,
+        "drug_name": request.drug_name,
+        "source": "OpenFDA (U.S. FDA)"
+    }
+
+
+@app.post("/api/v1/knowledge/openfda/batch")
+async def ingest_openfda_batch(request: OpenFDABatchRequest):
+    """Ingest multiple drugs from OpenFDA in one call."""
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import ingest_openfda_batch as do_batch
+
+    results = await do_batch(request.drug_names)
+
+    total = sum(count for count, _ in results.values())
+    log_phi_access(
+        action="OPENFDA_BATCH_INGEST",
+        patient_id="N/A",
+        details=f"Batch ingested {total} labels for {len(request.drug_names)} drugs"
+    )
+
+    return {
+        "total_ingested": total,
+        "drugs": {
+            drug: {"count": count, "ids": ids}
+            for drug, (count, ids) in results.items()
+        },
+        "source": "OpenFDA (U.S. FDA)"
+    }
+
+
+# ─── ClinicalTrials.gov Endpoints (Tier 1) ───────────────────────────────────
+
+@app.post("/api/v1/knowledge/trials/ingest")
+async def ingest_clinical_trials(request: ClinicalTrialsIngestRequest):
+    """
+    Search ClinicalTrials.gov and ingest trial data.
+    Free API v2, no key required.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import ingest_from_clinical_trials
+
+    count, nct_ids = await ingest_from_clinical_trials(
+        condition=request.condition,
+        max_trials=request.max_trials,
+        status=request.status,
+        specialty=request.specialty
+    )
+
+    log_phi_access(
+        action="CLINICAL_TRIALS_INGEST",
+        patient_id="N/A",
+        details=f"Ingested {count} trials for: {request.condition}"
+    )
+
+    return {
+        "trials_ingested": count,
+        "nct_ids": nct_ids,
+        "condition": request.condition,
+        "status_filter": request.status,
+        "source": "ClinicalTrials.gov"
+    }
+
+
+@app.get("/api/v1/knowledge/trials/search")
+async def search_clinical_trials(condition: str, max_results: int = 10, status: Optional[str] = "RECRUITING"):
+    """Search ClinicalTrials.gov without ingesting (preview mode)."""
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager as km
+
+    studies = await km.search_clinical_trials(condition, max_results, status)
+    return {
+        "condition": condition,
+        "results": [
+            {
+                "nct_id": s.get("protocolSection", {}).get("identificationModule", {}).get("nctId", ""),
+                "title": s.get("protocolSection", {}).get("identificationModule", {}).get("briefTitle", ""),
+                "status": s.get("protocolSection", {}).get("statusModule", {}).get("overallStatus", ""),
+                "phase": s.get("protocolSection", {}).get("designModule", {}).get("phases", []),
+            }
+            for s in studies
+        ]
+    }
+
+
+# ─── RxNorm / UMLS Endpoints (Tier 1) ────────────────────────────────────────
+
+@app.post("/api/v1/knowledge/rxnorm/ingest")
+async def ingest_rxnorm_drug(request: RxNormIngestRequest):
+    """
+    Search RxNorm and ingest drug terminology + interactions.
+    Free API via NLM, no key required.
+    """
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import ingest_from_rxnorm
+
+    count, rxcuis = await ingest_from_rxnorm(request.drug_name)
+
+    log_phi_access(
+        action="RXNORM_INGEST",
+        patient_id="N/A",
+        details=f"Ingested {count} RxNorm entries for: {request.drug_name}"
+    )
+
+    return {
+        "entries_ingested": count,
+        "rxcuis": rxcuis,
+        "drug_name": request.drug_name,
+        "source": "NLM RxNorm / DrugBank"
+    }
+
+
+@app.post("/api/v1/knowledge/rxnorm/batch")
+async def ingest_rxnorm_batch(request: RxNormBatchRequest):
+    """Ingest multiple drugs from RxNorm in one call."""
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import ingest_rxnorm_batch as do_batch
+
+    results = await do_batch(request.drug_names)
+
+    total = sum(count for count, _ in results.values())
+    log_phi_access(
+        action="RXNORM_BATCH_INGEST",
+        patient_id="N/A",
+        details=f"Batch ingested {total} RxNorm entries for {len(request.drug_names)} drugs"
+    )
+
+    return {
+        "total_ingested": total,
+        "drugs": {
+            drug: {"count": count, "rxcuis": ids}
+            for drug, (count, ids) in results.items()
+        },
+        "source": "NLM RxNorm / DrugBank"
+    }
+
+
+@app.get("/api/v1/knowledge/rxnorm/search")
+async def search_rxnorm(drug_name: str):
+    """Search RxNorm without ingesting (preview mode)."""
+    if not RAG_AVAILABLE:
+        raise HTTPException(status_code=503, detail="RAG system not available")
+
+    from rag import knowledge_manager as km
+
+    results = await km.search_rxnorm(drug_name)
+    return {
+        "drug_name": drug_name,
+        "results": [
+            {
+                "rxcui": r["rxcui"],
+                "name": r["name"],
+                "interactions_count": len(r["interactions"]),
+                "interactions_preview": r["interactions"][:5]
+            }
+            for r in results
         ]
     }
 

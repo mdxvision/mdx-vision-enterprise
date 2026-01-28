@@ -63,6 +63,9 @@ class SourceType(str, Enum):
     AHA_GUIDELINE = "aha_guideline"
     USPSTF = "uspstf"
     CUSTOM = "custom"
+    OPENFDA = "openfda"
+    CLINICAL_TRIAL = "clinical_trial"
+    UMLS_TERMINOLOGY = "umls_terminology"
 
 
 class GuidelineStatus(str, Enum):
@@ -1398,6 +1401,434 @@ class KnowledgeManager:
         return len(ingested_pmids), ingested_pmids
 
     # ─────────────────────────────────────────────────────────────────────────────
+    # OPENFDA DRUG LABEL INGESTION (Tier 1)
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    async def search_openfda(
+        self,
+        drug_name: str,
+        max_results: int = 5
+    ) -> List[Dict]:
+        """
+        Search OpenFDA for drug label information.
+        Free API, no key required. https://api.fda.gov
+        """
+        if not HTTPX_AVAILABLE:
+            print("httpx not available for OpenFDA API calls")
+            return []
+
+        base_url = "https://api.fda.gov/drug/label.json"
+        # Search by generic or brand name
+        search_query = f'(openfda.generic_name:"{drug_name}"+openfda.brand_name:"{drug_name}")'
+        url = f"{base_url}?search={search_query}&limit={max_results}"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    return []
+                data = response.json()
+                return data.get("results", [])
+            except Exception as e:
+                print(f"OpenFDA search error: {e}")
+                return []
+
+    async def ingest_openfda_drug(
+        self,
+        drug_name: str,
+        max_labels: int = 3
+    ) -> Tuple[int, List[str]]:
+        """
+        Search OpenFDA and ingest drug labels into the knowledge base.
+        Extracts: indications, contraindications, warnings, dosing, interactions, adverse reactions.
+
+        Returns:
+            Tuple of (count ingested, list of drug label IDs)
+        """
+        results = await self.search_openfda(drug_name, max_labels)
+        ingested_ids = []
+
+        for result in results:
+            try:
+                # Extract OpenFDA metadata
+                openfda = result.get("openfda", {})
+                generic_names = openfda.get("generic_name", ["Unknown"])
+                brand_names = openfda.get("brand_name", [])
+                label_id = result.get("id", hashlib.md5(drug_name.encode()).hexdigest()[:12])
+
+                # Build comprehensive drug content from label sections
+                sections = []
+                section_map = {
+                    "indications_and_usage": "INDICATIONS AND USAGE",
+                    "contraindications": "CONTRAINDICATIONS",
+                    "warnings_and_cautions": "WARNINGS AND PRECAUTIONS",
+                    "warnings": "WARNINGS",
+                    "adverse_reactions": "ADVERSE REACTIONS",
+                    "drug_interactions": "DRUG INTERACTIONS",
+                    "dosage_and_administration": "DOSAGE AND ADMINISTRATION",
+                    "boxed_warning": "BLACK BOX WARNING",
+                    "pregnancy": "PREGNANCY",
+                    "nursing_mothers": "NURSING MOTHERS",
+                    "pediatric_use": "PEDIATRIC USE",
+                    "geriatric_use": "GERIATRIC USE",
+                    "overdosage": "OVERDOSAGE",
+                    "clinical_pharmacology": "CLINICAL PHARMACOLOGY",
+                }
+
+                for key, heading in section_map.items():
+                    value = result.get(key, [])
+                    if value:
+                        text = value[0] if isinstance(value, list) else value
+                        # Truncate very long sections
+                        if len(text) > 2000:
+                            text = text[:2000] + "..."
+                        sections.append(f"## {heading}\n{text}")
+
+                if not sections:
+                    continue
+
+                generic = generic_names[0] if generic_names else drug_name
+                brand = f" ({brand_names[0]})" if brand_names else ""
+                title = f"FDA Drug Label: {generic}{brand}"
+                content = f"# {title}\n\n" + "\n\n".join(sections)
+
+                doc = MedicalDocument(
+                    id=f"openfda-{label_id}",
+                    title=title,
+                    content=content,
+                    source_type=SourceType.OPENFDA,
+                    source_name="U.S. FDA / OpenFDA",
+                    source_url=f"https://api.fda.gov/drug/label.json?search=id:{label_id}",
+                    publication_date=result.get("effective_time", ""),
+                    keywords=[generic] + brand_names,
+                    specialty="pharmacology"
+                )
+
+                if self.rag_engine.add_document(doc):
+                    ingested_ids.append(label_id)
+
+            except Exception as e:
+                print(f"OpenFDA ingestion error for {drug_name}: {e}")
+                continue
+
+        return len(ingested_ids), ingested_ids
+
+    async def ingest_openfda_batch(
+        self,
+        drug_names: List[str]
+    ) -> Dict[str, Tuple[int, List[str]]]:
+        """Ingest multiple drugs from OpenFDA."""
+        results = {}
+        for drug in drug_names:
+            count, ids = await self.ingest_openfda_drug(drug)
+            results[drug] = (count, ids)
+            # Rate limit: OpenFDA allows 240 requests/min without key
+            await asyncio.sleep(0.3)
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # CLINICALTRIALS.GOV INGESTION (Tier 1)
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    async def search_clinical_trials(
+        self,
+        condition: str,
+        max_results: int = 10,
+        status: Optional[str] = None
+    ) -> List[Dict]:
+        """
+        Search ClinicalTrials.gov API v2 for trials.
+        Free API, no key required. https://clinicaltrials.gov/api/v2
+
+        Args:
+            condition: Disease/condition to search
+            max_results: Max trials to return
+            status: Filter by status (RECRUITING, COMPLETED, etc.)
+        """
+        if not HTTPX_AVAILABLE:
+            print("httpx not available for ClinicalTrials.gov API calls")
+            return []
+
+        base_url = "https://clinicaltrials.gov/api/v2/studies"
+        params = {
+            "query.cond": condition,
+            "pageSize": max_results,
+            "format": "json",
+            "fields": "NCTId,BriefTitle,OfficialTitle,BriefSummary,Condition,InterventionName,Phase,OverallStatus,StartDate,PrimaryCompletionDate,LeadSponsorName,LocationFacility,LocationCity,LocationState,EligibilityCriteria",
+        }
+        if status:
+            params["filter.overallStatus"] = status
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(base_url, params=params)
+                if response.status_code != 200:
+                    return []
+                data = response.json()
+                return data.get("studies", [])
+            except Exception as e:
+                print(f"ClinicalTrials.gov search error: {e}")
+                return []
+
+    async def ingest_clinical_trials(
+        self,
+        condition: str,
+        max_trials: int = 10,
+        status: Optional[str] = "RECRUITING",
+        specialty: Optional[str] = None
+    ) -> Tuple[int, List[str]]:
+        """
+        Search ClinicalTrials.gov and ingest trials into the knowledge base.
+
+        Returns:
+            Tuple of (count ingested, list of NCT IDs)
+        """
+        studies = await self.search_clinical_trials(condition, max_trials, status)
+        ingested_ncts = []
+
+        for study in studies:
+            try:
+                protocol = study.get("protocolSection", {})
+                id_module = protocol.get("identificationModule", {})
+                desc_module = protocol.get("descriptionModule", {})
+                status_module = protocol.get("statusModule", {})
+                design_module = protocol.get("designModule", {})
+                arms_module = protocol.get("armsInterventionsModule", {})
+                eligibility_module = protocol.get("eligibilityModule", {})
+                sponsor_module = protocol.get("sponsorCollaboratorsModule", {})
+                contacts_module = protocol.get("contactsLocationsModule", {})
+
+                nct_id = id_module.get("nctId", "")
+                if not nct_id:
+                    continue
+
+                title = id_module.get("officialTitle") or id_module.get("briefTitle", "Unknown Trial")
+                summary = desc_module.get("briefSummary", "")
+                overall_status = status_module.get("overallStatus", "")
+                phases = design_module.get("phases", [])
+
+                # Extract interventions
+                interventions = []
+                for arm in arms_module.get("interventions", []):
+                    name = arm.get("name", "")
+                    itype = arm.get("type", "")
+                    if name:
+                        interventions.append(f"{itype}: {name}" if itype else name)
+
+                # Extract locations (first 5)
+                locations = []
+                for loc in (contacts_module.get("locations", []) or [])[:5]:
+                    facility = loc.get("facility", "")
+                    city = loc.get("city", "")
+                    state = loc.get("state", "")
+                    if facility:
+                        locations.append(f"{facility}, {city}, {state}".strip(", "))
+
+                # Extract sponsor
+                lead_sponsor = sponsor_module.get("leadSponsor", {}).get("name", "")
+
+                # Extract eligibility
+                eligibility = eligibility_module.get("eligibilityCriteria", "")
+                if len(eligibility) > 1500:
+                    eligibility = eligibility[:1500] + "..."
+
+                # Build content
+                content_parts = [
+                    f"# Clinical Trial: {title}",
+                    f"**NCT ID:** {nct_id}",
+                    f"**Status:** {overall_status}",
+                    f"**Phase:** {', '.join(phases) if phases else 'N/A'}",
+                    f"**Sponsor:** {lead_sponsor}",
+                ]
+                if interventions:
+                    content_parts.append(f"**Interventions:** {'; '.join(interventions)}")
+                if summary:
+                    content_parts.append(f"\n## Summary\n{summary}")
+                if locations:
+                    content_parts.append(f"\n## Locations\n" + "\n".join(f"- {loc}" for loc in locations))
+                if eligibility:
+                    content_parts.append(f"\n## Eligibility Criteria\n{eligibility}")
+
+                content = "\n".join(content_parts)
+
+                conditions = protocol.get("conditionsModule", {}).get("conditions", [])
+
+                doc = MedicalDocument(
+                    id=f"trial-{nct_id}",
+                    title=f"Clinical Trial {nct_id}: {title[:100]}",
+                    content=content,
+                    source_type=SourceType.CLINICAL_TRIAL,
+                    source_name="ClinicalTrials.gov",
+                    source_url=f"https://clinicaltrials.gov/study/{nct_id}",
+                    publication_date=status_module.get("studyFirstPostDateStruct", {}).get("date", ""),
+                    keywords=conditions,
+                    specialty=specialty
+                )
+
+                if self.rag_engine.add_document(doc):
+                    ingested_ncts.append(nct_id)
+
+            except Exception as e:
+                print(f"ClinicalTrials.gov ingestion error: {e}")
+                continue
+
+        return len(ingested_ncts), ingested_ncts
+
+    # ─────────────────────────────────────────────────────────────────────────────
+    # UMLS / RXNORM TERMINOLOGY INGESTION (Tier 1)
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    async def search_rxnorm(
+        self,
+        drug_name: str
+    ) -> List[Dict]:
+        """
+        Search RxNorm for drug information (free, no API key).
+        https://rxnav.nlm.nih.gov/REST
+
+        Returns drug concepts with RxCUI, name, and related info.
+        """
+        if not HTTPX_AVAILABLE:
+            print("httpx not available for RxNorm API calls")
+            return []
+
+        base_url = "https://rxnav.nlm.nih.gov/REST"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                # Get RxCUI for the drug
+                approx_url = f"{base_url}/approximateTerm.json?term={drug_name}&maxEntries=3"
+                response = await client.get(approx_url)
+                if response.status_code != 200:
+                    return []
+
+                data = response.json()
+                candidates = data.get("approximateGroup", {}).get("candidate", [])
+                if not candidates:
+                    return []
+
+                results = []
+                for candidate in candidates[:3]:
+                    rxcui = candidate.get("rxcui", "")
+                    if not rxcui:
+                        continue
+
+                    # Get drug properties
+                    props_url = f"{base_url}/rxcui/{rxcui}/allProperties.json?prop=all"
+                    props_response = await client.get(props_url)
+                    properties = {}
+                    if props_response.status_code == 200:
+                        props_data = props_response.json()
+                        for prop in props_data.get("propConceptGroup", {}).get("propConcept", []):
+                            properties[prop.get("propName", "")] = prop.get("propValue", "")
+
+                    # Get drug interactions
+                    interactions_url = f"{base_url}/interaction/interaction.json?rxcui={rxcui}&sources=DrugBank"
+                    interactions_response = await client.get(interactions_url)
+                    interactions = []
+                    if interactions_response.status_code == 200:
+                        int_data = interactions_response.json()
+                        for group in int_data.get("interactionTypeGroup", []):
+                            for itype in group.get("interactionType", []):
+                                for pair in itype.get("interactionPair", []):
+                                    desc = pair.get("description", "")
+                                    if desc:
+                                        interactions.append(desc)
+
+                    results.append({
+                        "rxcui": rxcui,
+                        "name": candidate.get("name", drug_name),
+                        "score": candidate.get("score", ""),
+                        "properties": properties,
+                        "interactions": interactions[:20]  # Limit to 20
+                    })
+
+                    await asyncio.sleep(0.2)  # Rate limit
+
+                return results
+
+            except Exception as e:
+                print(f"RxNorm search error: {e}")
+                return []
+
+    async def ingest_rxnorm_drug(
+        self,
+        drug_name: str
+    ) -> Tuple[int, List[str]]:
+        """
+        Search RxNorm and ingest drug terminology + interactions into knowledge base.
+
+        Returns:
+            Tuple of (count ingested, list of RxCUI IDs)
+        """
+        results = await self.search_rxnorm(drug_name)
+        ingested_ids = []
+
+        for result in results:
+            try:
+                rxcui = result["rxcui"]
+                name = result["name"]
+                properties = result["properties"]
+                interactions = result["interactions"]
+
+                # Build content
+                content_parts = [
+                    f"# Drug: {name}",
+                    f"**RxCUI:** {rxcui}",
+                ]
+
+                # Add properties
+                useful_props = ["TTY", "RxNorm Name", "AVAILABLE_STRENGTH", "DOSE_FORM", "ROUTE"]
+                for prop_name in useful_props:
+                    if prop_name in properties:
+                        content_parts.append(f"**{prop_name}:** {properties[prop_name]}")
+
+                # Add all other properties
+                for key, val in properties.items():
+                    if key not in useful_props and val:
+                        content_parts.append(f"**{key}:** {val}")
+
+                # Add interactions
+                if interactions:
+                    content_parts.append(f"\n## Drug Interactions ({len(interactions)} found)")
+                    for interaction in interactions:
+                        content_parts.append(f"- {interaction}")
+
+                content = "\n".join(content_parts)
+
+                doc = MedicalDocument(
+                    id=f"rxnorm-{rxcui}",
+                    title=f"RxNorm Drug: {name} (RxCUI: {rxcui})",
+                    content=content,
+                    source_type=SourceType.UMLS_TERMINOLOGY,
+                    source_name="NLM RxNorm / DrugBank",
+                    source_url=f"https://rxnav.nlm.nih.gov/REST/rxcui/{rxcui}",
+                    keywords=[name, drug_name],
+                    specialty="pharmacology"
+                )
+
+                if self.rag_engine.add_document(doc):
+                    ingested_ids.append(rxcui)
+
+            except Exception as e:
+                print(f"RxNorm ingestion error for {drug_name}: {e}")
+                continue
+
+        return len(ingested_ids), ingested_ids
+
+    async def ingest_rxnorm_batch(
+        self,
+        drug_names: List[str]
+    ) -> Dict[str, Tuple[int, List[str]]]:
+        """Ingest multiple drugs from RxNorm."""
+        results = {}
+        for drug in drug_names:
+            count, ids = await self.ingest_rxnorm_drug(drug)
+            results[drug] = (count, ids)
+            await asyncio.sleep(0.5)  # Rate limit for RxNorm
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────────
     # CITATION FEEDBACK
     # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1722,6 +2153,45 @@ async def ingest_from_pubmed(
 ) -> Tuple[int, List[str]]:
     """Ingest articles from PubMed."""
     return await knowledge_manager.ingest_pubmed_articles(query, max_articles, specialty)
+
+
+async def ingest_from_openfda(
+    drug_name: str,
+    max_labels: int = 3
+) -> Tuple[int, List[str]]:
+    """Ingest drug labels from OpenFDA."""
+    return await knowledge_manager.ingest_openfda_drug(drug_name, max_labels)
+
+
+async def ingest_openfda_batch(
+    drug_names: List[str]
+) -> Dict[str, Tuple[int, List[str]]]:
+    """Ingest multiple drugs from OpenFDA."""
+    return await knowledge_manager.ingest_openfda_batch(drug_names)
+
+
+async def ingest_from_clinical_trials(
+    condition: str,
+    max_trials: int = 10,
+    status: Optional[str] = "RECRUITING",
+    specialty: Optional[str] = None
+) -> Tuple[int, List[str]]:
+    """Ingest clinical trials from ClinicalTrials.gov."""
+    return await knowledge_manager.ingest_clinical_trials(condition, max_trials, status, specialty)
+
+
+async def ingest_from_rxnorm(
+    drug_name: str
+) -> Tuple[int, List[str]]:
+    """Ingest drug terminology and interactions from RxNorm."""
+    return await knowledge_manager.ingest_rxnorm_drug(drug_name)
+
+
+async def ingest_rxnorm_batch(
+    drug_names: List[str]
+) -> Dict[str, Tuple[int, List[str]]]:
+    """Ingest multiple drugs from RxNorm."""
+    return await knowledge_manager.ingest_rxnorm_batch(drug_names)
 
 
 def get_knowledge_analytics() -> Dict:
