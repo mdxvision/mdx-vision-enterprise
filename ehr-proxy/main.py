@@ -18269,6 +18269,616 @@ async def tts_status():
             return {"available": False, "error": "No TTS engine. Install: pip install gTTS"}
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# VOICE MACROS - Nuance-Style Custom Shortcuts (Feature #99)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Allows doctors to create custom voice shortcuts for:
+# - Text expansion: "normal heart" → full cardiac exam documentation
+# - Action triggers: "my cardio panel" → order CBC, BMP, Lipid, HbA1c
+# - Hybrid: text + action combined
+
+class MacroType(str, Enum):
+    TEXT_EXPANSION = "text_expansion"
+    ACTION = "action"
+    HYBRID = "hybrid"
+
+class VoiceMacro(BaseModel):
+    id: str = ""
+    clinician_id: str
+    trigger_phrase: str
+    aliases: List[str] = []
+    macro_type: MacroType = MacroType.TEXT_EXPANSION
+    expansion_text: Optional[str] = None
+    action_type: Optional[str] = None  # ORDER_SET, NAVIGATION, CUSTOM
+    action_payload: Optional[dict] = None
+    specialty: Optional[str] = None
+    category: str = "general"
+    is_system_default: bool = False
+    usage_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+class MacroCreateRequest(BaseModel):
+    trigger_phrase: str
+    aliases: List[str] = []
+    macro_type: MacroType = MacroType.TEXT_EXPANSION
+    expansion_text: Optional[str] = None
+    action_type: Optional[str] = None
+    action_payload: Optional[dict] = None
+    specialty: Optional[str] = None
+    category: str = "general"
+
+class MacroExpandRequest(BaseModel):
+    phrase: str
+    patient_id: Optional[str] = None
+    context: Optional[dict] = None
+
+# In-memory macro storage (per clinician)
+# Structure: {clinician_id: {macro_id: VoiceMacro}}
+_voice_macros: Dict[str, Dict[str, VoiceMacro]] = {}
+
+# System default macros by specialty
+SYSTEM_DEFAULT_MACROS = {
+    "general": [
+        {
+            "trigger_phrase": "normal heart",
+            "aliases": ["nrml heart", "heart normal", "cardiac normal"],
+            "macro_type": "text_expansion",
+            "expansion_text": "Heart: Regular rate and rhythm. No murmurs, rubs, or gallops. S1 and S2 normal. No JVD. No peripheral edema.",
+            "category": "physical_exam"
+        },
+        {
+            "trigger_phrase": "normal lungs",
+            "aliases": ["lungs normal", "lungs clear", "clear lungs"],
+            "macro_type": "text_expansion",
+            "expansion_text": "Lungs: Clear to auscultation bilaterally. No wheezes, rales, or rhonchi. Good air movement. No respiratory distress.",
+            "category": "physical_exam"
+        },
+        {
+            "trigger_phrase": "normal abdomen",
+            "aliases": ["abdomen normal", "belly normal"],
+            "macro_type": "text_expansion",
+            "expansion_text": "Abdomen: Soft, non-tender, non-distended. No masses or hepatosplenomegaly. Bowel sounds normoactive in all four quadrants. No guarding or rebound.",
+            "category": "physical_exam"
+        },
+        {
+            "trigger_phrase": "normal neuro",
+            "aliases": ["neuro normal", "neurological normal"],
+            "macro_type": "text_expansion",
+            "expansion_text": "Neurological: Alert and oriented x3. Cranial nerves II-XII intact. Motor strength 5/5 in all extremities. Sensation intact. Reflexes 2+ and symmetric. Gait normal.",
+            "category": "physical_exam"
+        },
+        {
+            "trigger_phrase": "normal skin",
+            "aliases": ["skin normal", "integumentary normal"],
+            "macro_type": "text_expansion",
+            "expansion_text": "Skin: Warm, dry, intact. No rashes, lesions, or ulcers. Good turgor. No cyanosis, pallor, or jaundice.",
+            "category": "physical_exam"
+        },
+        {
+            "trigger_phrase": "normal HEENT",
+            "aliases": ["HEENT normal", "head normal"],
+            "macro_type": "text_expansion",
+            "expansion_text": "HEENT: Normocephalic, atraumatic. Pupils equal, round, reactive to light. Conjunctivae clear. TMs normal bilaterally. Oropharynx clear without erythema or exudates. Neck supple, no lymphadenopathy.",
+            "category": "physical_exam"
+        },
+        {
+            "trigger_phrase": "complete normal PE",
+            "aliases": ["normal physical", "normal exam", "PE normal"],
+            "macro_type": "text_expansion",
+            "expansion_text": """PHYSICAL EXAMINATION:
+General: Well-appearing, in no acute distress. Alert and cooperative.
+Vital Signs: As documented.
+HEENT: Normocephalic, atraumatic. PERRLA. TMs normal. Oropharynx clear.
+Neck: Supple, no lymphadenopathy, no thyromegaly.
+Cardiovascular: Regular rate and rhythm. No murmurs, rubs, or gallops.
+Respiratory: Clear to auscultation bilaterally. No wheezes or rales.
+Abdomen: Soft, non-tender, non-distended. No masses. BS normoactive.
+Extremities: No edema, cyanosis, or clubbing. Pulses 2+ throughout.
+Neurological: Alert and oriented x3. CN II-XII intact. Motor and sensory intact.
+Skin: Warm, dry, intact. No rashes or lesions.""",
+            "category": "physical_exam"
+        },
+    ],
+    "cardiology": [
+        {
+            "trigger_phrase": "chest pain workup",
+            "aliases": ["CP workup", "cardiac workup"],
+            "macro_type": "action",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "lab", "code": "TROP", "display": "Troponin I/T"},
+                    {"type": "lab", "code": "BNP", "display": "BNP/NT-proBNP"},
+                    {"type": "lab", "code": "CBC", "display": "Complete Blood Count"},
+                    {"type": "lab", "code": "BMP", "display": "Basic Metabolic Panel"},
+                    {"type": "imaging", "code": "EKG", "display": "12-Lead ECG"},
+                    {"type": "imaging", "code": "CXR", "display": "Chest X-Ray PA/Lat"}
+                ],
+                "priority": "stat"
+            },
+            "category": "orders"
+        },
+        {
+            "trigger_phrase": "my cardio panel",
+            "aliases": ["cardiac panel", "heart labs"],
+            "macro_type": "action",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "lab", "code": "LIPID", "display": "Lipid Panel"},
+                    {"type": "lab", "code": "HBA1C", "display": "Hemoglobin A1c"},
+                    {"type": "lab", "code": "TSH", "display": "TSH"},
+                    {"type": "lab", "code": "BMP", "display": "Basic Metabolic Panel"},
+                    {"type": "lab", "code": "CBC", "display": "Complete Blood Count"}
+                ],
+                "priority": "routine"
+            },
+            "category": "orders"
+        },
+        {
+            "trigger_phrase": "afib assessment",
+            "aliases": ["atrial fibrillation", "a fib"],
+            "macro_type": "hybrid",
+            "expansion_text": "Assessment: Atrial fibrillation. CHA2DS2-VASc score calculated. Anticoagulation status reviewed. Rate vs rhythm control strategy discussed.",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "lab", "code": "TSH", "display": "TSH"},
+                    {"type": "lab", "code": "BMP", "display": "Basic Metabolic Panel"},
+                    {"type": "imaging", "code": "ECHO", "display": "Echocardiogram"}
+                ]
+            },
+            "category": "assessment"
+        },
+    ],
+    "emergency": [
+        {
+            "trigger_phrase": "sepsis workup",
+            "aliases": ["sepsis bundle", "septic workup"],
+            "macro_type": "action",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "lab", "code": "LACTATE", "display": "Lactate"},
+                    {"type": "lab", "code": "BCULT", "display": "Blood Cultures x2"},
+                    {"type": "lab", "code": "CBC", "display": "Complete Blood Count"},
+                    {"type": "lab", "code": "BMP", "display": "Basic Metabolic Panel"},
+                    {"type": "lab", "code": "UA", "display": "Urinalysis"},
+                    {"type": "lab", "code": "PROCAL", "display": "Procalcitonin"},
+                    {"type": "imaging", "code": "CXR", "display": "Chest X-Ray"}
+                ],
+                "priority": "stat"
+            },
+            "category": "orders"
+        },
+        {
+            "trigger_phrase": "trauma primary",
+            "aliases": ["primary survey", "ABCDE"],
+            "macro_type": "text_expansion",
+            "expansion_text": """PRIMARY SURVEY:
+A - Airway: Patent, no obstruction, cervical spine protected.
+B - Breathing: Bilateral breath sounds present and equal. No tension pneumothorax.
+C - Circulation: Pulses present. No active external hemorrhage. Two large-bore IVs established.
+D - Disability: GCS [__]. Pupils equal and reactive. Gross motor intact.
+E - Exposure: Full body examined. Logrolled for spine evaluation.""",
+            "category": "documentation"
+        },
+        {
+            "trigger_phrase": "stroke workup",
+            "aliases": ["CVA workup", "code stroke"],
+            "macro_type": "action",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "imaging", "code": "CTNC", "display": "CT Head without contrast"},
+                    {"type": "imaging", "code": "CTA", "display": "CTA Head/Neck"},
+                    {"type": "lab", "code": "CBC", "display": "Complete Blood Count"},
+                    {"type": "lab", "code": "BMP", "display": "Basic Metabolic Panel"},
+                    {"type": "lab", "code": "COAG", "display": "PT/INR/PTT"},
+                    {"type": "lab", "code": "TROP", "display": "Troponin"},
+                    {"type": "imaging", "code": "EKG", "display": "12-Lead ECG"}
+                ],
+                "priority": "stat"
+            },
+            "category": "orders"
+        },
+    ],
+    "primary_care": [
+        {
+            "trigger_phrase": "annual labs",
+            "aliases": ["yearly labs", "wellness labs", "routine labs"],
+            "macro_type": "action",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "lab", "code": "CBC", "display": "Complete Blood Count"},
+                    {"type": "lab", "code": "CMP", "display": "Comprehensive Metabolic Panel"},
+                    {"type": "lab", "code": "LIPID", "display": "Lipid Panel"},
+                    {"type": "lab", "code": "HBA1C", "display": "Hemoglobin A1c"},
+                    {"type": "lab", "code": "TSH", "display": "TSH"},
+                    {"type": "lab", "code": "UA", "display": "Urinalysis"}
+                ],
+                "priority": "routine"
+            },
+            "category": "orders"
+        },
+        {
+            "trigger_phrase": "diabetes followup",
+            "aliases": ["dm followup", "diabetic check"],
+            "macro_type": "hybrid",
+            "expansion_text": "Diabetes mellitus type 2: Blood glucose control reviewed. Current A1c discussed. Medication adherence assessed. Complications screening up to date. Diet and exercise counseled.",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "lab", "code": "HBA1C", "display": "Hemoglobin A1c"},
+                    {"type": "lab", "code": "BMP", "display": "Basic Metabolic Panel"},
+                    {"type": "lab", "code": "UMALB", "display": "Urine Microalbumin"}
+                ]
+            },
+            "category": "assessment"
+        },
+        {
+            "trigger_phrase": "well visit complete",
+            "aliases": ["annual physical", "wellness exam"],
+            "macro_type": "text_expansion",
+            "expansion_text": """ANNUAL WELLNESS VISIT:
+Health Maintenance:
+- Immunizations reviewed and updated as needed
+- Cancer screenings discussed (colonoscopy, mammogram, Pap smear as appropriate)
+- Cardiovascular risk assessment completed
+- Depression screening: PHQ-2 negative
+- Fall risk assessment: Low risk
+- Cognitive screening: Normal
+
+Counseling:
+- Diet: Discussed importance of balanced nutrition
+- Exercise: Encouraged 150 minutes moderate activity weekly
+- Tobacco: Never smoker / Cessation counseled
+- Alcohol: Moderate use / Abstinent
+- Safety: Seatbelt use, smoke detectors discussed
+
+Follow-up: Return in 1 year for annual wellness or sooner if concerns.""",
+            "category": "documentation"
+        },
+    ],
+    "orthopedics": [
+        {
+            "trigger_phrase": "normal MSK exam",
+            "aliases": ["MSK normal", "ortho normal"],
+            "macro_type": "text_expansion",
+            "expansion_text": "Musculoskeletal: Full range of motion in all joints. No joint swelling, erythema, or effusion. Strength 5/5 throughout. Gait normal. Spine non-tender with full ROM. No leg length discrepancy.",
+            "category": "physical_exam"
+        },
+        {
+            "trigger_phrase": "back pain workup",
+            "aliases": ["lumbar workup", "spine workup"],
+            "macro_type": "action",
+            "action_type": "ORDER_SET",
+            "action_payload": {
+                "orders": [
+                    {"type": "imaging", "code": "XRLS", "display": "X-Ray Lumbar Spine"},
+                    {"type": "lab", "code": "CBC", "display": "Complete Blood Count"},
+                    {"type": "lab", "code": "ESR", "display": "ESR"},
+                    {"type": "lab", "code": "CRP", "display": "C-Reactive Protein"}
+                ],
+                "priority": "routine"
+            },
+            "category": "orders"
+        },
+    ],
+}
+
+def _get_user_macros(clinician_id: str) -> Dict[str, VoiceMacro]:
+    """Get or initialize macro storage for a clinician"""
+    if clinician_id not in _voice_macros:
+        _voice_macros[clinician_id] = {}
+    return _voice_macros[clinician_id]
+
+def _find_matching_macro(phrase: str, clinician_id: str) -> Optional[VoiceMacro]:
+    """Find a macro matching the given phrase (trigger or alias)"""
+    phrase_lower = phrase.lower().strip()
+    user_macros = _get_user_macros(clinician_id)
+
+    # Check user's custom macros first
+    for macro in user_macros.values():
+        if macro.trigger_phrase.lower() == phrase_lower:
+            return macro
+        if phrase_lower in [a.lower() for a in macro.aliases]:
+            return macro
+
+    # Check system defaults
+    for specialty, macros in SYSTEM_DEFAULT_MACROS.items():
+        for macro_data in macros:
+            if macro_data["trigger_phrase"].lower() == phrase_lower:
+                return VoiceMacro(
+                    id=f"system-{specialty}-{macro_data['trigger_phrase'].replace(' ', '-')}",
+                    clinician_id="system",
+                    is_system_default=True,
+                    **macro_data
+                )
+            if phrase_lower in [a.lower() for a in macro_data.get("aliases", [])]:
+                return VoiceMacro(
+                    id=f"system-{specialty}-{macro_data['trigger_phrase'].replace(' ', '-')}",
+                    clinician_id="system",
+                    is_system_default=True,
+                    **macro_data
+                )
+    return None
+
+@app.post("/api/v1/macros")
+@limiter.limit(RATE_LIMIT_WRITE)
+async def create_macro(body: MacroCreateRequest, request: Request, x_clinician_id: str = Header(default="default")):
+    """
+    Create a new voice macro (Feature #99)
+
+    Example: Create "normal heart" → expands to full cardiac exam text
+    """
+    macro_id = str(uuid.uuid4())[:8]
+    now = datetime.now(timezone.utc).isoformat()
+
+    macro = VoiceMacro(
+        id=macro_id,
+        clinician_id=x_clinician_id,
+        trigger_phrase=body.trigger_phrase,
+        aliases=body.aliases,
+        macro_type=body.macro_type,
+        expansion_text=body.expansion_text,
+        action_type=body.action_type,
+        action_payload=body.action_payload,
+        specialty=body.specialty,
+        category=body.category,
+        created_at=now,
+        updated_at=now
+    )
+
+    user_macros = _get_user_macros(x_clinician_id)
+    user_macros[macro_id] = macro
+
+    audit_logger._log_event(
+        event_type="MACRO_CREATED",
+        action="CREATE_MACRO",
+        status="success",
+        details={"macro_id": macro_id, "trigger": body.trigger_phrase}
+    )
+
+    return {"success": True, "macro": macro.model_dump(), "message": f"Macro '{body.trigger_phrase}' created"}
+
+@app.get("/api/v1/macros")
+async def list_macros(
+    x_clinician_id: str = Header(default="default"),
+    include_defaults: bool = True,
+    specialty: Optional[str] = None
+):
+    """
+    List all macros for a clinician (Feature #99)
+
+    Returns user's custom macros + optionally system defaults
+    """
+    user_macros = _get_user_macros(x_clinician_id)
+    result = [m.model_dump() for m in user_macros.values()]
+
+    if include_defaults:
+        # Add system defaults
+        specialties_to_include = [specialty] if specialty else list(SYSTEM_DEFAULT_MACROS.keys())
+        for spec in specialties_to_include:
+            if spec in SYSTEM_DEFAULT_MACROS:
+                for macro_data in SYSTEM_DEFAULT_MACROS[spec]:
+                    result.append({
+                        "id": f"system-{spec}-{macro_data['trigger_phrase'].replace(' ', '-')}",
+                        "clinician_id": "system",
+                        "is_system_default": True,
+                        "specialty": spec,
+                        **macro_data
+                    })
+
+    return {
+        "macros": result,
+        "count": len(result),
+        "custom_count": len(user_macros),
+        "system_count": len(result) - len(user_macros)
+    }
+
+@app.get("/api/v1/macros/defaults")
+async def get_default_macros(specialty: Optional[str] = None):
+    """
+    Get system default macros (Feature #99)
+
+    Optionally filter by specialty: cardiology, emergency, primary_care, orthopedics
+    """
+    if specialty:
+        if specialty not in SYSTEM_DEFAULT_MACROS:
+            raise HTTPException(status_code=404, detail=f"Unknown specialty: {specialty}")
+        return {
+            "specialty": specialty,
+            "macros": SYSTEM_DEFAULT_MACROS[specialty],
+            "count": len(SYSTEM_DEFAULT_MACROS[specialty])
+        }
+
+    all_macros = []
+    for spec, macros in SYSTEM_DEFAULT_MACROS.items():
+        for m in macros:
+            all_macros.append({**m, "specialty": spec})
+
+    return {
+        "specialties": list(SYSTEM_DEFAULT_MACROS.keys()),
+        "macros": all_macros,
+        "count": len(all_macros)
+    }
+
+@app.post("/api/v1/macros/import-defaults")
+@limiter.limit(RATE_LIMIT_WRITE)
+async def import_default_macros(
+    request: Request,
+    specialty: str,
+    x_clinician_id: str = Header(default="default")
+):
+    """
+    Import system default macros for a specialty into user's custom macros
+
+    This allows clinicians to customize the defaults for their own use.
+    """
+    if specialty not in SYSTEM_DEFAULT_MACROS:
+        raise HTTPException(status_code=404, detail=f"Unknown specialty: {specialty}")
+
+    user_macros = _get_user_macros(x_clinician_id)
+    imported = []
+    now = datetime.now(timezone.utc).isoformat()
+
+    for macro_data in SYSTEM_DEFAULT_MACROS[specialty]:
+        macro_id = str(uuid.uuid4())[:8]
+        macro = VoiceMacro(
+            id=macro_id,
+            clinician_id=x_clinician_id,
+            specialty=specialty,
+            created_at=now,
+            updated_at=now,
+            **macro_data
+        )
+        user_macros[macro_id] = macro
+        imported.append(macro.model_dump())
+
+    return {
+        "success": True,
+        "imported": len(imported),
+        "specialty": specialty,
+        "macros": imported
+    }
+
+@app.get("/api/v1/macros/{macro_id}")
+async def get_macro(macro_id: str, x_clinician_id: str = Header(default="default")):
+    """Get a specific macro by ID"""
+    user_macros = _get_user_macros(x_clinician_id)
+    if macro_id in user_macros:
+        return {"macro": user_macros[macro_id].model_dump()}
+
+    # Check if it's a system default
+    if macro_id.startswith("system-"):
+        parts = macro_id.split("-", 2)
+        if len(parts) >= 3:
+            specialty = parts[1]
+            trigger = parts[2].replace("-", " ")
+            if specialty in SYSTEM_DEFAULT_MACROS:
+                for macro_data in SYSTEM_DEFAULT_MACROS[specialty]:
+                    if macro_data["trigger_phrase"].lower() == trigger.lower():
+                        return {"macro": {**macro_data, "id": macro_id, "is_system_default": True}}
+
+    raise HTTPException(status_code=404, detail="Macro not found")
+
+@app.put("/api/v1/macros/{macro_id}")
+@limiter.limit(RATE_LIMIT_WRITE)
+async def update_macro(macro_id: str, body: MacroCreateRequest, request: Request, x_clinician_id: str = Header(default="default")):
+    """Update an existing macro"""
+    user_macros = _get_user_macros(x_clinician_id)
+    if macro_id not in user_macros:
+        raise HTTPException(status_code=404, detail="Macro not found")
+
+    macro = user_macros[macro_id]
+    macro.trigger_phrase = body.trigger_phrase
+    macro.aliases = body.aliases
+    macro.macro_type = body.macro_type
+    macro.expansion_text = body.expansion_text
+    macro.action_type = body.action_type
+    macro.action_payload = body.action_payload
+    macro.specialty = body.specialty
+    macro.category = body.category
+    macro.updated_at = datetime.now(timezone.utc).isoformat()
+
+    return {"success": True, "macro": macro.model_dump()}
+
+@app.delete("/api/v1/macros/{macro_id}")
+@limiter.limit(RATE_LIMIT_WRITE)
+async def delete_macro(macro_id: str, request: Request, x_clinician_id: str = Header(default="default")):
+    """Delete a macro"""
+    user_macros = _get_user_macros(x_clinician_id)
+    if macro_id not in user_macros:
+        raise HTTPException(status_code=404, detail="Macro not found")
+
+    deleted = user_macros.pop(macro_id)
+    return {"success": True, "deleted": deleted.model_dump()}
+
+@app.post("/api/v1/macros/expand")
+async def expand_macro(body: MacroExpandRequest, x_clinician_id: str = Header(default="default")):
+    """
+    Expand a macro trigger phrase (Feature #99)
+
+    This is the main endpoint for real-time text expansion during dictation.
+    Returns the expanded text and/or actions to execute.
+    """
+    macro = _find_matching_macro(body.phrase, x_clinician_id)
+
+    if not macro:
+        return {
+            "found": False,
+            "phrase": body.phrase,
+            "message": "No matching macro found"
+        }
+
+    # Increment usage count for custom macros
+    if not macro.is_system_default:
+        macro.usage_count += 1
+
+    result = {
+        "found": True,
+        "phrase": body.phrase,
+        "macro_id": macro.id,
+        "macro_type": macro.macro_type,
+        "trigger_phrase": macro.trigger_phrase
+    }
+
+    # Add expansion text if present
+    if macro.expansion_text:
+        expansion = macro.expansion_text
+
+        # Variable substitution if context provided
+        if body.context:
+            for key, value in body.context.items():
+                expansion = expansion.replace(f"{{{key}}}", str(value))
+            if body.patient_id:
+                expansion = expansion.replace("{patient_id}", body.patient_id)
+
+        result["expansion_text"] = expansion
+
+    # Add action payload if present
+    if macro.action_type and macro.action_payload:
+        result["action"] = {
+            "type": macro.action_type,
+            "payload": macro.action_payload
+        }
+        # If patient_id provided, add to orders
+        if body.patient_id and "orders" in macro.action_payload:
+            result["action"]["patient_id"] = body.patient_id
+
+    audit_logger._log_event(
+        event_type="MACRO_EXPANDED",
+        action="EXPAND_MACRO",
+        status="success",
+        details={"macro_id": macro.id, "trigger": body.phrase, "type": macro.macro_type}
+    )
+
+    return result
+
+@app.get("/api/v1/macros/match/{phrase:path}")
+async def match_macro(phrase: str, x_clinician_id: str = Header(default="default")):
+    """
+    Check if a phrase matches any macro (for real-time detection)
+
+    Use this during transcription to detect macro triggers as the user speaks.
+    """
+    macro = _find_matching_macro(phrase, x_clinician_id)
+
+    if macro:
+        return {
+            "matches": True,
+            "macro_id": macro.id,
+            "trigger_phrase": macro.trigger_phrase,
+            "macro_type": macro.macro_type,
+            "preview": macro.expansion_text[:100] + "..." if macro.expansion_text and len(macro.expansion_text) > 100 else macro.expansion_text
+        }
+
+    return {"matches": False, "phrase": phrase}
+
+
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
     print("═" * 50)
