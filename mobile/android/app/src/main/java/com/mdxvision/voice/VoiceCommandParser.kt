@@ -116,6 +116,21 @@ class VoiceCommandParser(
             )
         }
 
+        // Check for "create macro" command BEFORE multi-intent splitting
+        // (because the actions contain "then" which would otherwise split)
+        val createMacroPattern = Regex("(create|make|add) (command|macro|shortcut) (.+?) (that does?|to do|:) (.+)")
+        val createMatch = createMacroPattern.find(lower)
+        if (createMatch != null) {
+            val trigger = createMatch.groupValues[3].trim()
+            val actionsStr = createMatch.groupValues[5].trim()
+            val actions = parseActionList(actionsStr)
+            return ParseResult(
+                intents = listOf(VoiceIntent.CreateMacro(trigger, actions)),
+                originalText = original,
+                normalizedText = normalized
+            )
+        }
+
         // Parse multi-intent commands
         val intents = parseMultiIntent(lower, original)
 
@@ -253,17 +268,7 @@ class VoiceCommandParser(
             lower.contains("help") || lower.contains("what can i say") || lower.contains("commands") -> VoiceIntent.ShowHelp
 
             // ═══ CUSTOM MACRO CREATION ═══
-            lower.matches(Regex("(create|make|add) (command|macro|shortcut) (.+?) (that does?|to do|:) (.+)")) -> {
-                val match = Regex("(create|make|add) (command|macro|shortcut) (.+?) (that does?|to do|:) (.+)").find(lower)
-                if (match != null) {
-                    val trigger = match.groupValues[3].trim()
-                    val actionsStr = match.groupValues[5].trim()
-                    val actions = parseActionList(actionsStr)
-                    VoiceIntent.CreateMacro(trigger, actions)
-                } else {
-                    VoiceIntent.Unknown
-                }
-            }
+            // Note: Handled in parse() before multi-intent splitting to preserve "then" in actions
 
             else -> VoiceIntent.Unknown
         }
@@ -325,7 +330,7 @@ class VoiceCommandParser(
 
                     if (json.optBoolean("found", false)) {
                         val macroId = json.optString("macro_id", "")
-                        val expansionText = json.optString("expansion_text", null)
+                        val expansionText = if (json.has("expansion_text")) json.getString("expansion_text") else null
                         val actionJson = json.optJSONObject("action")
                         val action = actionJson?.let {
                             MacroAction(
