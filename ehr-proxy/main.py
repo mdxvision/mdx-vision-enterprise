@@ -11,6 +11,15 @@ Test: curl http://localhost:8002/api/v1/patient/12724066
 from dotenv import load_dotenv
 load_dotenv()
 
+# Structured Logging (Issue #90)
+from structured_logging import (
+    configure_logging, get_logger, log_context,
+    create_correlation_middleware, set_context, get_correlation_headers,
+    correlation_id_var, session_id_var, clinician_id_var, patient_id_var, ehr_system_var
+)
+configure_logging()
+logger = get_logger('ehr-proxy')
+
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -443,17 +452,17 @@ async def lifespan(app: FastAPI):
     # Startup: Initialize TTL-based session managers (Issue #10)
     from session_manager import get_transcription_session_manager, shutdown_session_managers as shutdown_managers
     await get_transcription_session_manager()
-    print("✅ Session managers initialized with TTL-based cleanup (Issue #10)")
+    logger.info("Session managers initialized", extra={"component": "session_manager", "feature": "ttl_cleanup"})
 
     # Startup: Initialize FHIR retry client (Issue #24)
     from fhir_retry import get_fhir_client, close_fhir_client
     await get_fhir_client()
-    print("✅ FHIR client initialized with retry logic (Issue #24)")
+    logger.info("FHIR client initialized", extra={"component": "fhir_client", "feature": "retry_logic"})
 
     # Startup: Initialize critical alert manager (Issue #105)
     from critical_alerts import get_alert_manager, shutdown_alert_manager
     await get_alert_manager()
-    print("✅ Critical alert manager initialized (Issue #105)")
+    logger.info("Critical alert manager initialized", extra={"component": "alert_manager"})
 
     # Startup: Auto-initialize RAG with ChromaDB Docker
     try:
@@ -461,25 +470,25 @@ async def lifespan(app: FastAPI):
             success = await rag_engine.initialize()
             if success:
                 doc_count = rag_engine.collection.count() if rag_engine.collection else 0
-                print(f"✅ RAG engine auto-initialized with {doc_count} documents")
+                logger.info("RAG engine initialized", extra={"component": "rag_engine", "document_count": doc_count})
             else:
-                print("⚠️  RAG engine initialization failed (ChromaDB may not be running)")
+                logger.warning("RAG engine initialization failed", extra={"component": "rag_engine", "reason": "chromadb_unavailable"})
     except Exception as e:
-        print(f"⚠️  RAG auto-init skipped: {e}")
+        logger.warning("RAG auto-init skipped", extra={"component": "rag_engine", "error": str(e)})
 
     yield  # Application runs here
 
     # Shutdown: Cleanup critical alert manager
     await shutdown_alert_manager()
-    print("🛑 Critical alert manager shut down")
+    logger.info("Critical alert manager shut down", extra={"component": "alert_manager", "event": "shutdown"})
 
     # Shutdown: Cleanup FHIR client
     await close_fhir_client()
-    print("🛑 FHIR client shut down")
+    logger.info("FHIR client shut down", extra={"component": "fhir_client", "event": "shutdown"})
 
     # Shutdown: Cleanup session managers
     await shutdown_managers()
-    print("🛑 Session managers shut down")
+    logger.info("Session managers shut down", extra={"component": "session_manager", "event": "shutdown"})
 
 
 app = FastAPI(
@@ -527,6 +536,12 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Correlation ID Middleware (Issue #90 - Structured Logging)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+app.middleware("http")(create_correlation_middleware())
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Rate Limiting (Issue #16 - OWASP API4:2023 Unrestricted Resource Consumption)
@@ -580,23 +595,26 @@ async def global_exception_handler(request: Request, exc: Exception):
     Catch-all handler for unhandled exceptions.
     Never expose internal details - log them server-side instead.
     """
-    correlation_id = generate_correlation_id()
+    # Use correlation ID from middleware context, fallback to generating new one
+    corr_id = correlation_id_var.get() or generate_correlation_id()
 
-    # Log full error details server-side
-    log_error_with_context(
-        error=exc,
-        correlation_id=correlation_id,
-        context={
-            "path": str(request.url.path),
-            "method": request.method,
-            "client": request.client.host if request.client else "unknown"
-        }
+    # Log full error details with structured logging
+    logger.error(
+        f"Unhandled exception: {type(exc).__name__}",
+        extra={
+            "error_type": type(exc).__name__,
+            "error_message": str(exc),
+            "http_path": str(request.url.path),
+            "http_method": request.method,
+            "client_ip": request.client.host if request.client else "unknown"
+        },
+        exc_info=True
     )
 
     # Return sanitized response to client
     safe_response = get_safe_error_response(
         status_code=500,
-        correlation_id=correlation_id,
+        correlation_id=corr_id,
         error_code=ErrorCode.INTERNAL_ERROR
     )
 
@@ -609,22 +627,25 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     Handle HTTP exceptions with sanitized messages.
     Allow some detail for 4xx errors but sanitize 5xx.
     """
-    correlation_id = generate_correlation_id()
+    corr_id = correlation_id_var.get() or generate_correlation_id()
 
     # Log for 5xx errors or if detail contains sensitive info
     if exc.status_code >= 500 or contains_sensitive_info(str(exc.detail)):
-        log_error_with_context(
-            error=exc,
-            correlation_id=correlation_id,
-            context={"path": str(request.url.path)},
-            level="warning" if exc.status_code < 500 else "error"
+        log_func = logger.error if exc.status_code >= 500 else logger.warning
+        log_func(
+            f"HTTP exception: {exc.status_code}",
+            extra={
+                "http_status": exc.status_code,
+                "http_path": str(request.url.path),
+                "error_detail": sanitize_error_message(str(exc.detail)) if exc.detail else None
+            }
         )
 
     # Get sanitized response
     safe_response = get_safe_error_response(
         status_code=exc.status_code,
         original_error=str(exc.detail) if exc.detail else None,
-        correlation_id=correlation_id
+        correlation_id=corr_id
     )
 
     return JSONResponse(status_code=exc.status_code, content=safe_response)
@@ -635,22 +656,25 @@ async def fastapi_http_exception_handler(request: Request, exc: HTTPException):
     """
     Handle FastAPI HTTP exceptions with sanitized messages.
     """
-    correlation_id = generate_correlation_id()
+    corr_id = correlation_id_var.get() or generate_correlation_id()
 
     # Log for 5xx errors or if detail contains sensitive info
     if exc.status_code >= 500 or contains_sensitive_info(str(exc.detail)):
-        log_error_with_context(
-            error=exc,
-            correlation_id=correlation_id,
-            context={"path": str(request.url.path)},
-            level="warning" if exc.status_code < 500 else "error"
+        log_func = logger.error if exc.status_code >= 500 else logger.warning
+        log_func(
+            f"FastAPI HTTP exception: {exc.status_code}",
+            extra={
+                "http_status": exc.status_code,
+                "http_path": str(request.url.path),
+                "error_detail": sanitize_error_message(str(exc.detail)) if exc.detail else None
+            }
         )
 
     # Get sanitized response
     safe_response = get_safe_error_response(
         status_code=exc.status_code,
         original_error=str(exc.detail) if exc.detail else None,
-        correlation_id=correlation_id
+        correlation_id=corr_id
     )
 
     return JSONResponse(status_code=exc.status_code, content=safe_response)
@@ -662,7 +686,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     Handle request validation errors with field-level details.
     Sanitize field values but allow field names.
     """
-    correlation_id = generate_correlation_id()
+    corr_id = correlation_id_var.get() or generate_correlation_id()
+
+    # Log validation error
+    logger.warning(
+        "Request validation error",
+        extra={
+            "http_path": str(request.url.path),
+            "error_count": len(exc.errors()),
+            "errors": [{"field": ".".join(str(l) for l in e.get("loc", [])), "type": e.get("type")} for e in exc.errors()[:5]]
+        }
+    )
 
     # Extract first error for user-friendly message
     errors = exc.errors()
@@ -684,7 +718,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         original_error=user_message,
         error_code=ErrorCode.INVALID_FORMAT,
-        correlation_id=correlation_id
+        correlation_id=corr_id
     )
 
     return JSONResponse(status_code=422, content=safe_response)

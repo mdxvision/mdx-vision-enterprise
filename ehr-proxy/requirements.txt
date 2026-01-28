@@ -43,6 +43,9 @@ slowapi>=0.1.9
 # Retry with Exponential Backoff (Issue #24 - FHIR reliability)
 tenacity>=8.2.0
 
+# Structured Logging (Issue #90)
+python-json-logger>=2.0.0
+
 # Utilities
 pydantic>=2.5.0
 python-dotenv>=1.0.0
