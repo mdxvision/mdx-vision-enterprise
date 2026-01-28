@@ -145,7 +145,7 @@ class MainActivity : AppCompatActivity() {
         // For production: Use cloud URL (e.g., https://api.mdxvision.com)
         // Development: Use Mac IP on same network as Vuzix glasses
         private const val PREF_SERVER_URL = "server_url"
-        private const val DEFAULT_SERVER_URL = "http://192.168.1.243:8002"
+        private const val DEFAULT_SERVER_URL = "http://192.168.7.182:8002"
         private var serverUrl: String = DEFAULT_SERVER_URL
 
         val EHR_PROXY_URL: String
@@ -160,7 +160,7 @@ class MainActivity : AppCompatActivity() {
             // Also configure AudioStreamingService WebSocket URL
             val wsUrl = url.replace("http://", "ws://")
                           .replace("https://", "wss://")
-                          .trimEnd('/') + "/ws/transcribe?noise_reduction=true"
+                          .trimEnd('/') + "/ws/transcribe?noise_reduction=false"
             AudioStreamingService.setDeviceUrl(wsUrl)
             Log.d(TAG, "Server URL configured: HTTP=$serverUrl, WS=$wsUrl")
         }
@@ -3005,6 +3005,13 @@ SOFA Score: [X]
         patientDataText = TextView(this) // Hidden placeholder
 
         setContentView(rootLayout)
+
+        // Ensure clean startup - no overlays, default text
+        dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        dataOverlay = null
+        statusText.text = "Minerva"
+        transcriptText.text = "Tap or speak a command"
+        Log.d(TAG, "Clean startup - reset to home screen")
     }
 
     private data class CommandButton(val label: String, val color: Int, val action: () -> Unit)
@@ -3037,6 +3044,10 @@ SOFA Score: [X]
     }
 
     private fun showDataOverlay(title: String, content: String) {
+        // Debug: Log who is calling this function
+        Log.d(TAG, "showDataOverlay called with title='$title'")
+        Thread.currentThread().stackTrace.take(10).forEach { Log.d(TAG, "  at $it") }
+
         // Remove existing overlay if any
         dataOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
 
@@ -3300,6 +3311,32 @@ SOFA Score: [X]
     private fun startBarcodeScanner() {
         val intent = Intent(this, BarcodeScannerActivity::class.java)
         barcodeLauncher.launch(intent)
+    }
+
+    /**
+     * Open Drone Voice Control activity (Feature-flagged)
+     * Voice command: "drone control", "drone mode", "open drone"
+     */
+    private fun openDroneControl() {
+        // Check feature flag
+        if (!com.mdxvision.drone.DroneFeatureFlag.isEnabled(this)) {
+            speakFeedback("Drone control is disabled. Enable it in developer settings.")
+            showDataOverlay("Drone Control", buildString {
+                appendLine("Feature Disabled")
+                appendLine()
+                appendLine("To enable drone control:")
+                appendLine("1. Via ADB:")
+                appendLine("   adb shell am start -n com.mdxvision/.drone.DroneControlActivity")
+                appendLine()
+                appendLine("2. Or run:")
+                appendLine("   DroneFeatureFlag.setEnabled(context, true)")
+            })
+            return
+        }
+
+        // Launch drone control activity
+        val intent = Intent(this, com.mdxvision.drone.DroneControlActivity::class.java)
+        startActivity(intent)
     }
 
     private fun toggleDocumentationMode() {
@@ -10161,8 +10198,10 @@ SOFA Score: [X]
      * Fetch and display today's patient worklist
      */
     private fun showWorklist() {
+        Log.d(TAG, "showWorklist() called - fetching patient list")
         lifecycleScope.launch {
             try {
+                Log.d(TAG, "showWorklist: Starting API call to $EHR_PROXY_URL/api/v1/worklist")
                 speakFeedback("Loading worklist")
                 val response = withContext(Dispatchers.IO) {
                     java.net.URL("$EHR_PROXY_URL/api/v1/worklist").readText()
@@ -10234,7 +10273,9 @@ SOFA Score: [X]
                 sb.appendLine("• \"Check in 2\" - Check in patient #2")
                 sb.appendLine("• \"Who's next\" - Next patient to see")
 
+                Log.d(TAG, "showWorklist: Showing overlay with ${patients.length()} patients")
                 showDataOverlay("📋 Worklist", sb.toString())
+                Log.d(TAG, "showWorklist: Overlay displayed successfully")
                 speakFeedback("${patients.length()} patients on worklist")
 
             } catch (e: Exception) {
@@ -12311,16 +12352,12 @@ SOFA Score: [X]
                             return@use
                         }
                     }
-                    // Server TTS failed - show text instead
-                    runOnUiThread {
-                        showDataOverlay("Patient Summary", text)
-                    }
+                    // Server TTS failed - just log it, don't show overlay
+                    Log.w(TAG, "Server TTS: No audio returned, skipping")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Server TTS error: ${e.message}")
-                runOnUiThread {
-                    showDataOverlay("Patient Summary", text)
-                }
+                // Don't show overlay on TTS failure - just skip silently
             }
         }.start()
     }
@@ -25437,8 +25474,8 @@ SOFA Score: [X]
             // PATIENT WORKLIST - Daily schedule commands
             // ═══════════════════════════════════════════════════════════════════════════
 
-            // Show worklist: "show worklist", "worklist", "today's patients", "my schedule"
-            lower.contains("worklist") || lower.contains("today's patient") || lower.contains("todays patient") ||
+            // Show worklist: "show worklist", "worklist", "work list", "today's patients", "my schedule"
+            lower.contains("worklist") || lower.contains("work list") || lower.contains("today's patient") || lower.contains("todays patient") ||
             lower.contains("my schedule") || lower.contains("patient schedule") || lower.contains("daily schedule") -> {
                 showWorklist()
             }
@@ -25489,6 +25526,16 @@ SOFA Score: [X]
                         loadPatientFromHistory(patientNum + 1)
                     }
                 }
+            }
+
+            // ═══════════════════════════════════════════════════════════════════════════
+            // DRONE CONTROL - Dev/test feature (requires feature flag)
+            // ═══════════════════════════════════════════════════════════════════════════
+
+            // Open drone control: "drone control", "drone mode", "open drone"
+            lower.contains("drone control") || lower.contains("drone mode") ||
+            (lower.contains("open") && lower.contains("drone")) -> {
+                openDroneControl()
             }
 
             // ═══════════════════════════════════════════════════════════════════════════

@@ -2,6 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Package visibility for speech services (Android 11+) -->
+    <queries>
+        <package android:name="com.nuance.dm_speechkit.customsample" />
+        <package android:name="com.vuzix.speechrecognitionservice" />
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <!-- MDx Vision - AR Smart Glasses Healthcare Documentation -->
     <!-- Configured for Vuzix Blade 2 and compatible AR glasses -->
 
@@ -96,6 +105,19 @@
             android:label="Pair Device"
             android:screenOrientation="landscape"
             android:exported="false" />
+
+        <!-- Drone Voice Control Activity (Feature-flagged, default OFF) -->
+        <!-- exported=true for dev testing via ADB; set to false in production -->
+        <activity
+            android:name="com.mdxvision.drone.DroneControlActivity"
+            android:label="Drone Control"
+            android:screenOrientation="landscape"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.mdxvision.DRONE_CONTROL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <!-- Vuzix HUD Overlay Service (Feature #73) -->
         <service

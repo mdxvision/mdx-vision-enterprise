@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DJI USB Accessory Filter -->
+    <usb-accessory
+        model="T600"
+        manufacturer="DJI" />
+    <usb-accessory
+        model="AG410"
+        manufacturer="DJI" />
+    <usb-accessory
+        model="com.dji.logiclink"
+        manufacturer="DJI" />
+    <usb-accessory
+        model="WM161"
+        manufacturer="DJI" />
+</resources>

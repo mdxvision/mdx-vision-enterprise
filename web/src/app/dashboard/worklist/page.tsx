@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Users,
   Clock,
@@ -13,7 +13,10 @@ import {
   Stethoscope,
   Calendar,
   MapPin,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
+import { useSyncWebSocket, WorklistUpdateEvent } from '@/hooks/useSyncWebSocket';
 
 // API base URL
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8002';
@@ -53,11 +56,46 @@ export default function WorklistPage() {
   const [loading, setLoading] = useState(true);
   const [selectedPatient, setSelectedPatient] = useState<WorklistPatient | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastSyncEvent, setLastSyncEvent] = useState<string | null>(null);
+
+  // Real-time sync with glasses
+  const handleWorklistUpdate = useCallback((event: WorklistUpdateEvent) => {
+    console.log('Real-time update:', event);
+    setLastSyncEvent(`${event.action}: ${event.patient.name}`);
+
+    // Update the patient in our local state
+    setWorklist(prev => {
+      if (!prev) return prev;
+
+      const updatedPatients = prev.patients.map(p =>
+        p.patient_id === event.patient.patient_id
+          ? { ...p, ...event.patient }
+          : p
+      );
+
+      // Recalculate stats
+      const stats = {
+        total_scheduled: updatedPatients.length,
+        checked_in: updatedPatients.filter(p => ['checked_in', 'in_room', 'in_progress'].includes(p.status)).length,
+        in_progress: updatedPatients.filter(p => p.status === 'in_progress').length,
+        completed: updatedPatients.filter(p => p.status === 'completed').length,
+      };
+
+      return { ...prev, patients: updatedPatients, ...stats };
+    });
+
+    // Clear sync event indicator after 3 seconds
+    setTimeout(() => setLastSyncEvent(null), 3000);
+  }, []);
+
+  const { isConnected: syncConnected } = useSyncWebSocket({
+    onWorklistUpdate: handleWorklistUpdate,
+  });
 
   useEffect(() => {
     fetchWorklist();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchWorklist, 30000);
+    // Auto-refresh every 60 seconds (longer now that we have real-time sync)
+    const interval = setInterval(fetchWorklist, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -220,11 +258,30 @@ export default function WorklistPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             Today's Worklist
           </h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {worklist?.date} • {worklist?.provider || 'Dr. Smith'} • {worklist?.location || 'Clinic A'}
-          </p>
+          <div className="mt-1 flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+            <span>{worklist?.date} • {worklist?.provider || 'Dr. Smith'} • {worklist?.location || 'Clinic A'}</span>
+            <span className="flex items-center gap-1.5">
+              {syncConnected ? (
+                <>
+                  <Wifi className="h-3.5 w-3.5 text-green-500" />
+                  <span className="text-green-600 dark:text-green-400">Live sync</span>
+                </>
+              ) : (
+                <>
+                  <WifiOff className="h-3.5 w-3.5 text-gray-400" />
+                  <span>Offline</span>
+                </>
+              )}
+            </span>
+          </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-3">
+          {lastSyncEvent && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400 animate-pulse">
+              <Activity className="h-3 w-3" />
+              {lastSyncEvent}
+            </span>
+          )}
           <button
             onClick={fetchWorklist}
             className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
