@@ -566,12 +566,30 @@ class TranscriptionSession:
         await self.provider.close()
 
 
-# Active sessions storage
+# Active sessions storage with TTL-based cleanup (prevents memory leaks)
+# Legacy dict maintained for backward compatibility with tests
 _active_sessions: dict[str, TranscriptionSession] = {}
+
+# Import session manager for TTL-based cleanup
+from session_manager import SessionManager, get_transcription_session_manager
+
+# Session manager instance (initialized lazily)
+_session_manager: Optional[SessionManager] = None
+
+# Default TTL: 2 hours (typical max encounter length)
+DEFAULT_SESSION_TTL = 7200
+
+
+async def _get_session_manager() -> SessionManager:
+    """Get or initialize the session manager singleton"""
+    global _session_manager
+    if _session_manager is None:
+        _session_manager = await get_transcription_session_manager()
+    return _session_manager
 
 
 async def create_session(session_id: str, provider: str = None, specialties: List[str] = None,
-                         speaker_context: dict = None) -> TranscriptionSession:
+                         speaker_context: dict = None, ttl: int = None) -> TranscriptionSession:
     """
     Create and start a new transcription session.
 
@@ -580,13 +598,21 @@ async def create_session(session_id: str, provider: str = None, specialties: Lis
         provider: "assemblyai" or "deepgram"
         specialties: Medical specialties for vocabulary boost (e.g., ["cardiology"])
         speaker_context: Speaker name mapping {"clinician": "Dr. X", "patient": "John", "others": [...]}
+        ttl: Session time-to-live in seconds (default: 2 hours)
 
     Returns:
         Started transcription session
     """
     session = TranscriptionSession(session_id, provider, specialties, speaker_context)
     await session.start()
+
+    # Store in both legacy dict and TTL-managed storage
     _active_sessions[session_id] = session
+
+    # Use TTL-managed session manager
+    manager = await _get_session_manager()
+    await manager.set(session_id, session, ttl=ttl or DEFAULT_SESSION_TTL)
+
     return session
 
 
@@ -604,7 +630,14 @@ async def set_session_speaker_context(session_id: str, clinician: str = None,
     Returns:
         True if session found and updated
     """
-    session = _active_sessions.get(session_id)
+    # Try TTL-managed storage first
+    manager = await _get_session_manager()
+    session = await manager.get(session_id)
+
+    # Fall back to legacy dict
+    if session is None:
+        session = _active_sessions.get(session_id)
+
     if session:
         session.set_speaker_context(clinician, patient, others)
         return True
@@ -612,14 +645,49 @@ async def set_session_speaker_context(session_id: str, clinician: str = None,
 
 
 async def get_session(session_id: str) -> Optional[TranscriptionSession]:
-    """Get an existing session"""
-    return _active_sessions.get(session_id)
+    """Get an existing session (extends TTL on access)"""
+    # Try TTL-managed storage first
+    manager = await _get_session_manager()
+    session = await manager.get(session_id)
+
+    # Fall back to legacy dict
+    if session is None:
+        session = _active_sessions.get(session_id)
+
+    return session
+
+
+async def touch_session(session_id: str) -> bool:
+    """Extend session TTL without retrieving data (call during activity)"""
+    manager = await _get_session_manager()
+    return await manager.touch(session_id)
 
 
 async def end_session(session_id: str) -> Optional[str]:
     """End a session and return the full transcript"""
-    session = _active_sessions.pop(session_id, None)
+    # Remove from TTL-managed storage
+    manager = await _get_session_manager()
+    session = await manager.remove(session_id)
+
+    # Also check and remove from legacy dict (for backward compatibility)
+    legacy_session = _active_sessions.pop(session_id, None)
+
+    # Use whichever session we found
+    session = session or legacy_session
+
     if session:
         await session.stop()
         return session.get_full_transcript()
     return None
+
+
+async def get_session_stats() -> dict:
+    """Get session manager statistics"""
+    manager = await _get_session_manager()
+    return manager.stats
+
+
+async def list_active_sessions() -> list:
+    """List all active session IDs"""
+    manager = await _get_session_manager()
+    return await manager.list_sessions()

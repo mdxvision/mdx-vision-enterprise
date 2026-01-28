@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.List;
@@ -137,20 +138,21 @@ public class EncounterController {
 
     @PostMapping("/{encounterId}/notes/generate")
     @Operation(summary = "Generate AI clinical note from transcriptions")
-    public ResponseEntity<ClinicalNoteDTO.Response> generateNote(
+    public Mono<ResponseEntity<ClinicalNoteDTO.Response>> generateNote(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID encounterId,
             @RequestParam(defaultValue = "SOAP") String noteType) {
-        
+
         UUID userId = UUID.fromString(jwt.getSubject());
-        
+
+        // Fetch encounter and user synchronously (JPA repositories)
         Encounter encounter = encounterRepository.findById(encounterId)
             .orElseThrow(() -> new RuntimeException("Encounter not found"));
-        
+
         User author = userRepository.findById(userId)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Call AI service to generate note
+        // Call AI service reactively - no blocking!
         return aiPipelineService.generateClinicalNote(encounterId.toString(), noteType)
             .map(aiResponse -> {
                 ClinicalNote note = ClinicalNote.builder()
@@ -163,19 +165,20 @@ public class EncounterController {
                     .assessment((String) aiResponse.get("assessment"))
                     .plan((String) aiResponse.get("plan"))
                     .aiSummary((String) aiResponse.get("summary"))
-                    .icd10Codes(aiResponse.get("icd10Codes") != null ? 
+                    .icd10Codes(aiResponse.get("icd10Codes") != null ?
                         aiResponse.get("icd10Codes").toString() : null)
                     .build();
 
                 note = clinicalNoteRepository.save(note);
 
                 auditService.log(AuditLog.AuditAction.GENERATE_NOTE, "ClinicalNote",
-                    note.getId().toString(), encounter.getPatient().getId(), 
+                    note.getId().toString(), encounter.getPatient().getId(),
                     "AI note generated");
 
                 return ResponseEntity.ok(mapNoteToResponse(note));
             })
-            .block();
+            .defaultIfEmpty(ResponseEntity.notFound().build())
+            .onErrorResume(e -> Mono.just(ResponseEntity.internalServerError().build()));
     }
 
     private EncounterDTO.Response mapToResponse(Encounter encounter) {

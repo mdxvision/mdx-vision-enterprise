@@ -62,6 +62,7 @@ class TestDdxEndpointValidation:
 class TestDdxRuleBasedFallback:
     """Test rule-based DDx when Claude is unavailable"""
 
+    @patch('main.CLAUDE_API_KEY', None)
     def test_ddx_respiratory_symptoms(self):
         """Test DDx for respiratory symptoms"""
         response = client.post("/api/v1/ddx/generate", json={
@@ -74,6 +75,7 @@ class TestDdxRuleBasedFallback:
         # Should include common respiratory diagnoses
         assert any("bronchitis" in d.lower() or "pneumonia" in d.lower() for d in diagnoses)
 
+    @patch('main.CLAUDE_API_KEY', None)
     def test_ddx_cardiac_symptoms(self):
         """Test DDx for cardiac symptoms"""
         response = client.post("/api/v1/ddx/generate", json={
@@ -86,6 +88,7 @@ class TestDdxRuleBasedFallback:
         # Should include cardiac considerations
         assert any("coronary" in d.lower() or "chest pain" in d.lower() for d in diagnoses)
 
+    @patch('main.CLAUDE_API_KEY', None)
     def test_ddx_gi_symptoms(self):
         """Test DDx for GI symptoms"""
         response = client.post("/api/v1/ddx/generate", json={
@@ -97,6 +100,7 @@ class TestDdxRuleBasedFallback:
         diagnoses = [d["diagnosis"] for d in data["differentials"]]
         assert any("gastro" in d.lower() or "abdom" in d.lower() for d in diagnoses)
 
+    @patch('main.CLAUDE_API_KEY', None)
     def test_ddx_neuro_symptoms(self):
         """Test DDx for neurological symptoms"""
         response = client.post("/api/v1/ddx/generate", json={

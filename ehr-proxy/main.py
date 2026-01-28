@@ -13,9 +13,32 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import httpx
-from pydantic import BaseModel
+
+# Error Handling (Issue #30 - OWASP CWE-209)
+from error_handling import (
+    generate_correlation_id, get_safe_error_response, log_error_with_context,
+    get_safe_third_party_error, ErrorCode, contains_sensitive_info,
+    sanitize_error_message
+)
+
+# Rate Limiting (Issue #16 - OWASP API4:2023)
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from pydantic import BaseModel, field_validator
 from typing import Optional, List, Dict, Any
+from contextlib import asynccontextmanager
+
+# Input validation and sanitization (HIPAA/OWASP compliance)
+from validators import (
+    sanitize_text, sanitize_html, sanitize_list, sanitize_dict,
+    validate_patient_id, validate_ehr_name, validate_status,
+    MAX_SHORT_TEXT_LENGTH, MAX_MEDIUM_TEXT_LENGTH, MAX_LONG_TEXT_LENGTH, MAX_NOTE_LENGTH
+)
 from enum import Enum
 import uvicorn
 import os
@@ -25,6 +48,87 @@ import asyncio
 import uuid
 import base64
 from datetime import datetime, timezone
+
+# Token encryption (HIPAA compliance - §164.312(a)(2)(iv))
+try:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    ENCRYPTION_AVAILABLE = False
+    print("⚠️ cryptography not installed - tokens will be stored unencrypted")
+
+# OAuth2 CSRF protection (Issue #19 - RFC 6749 Section 10.12)
+import secrets
+import hmac
+
+# In-memory OAuth2 state storage with expiration
+# Format: {state: {"timestamp": datetime, "ehr": "epic|veradigm|...", "user_hint": optional}}
+_oauth2_states: Dict[str, Dict[str, Any]] = {}
+OAUTH2_STATE_EXPIRY_SECONDS = 300  # 5 minutes
+
+
+def generate_oauth2_state(ehr: str, user_hint: str = None) -> str:
+    """
+    Generate cryptographically secure OAuth2 state parameter.
+    RFC 6749 Section 10.12 - CSRF protection for OAuth2 flows.
+    """
+    # 32 bytes = 256 bits of entropy, URL-safe base64 encoded
+    state = secrets.token_urlsafe(32)
+
+    # Store state with metadata
+    _oauth2_states[state] = {
+        "timestamp": datetime.now(timezone.utc),
+        "ehr": ehr,
+        "user_hint": user_hint
+    }
+
+    # Cleanup expired states (prevent memory leak)
+    _cleanup_expired_oauth2_states()
+
+    return state
+
+
+def validate_oauth2_state(state: str, expected_ehr: str) -> tuple[bool, str]:
+    """
+    Validate OAuth2 state parameter to prevent CSRF attacks.
+    Returns (is_valid, error_message).
+    Uses constant-time comparison to prevent timing attacks.
+    """
+    if not state:
+        return False, "Missing state parameter - potential CSRF attack"
+
+    # Check if state exists
+    stored_state = _oauth2_states.get(state)
+    if not stored_state:
+        return False, "Invalid state parameter - state not found or already used"
+
+    # Check expiration
+    age = (datetime.now(timezone.utc) - stored_state["timestamp"]).total_seconds()
+    if age > OAUTH2_STATE_EXPIRY_SECONDS:
+        del _oauth2_states[state]  # Clean up expired state
+        return False, f"State expired ({age:.0f}s > {OAUTH2_STATE_EXPIRY_SECONDS}s limit)"
+
+    # Verify EHR matches (constant-time comparison)
+    if not hmac.compare_digest(stored_state["ehr"], expected_ehr):
+        return False, f"State EHR mismatch - expected {expected_ehr}"
+
+    # Invalidate state (one-time use to prevent replay attacks)
+    del _oauth2_states[state]
+
+    return True, "State validated successfully"
+
+
+def _cleanup_expired_oauth2_states():
+    """Remove expired OAuth2 states to prevent memory leak."""
+    now = datetime.now(timezone.utc)
+    expired = [
+        state for state, data in _oauth2_states.items()
+        if (now - data["timestamp"]).total_seconds() > OAUTH2_STATE_EXPIRY_SECONDS
+    ]
+    for state in expired:
+        del _oauth2_states[state]
 
 # Import transcription service
 from transcription import (
@@ -41,6 +145,35 @@ from medical_vocabulary import (
 
 # Import HIPAA audit logging
 from audit import audit_logger, AuditAction, log_audit_event, log_phi_access
+
+# Import FHIR AuditEvent logging (Issue #108)
+from fhir_audit import fhir_audit_logger, AuditEventAction, FHIRAuditEventFactory
+
+# Import Request Signing (Issue #97 - Device Authentication)
+from request_signing import (
+    get_device_registry, get_signature_verifier,
+    RequestSigner, DeviceRegistry, SignatureVerifier,
+    SignatureError, InvalidSignatureError, ExpiredTimestampError,
+    UnknownDeviceError, RevokedDeviceError, DeviceStatus
+)
+
+# Import Token Refresh Service (Issue #65)
+from token_refresh import (
+    get_token_service, get_refresh_job,
+    TokenRefreshService, TokenRefreshJob, EHRToken, TokenStatus
+)
+
+# Import PHI Encryption Service (Issues #49, #50)
+from phi_encryption import (
+    get_encryption_service, PHIEncryptionService, PHIFieldType,
+    EncryptedValue, EncryptionError, DecryptionError, RateLimitExceededError,
+    SensitivityTier, FIELD_SENSITIVITY_MAP,
+    encrypt_patient_name, encrypt_ssn, encrypt_mrn, encrypt_clinical_note, decrypt_phi,
+    encrypt_email, encrypt_phone, encrypt_address,
+    encrypt_searchable_mrn, encrypt_searchable_ssn,
+    create_mrn_search_token, create_ssn_search_token,
+    get_field_sensitivity
+)
 
 # Import noise reduction (RNNoise - Krisp AI alternative)
 try:
@@ -300,18 +433,295 @@ def check_medication_interactions(medications: list) -> list:
 
     return interactions
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Lifecycle Events - Session Manager Startup/Shutdown (Issue #10 - Memory Leak Fix)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifecycle - startup and shutdown"""
+    # Startup: Initialize TTL-based session managers (Issue #10)
+    from session_manager import get_transcription_session_manager, shutdown_session_managers as shutdown_managers
+    await get_transcription_session_manager()
+    print("✅ Session managers initialized with TTL-based cleanup (Issue #10)")
+
+    # Startup: Initialize FHIR retry client (Issue #24)
+    from fhir_retry import get_fhir_client, close_fhir_client
+    await get_fhir_client()
+    print("✅ FHIR client initialized with retry logic (Issue #24)")
+
+    # Startup: Initialize critical alert manager (Issue #105)
+    from critical_alerts import get_alert_manager, shutdown_alert_manager
+    await get_alert_manager()
+    print("✅ Critical alert manager initialized (Issue #105)")
+
+    yield  # Application runs here
+
+    # Shutdown: Cleanup critical alert manager
+    await shutdown_alert_manager()
+    print("🛑 Critical alert manager shut down")
+
+    # Shutdown: Cleanup FHIR client
+    await close_fhir_client()
+    print("🛑 FHIR client shut down")
+
+    # Shutdown: Cleanup session managers
+    await shutdown_managers()
+    print("🛑 Session managers shut down")
+
+
 app = FastAPI(
     title="MDx Vision EHR Proxy",
     description="Unified EHR access for AR glasses",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
+
+# Environment detection for security configuration
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+IS_PRODUCTION = ENVIRONMENT.lower() == "production"
+FORCE_HTTPS = os.getenv("FORCE_HTTPS", "false").lower() == "true"
+
+# SSL/TLS Configuration (Issue #20 - HTTPS enforcement)
+SSL_KEYFILE = os.getenv("SSL_KEYFILE", "")
+SSL_CERTFILE = os.getenv("SSL_CERTFILE", "")
+HTTPS_PORT = int(os.getenv("HTTPS_PORT", "8443"))
+
+# CORS Configuration (Issue #15 - Restrict from wildcard)
+# In production, set ALLOWED_ORIGINS to your specific domains
+# Example: ALLOWED_ORIGINS=https://dashboard.mdxvision.com,https://app.mdxvision.com
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+if _allowed_origins_env:
+    ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
+else:
+    # Development defaults - localhost variants
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8080",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://10.0.2.2:8002",  # Android emulator
+    ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rate Limiting (Issue #16 - OWASP API4:2023 Unrestricted Resource Consumption)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Rate limit configuration (requests per minute)
+RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100/minute")
+RATE_LIMIT_AUTH = os.getenv("RATE_LIMIT_AUTH", "10/minute")  # OAuth2 endpoints
+RATE_LIMIT_FHIR = os.getenv("RATE_LIMIT_FHIR", "60/minute")  # FHIR/EHR endpoints
+RATE_LIMIT_AI = os.getenv("RATE_LIMIT_AI", "30/minute")  # AI/Minerva endpoints
+RATE_LIMIT_WRITE = os.getenv("RATE_LIMIT_WRITE", "20/minute")  # Write operations
+
+# Custom key function: use device_id header if available, otherwise IP
+def get_rate_limit_key(request: Request) -> str:
+    """Get rate limit key from device_id header or IP address."""
+    device_id = request.headers.get("X-Device-ID")
+    if device_id:
+        return f"device:{device_id}"
+    return get_remote_address(request)
+
+# Initialize rate limiter
+limiter = Limiter(key_func=get_rate_limit_key)
+app.state.limiter = limiter
+
+# Custom rate limit exceeded handler with proper headers
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    """Handle rate limit exceeded with proper 429 response."""
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "error": "rate_limit_exceeded",
+            "message": "Too many requests. Please slow down.",
+            "retry_after": exc.detail
+        }
+    )
+    response.headers["Retry-After"] = str(60)  # Retry after 60 seconds
+    response.headers["X-RateLimit-Limit"] = exc.detail
+    response.headers["X-RateLimit-Remaining"] = "0"
+    return response
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Global Exception Handlers (Issue #30 - OWASP CWE-209, CWE-211)
+# Sanitize all error responses to prevent information disclosure
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all handler for unhandled exceptions.
+    Never expose internal details - log them server-side instead.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Log full error details server-side
+    log_error_with_context(
+        error=exc,
+        correlation_id=correlation_id,
+        context={
+            "path": str(request.url.path),
+            "method": request.method,
+            "client": request.client.host if request.client else "unknown"
+        }
+    )
+
+    # Return sanitized response to client
+    safe_response = get_safe_error_response(
+        status_code=500,
+        correlation_id=correlation_id,
+        error_code=ErrorCode.INTERNAL_ERROR
+    )
+
+    return JSONResponse(status_code=500, content=safe_response)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Handle HTTP exceptions with sanitized messages.
+    Allow some detail for 4xx errors but sanitize 5xx.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Log for 5xx errors or if detail contains sensitive info
+    if exc.status_code >= 500 or contains_sensitive_info(str(exc.detail)):
+        log_error_with_context(
+            error=exc,
+            correlation_id=correlation_id,
+            context={"path": str(request.url.path)},
+            level="warning" if exc.status_code < 500 else "error"
+        )
+
+    # Get sanitized response
+    safe_response = get_safe_error_response(
+        status_code=exc.status_code,
+        original_error=str(exc.detail) if exc.detail else None,
+        correlation_id=correlation_id
+    )
+
+    return JSONResponse(status_code=exc.status_code, content=safe_response)
+
+
+@app.exception_handler(HTTPException)
+async def fastapi_http_exception_handler(request: Request, exc: HTTPException):
+    """
+    Handle FastAPI HTTP exceptions with sanitized messages.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Log for 5xx errors or if detail contains sensitive info
+    if exc.status_code >= 500 or contains_sensitive_info(str(exc.detail)):
+        log_error_with_context(
+            error=exc,
+            correlation_id=correlation_id,
+            context={"path": str(request.url.path)},
+            level="warning" if exc.status_code < 500 else "error"
+        )
+
+    # Get sanitized response
+    safe_response = get_safe_error_response(
+        status_code=exc.status_code,
+        original_error=str(exc.detail) if exc.detail else None,
+        correlation_id=correlation_id
+    )
+
+    return JSONResponse(status_code=exc.status_code, content=safe_response)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    Handle request validation errors with field-level details.
+    Sanitize field values but allow field names.
+    """
+    correlation_id = generate_correlation_id()
+
+    # Extract first error for user-friendly message
+    errors = exc.errors()
+    if errors:
+        first_error = errors[0]
+        field = ".".join(str(loc) for loc in first_error.get("loc", []))
+        msg = first_error.get("msg", "Invalid value")
+
+        # Sanitize the message (remove any sensitive info)
+        safe_msg = sanitize_error_message(msg)
+        if field and not contains_sensitive_info(field):
+            user_message = f"Invalid value for field '{field}': {safe_msg}"
+        else:
+            user_message = f"Validation error: {safe_msg}"
+    else:
+        user_message = "Invalid request data"
+
+    safe_response = get_safe_error_response(
+        status_code=422,
+        original_error=user_message,
+        error_code=ErrorCode.INVALID_FORMAT,
+        correlation_id=correlation_id
+    )
+
+    return JSONResponse(status_code=422, content=safe_response)
+
+
+# Security Headers Middleware (Issue #20 - HIPAA §164.312(e)(1))
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    """
+    Add security headers to all responses.
+    HSTS, X-Content-Type-Options, X-Frame-Options, etc.
+    """
+    response = await call_next(request)
+
+    # Always add these security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(self), camera=()"
+
+    # Add HSTS only in production (requires HTTPS)
+    if IS_PRODUCTION or FORCE_HTTPS:
+        # max-age=1 year, includeSubDomains for security, preload for browser lists
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
+    # Content Security Policy (Issue #91 - OWASP XSS Prevention)
+    # Allows necessary sources for healthcare dashboard functionality
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' wss: https://api.assemblyai.com https://api.anthropic.com https:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
+
+    return response
+
+
+# HTTPS redirect middleware (only in production)
+if IS_PRODUCTION or FORCE_HTTPS:
+    from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+    app.add_middleware(HTTPSRedirectMiddleware)
+    print("🔒 HTTPS redirect enabled (production mode)")
+
+
+# Include drone voice control router
+from drone import router as drone_router
+app.include_router(drone_router)
 
 # EHR Configuration (from environment)
 CERNER_CLIENT_ID = os.getenv("CERNER_CLIENT_ID", "")
@@ -392,12 +802,16 @@ EPIC_TEST_PATIENTS = {
 }
 
 @app.get("/auth/epic/authorize")
-async def epic_authorize():
+@limiter.limit(RATE_LIMIT_AUTH)
+async def epic_authorize(request: Request):
     """
     Initiate Epic OAuth2 authorization flow.
     Redirects user to Epic login page.
     """
     import urllib.parse
+
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="epic")
 
     # Build authorization URL
     # Using scopes from old working smartConfig.js
@@ -406,7 +820,7 @@ async def epic_authorize():
         "client_id": EPIC_CLIENT_ID,
         "redirect_uri": EPIC_REDIRECT_URI,
         "scope": "launch openid fhirUser",
-        "state": uuid.uuid4().hex,
+        "state": state,
         "aud": EPIC_BASE_URL,
     }
 
@@ -416,12 +830,15 @@ async def epic_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with Epic",
         "redirect_uri": EPIC_REDIRECT_URI,
-        "client_id": EPIC_CLIENT_ID
+        "client_id": EPIC_CLIENT_ID,
+        "state": state  # Return state for debugging/logging
     }
 
 
 @app.get("/auth/epic/callback")
+@limiter.limit(RATE_LIMIT_AUTH)
 async def epic_callback(
+    request: Request,
     code: str = None,
     state: str = None,
     error: str = None,
@@ -434,6 +851,7 @@ async def epic_callback(
     # Log callback parameters for debugging
     print(f"🔐 Epic callback received:")
     print(f"   code: {code[:20] if code else 'None'}...")
+    print(f"   state: {state[:20] if state else 'None'}...")
     print(f"   error: {error}")
     print(f"   error_description: {error_description}")
 
@@ -444,6 +862,17 @@ async def epic_callback(
             "error_description": error_description,
             "error_uri": error_uri,
             "hint": "Check Epic app configuration: OAuth 2.0 must be ON, app must be in Ready state"
+        }
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="epic")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered: {state_error}")
+        return {
+            "success": False,
+            "error": "csrf_detected",
+            "error_description": state_error,
+            "hint": "OAuth2 state validation failed. Please restart the authorization flow."
         }
 
     if not code:
@@ -502,15 +931,13 @@ async def epic_callback(
                 print(f"   Response: {error_text[:500]}")
                 return {
                     "success": False,
-                    "error": f"Token exchange failed: {token_response.status_code}",
-                    "details": error_text
+                    "error": "Authentication failed. Please try again."
                 }
     except Exception as e:
         print(f"❌ Epic callback exception: {str(e)}")
         return {
             "success": False,
-            "error": "Exception during token exchange",
-            "details": str(e)
+            "error": "Authentication failed. Please try again."
         }
 
 
@@ -567,13 +994,16 @@ async def veradigm_authorize():
     """
     import urllib.parse
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="veradigm")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": VERADIGM_CLIENT_ID,
         "redirect_uri": VERADIGM_REDIRECT_URI,
         "scope": "launch/patient patient/*.read openid fhirUser",
-        "state": uuid.uuid4().hex,
+        "state": state,
         "aud": VERADIGM_BASE_URL,
     }
 
@@ -583,7 +1013,8 @@ async def veradigm_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with Veradigm",
         "redirect_uri": VERADIGM_REDIRECT_URI,
-        "client_id": VERADIGM_CLIENT_ID
+        "client_id": VERADIGM_CLIENT_ID,
+        "state": state
     }
 
 
@@ -594,6 +1025,12 @@ async def veradigm_callback(code: str = None, state: str = None, error: str = No
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="veradigm")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (Veradigm): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -702,13 +1139,16 @@ async def athena_authorize():
             "message": "Set ATHENA_CLIENT_ID and ATHENA_CLIENT_SECRET in environment"
         }
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="athena")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": ATHENA_CLIENT_ID,
         "redirect_uri": ATHENA_REDIRECT_URI,
         "scope": "openid fhirUser launch/patient patient/*.read",
-        "state": uuid.uuid4().hex,
+        "state": state,
     }
 
     auth_url = f"{ATHENA_AUTH_URL}?{urllib.parse.urlencode(params)}"
@@ -717,7 +1157,8 @@ async def athena_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with athenahealth",
         "redirect_uri": ATHENA_REDIRECT_URI,
-        "client_id": ATHENA_CLIENT_ID
+        "client_id": ATHENA_CLIENT_ID,
+        "state": state
     }
 
 
@@ -728,6 +1169,12 @@ async def athena_callback(code: str = None, state: str = None, error: str = None
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="athena")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (athenahealth): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -844,13 +1291,16 @@ async def nextgen_authorize():
             "message": "Set NEXTGEN_CLIENT_ID and NEXTGEN_CLIENT_SECRET in environment"
         }
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="nextgen")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": NEXTGEN_CLIENT_ID,
         "redirect_uri": NEXTGEN_REDIRECT_URI,
         "scope": "openid fhirUser launch/patient patient/*.read",
-        "state": uuid.uuid4().hex,
+        "state": state,
     }
 
     auth_url = f"{NEXTGEN_AUTH_URL}?{urllib.parse.urlencode(params)}"
@@ -859,7 +1309,8 @@ async def nextgen_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with NextGen",
         "redirect_uri": NEXTGEN_REDIRECT_URI,
-        "client_id": NEXTGEN_CLIENT_ID
+        "client_id": NEXTGEN_CLIENT_ID,
+        "state": state
     }
 
 
@@ -870,6 +1321,12 @@ async def nextgen_callback(code: str = None, state: str = None, error: str = Non
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="nextgen")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (NextGen): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -986,13 +1443,16 @@ async def ecw_authorize():
             "message": "Set ECLINICALWORKS_CLIENT_ID and ECLINICALWORKS_CLIENT_SECRET in environment"
         }
 
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="ecw")
+
     # Build authorization URL
     params = {
         "response_type": "code",
         "client_id": ECLINICALWORKS_CLIENT_ID,
         "redirect_uri": ECLINICALWORKS_REDIRECT_URI,
         "scope": "openid fhirUser launch/patient patient/*.read",
-        "state": uuid.uuid4().hex,
+        "state": state,
         "aud": ECLINICALWORKS_BASE_URL,
     }
 
@@ -1002,7 +1462,8 @@ async def ecw_authorize():
         "authorization_url": auth_url,
         "instructions": "Open this URL in a browser to authenticate with eClinicalWorks",
         "redirect_uri": ECLINICALWORKS_REDIRECT_URI,
-        "client_id": ECLINICALWORKS_CLIENT_ID
+        "client_id": ECLINICALWORKS_CLIENT_ID,
+        "state": state
     }
 
 
@@ -1013,6 +1474,12 @@ async def ecw_callback(code: str = None, state: str = None, error: str = None):
     """
     if error:
         return {"success": False, "error": error}
+
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="ecw")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (eClinicalWorks): {state_error}")
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
 
     if not code:
         return {"success": False, "error": "No authorization code received"}
@@ -1125,7 +1592,6 @@ async def meditech_authorize():
     """
     import urllib.parse
     import hashlib
-    import secrets
 
     if not MEDITECH_CLIENT_ID:
         return {
@@ -1139,9 +1605,10 @@ async def meditech_authorize():
         hashlib.sha256(code_verifier.encode()).digest()
     ).decode().rstrip('=')
 
-    state = uuid.uuid4().hex
+    # Generate secure state for CSRF protection (Issue #19)
+    state = generate_oauth2_state(ehr="meditech")
 
-    # Store code_verifier for later use in token exchange
+    # Store code_verifier for later use in token exchange (keyed by state)
     meditech_pkce_store[state] = code_verifier
 
     # Build authorization URL - Greenfield uses patient/*.read scope with PKCE
@@ -1163,7 +1630,8 @@ async def meditech_authorize():
         "instructions": "Open this URL in a browser to authenticate with MEDITECH",
         "redirect_uri": MEDITECH_REDIRECT_URI,
         "client_id": MEDITECH_CLIENT_ID,
-        "pkce_enabled": True
+        "pkce_enabled": True,
+        "state": state
     }
 
 
@@ -1174,7 +1642,7 @@ async def meditech_callback(code: str = None, state: str = None, error: str = No
     """
     print(f"🔐 MEDITECH callback received:")
     print(f"   code: {code[:20] if code else 'None'}...")
-    print(f"   state: {state}")
+    print(f"   state: {state[:20] if state else 'None'}...")
     print(f"   error: {error}")
     print(f"   error_description: {error_description}")
 
@@ -1186,10 +1654,19 @@ async def meditech_callback(code: str = None, state: str = None, error: str = No
             "hint": "Check MEDITECH app configuration in Greenfield portal"
         }
 
+    # Validate OAuth2 state to prevent CSRF attacks (Issue #19)
+    # Note: For MEDITECH we validate state but also need to retrieve PKCE verifier
+    state_valid, state_error = validate_oauth2_state(state, expected_ehr="meditech")
+    if not state_valid:
+        print(f"⚠️ OAuth2 CSRF protection triggered (MEDITECH): {state_error}")
+        # Clean up any PKCE data for invalid state
+        meditech_pkce_store.pop(state, None)
+        return {"success": False, "error": "csrf_detected", "error_description": state_error}
+
     if not code:
         return {"success": False, "error": "No authorization code received"}
 
-    # Get PKCE code_verifier from store
+    # Get PKCE code_verifier from store (state already validated above)
     code_verifier = meditech_pkce_store.pop(state, None) if state else None
     if not code_verifier:
         print(f"   ⚠️ No code_verifier found for state: {state}")
@@ -1746,6 +2223,633 @@ async def get_device_status(device_id: str):
         "last_seen": device.last_seen.isoformat() if device.last_seen else None
     }
 
+
+# ============================================================================
+# REQUEST SIGNING ENDPOINTS (Issue #97 - Device Authentication)
+# ============================================================================
+
+class DeviceSigningRequest(BaseModel):
+    """Request to register a device for request signing."""
+    device_name: str
+    device_type: str  # glasses, web, mobile
+
+
+@app.post("/api/v1/auth/signing/register")
+async def register_device_for_signing(request: DeviceSigningRequest):
+    """
+    Register a new device and get signing credentials.
+
+    Returns device_id and secret_key for HMAC-SHA256 request signing.
+    The secret_key is only returned ONCE - store it securely!
+    """
+    registry = get_device_registry()
+    device_id, secret_key = registry.register_device(
+        device_name=request.device_name,
+        device_type=request.device_type
+    )
+
+    return {
+        "device_id": device_id,
+        "secret_key": secret_key,
+        "message": "Store the secret_key securely - it will not be shown again!",
+        "signing_instructions": {
+            "algorithm": "HMAC-SHA256",
+            "headers_required": [
+                "X-MDx-Device-ID",
+                "X-MDx-Timestamp",
+                "X-MDx-Signature"
+            ],
+            "canonical_format": "METHOD\\nPATH\\nTIMESTAMP\\nSHA256(BODY)",
+            "timestamp_format": "YYYY-MM-DDTHH:MM:SSZ",
+            "max_timestamp_age_seconds": 300
+        }
+    }
+
+
+@app.get("/api/v1/auth/signing/devices")
+async def list_signing_devices(include_revoked: bool = False):
+    """List all registered signing devices."""
+    registry = get_device_registry()
+    return {
+        "devices": registry.list_devices(include_revoked=include_revoked)
+    }
+
+
+@app.post("/api/v1/auth/signing/devices/{device_id}/revoke")
+async def revoke_signing_device(device_id: str, reason: str = "Manual revocation"):
+    """
+    Revoke a device's signing credentials.
+
+    Use this when a device is lost, stolen, or compromised.
+    """
+    registry = get_device_registry()
+    device = registry.get_device(device_id)
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if device.status == DeviceStatus.REVOKED:
+        raise HTTPException(status_code=400, detail="Device already revoked")
+
+    registry.revoke_device(device_id, reason)
+
+    return {
+        "message": f"Device {device_id} has been revoked",
+        "reason": reason
+    }
+
+
+@app.post("/api/v1/auth/signing/devices/{device_id}/rotate-key")
+async def rotate_signing_key(device_id: str):
+    """
+    Rotate a device's signing key.
+
+    Use this periodically or after suspected key exposure.
+    Returns the new secret_key - store it securely!
+    """
+    registry = get_device_registry()
+    device = registry.get_device(device_id)
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if device.status == DeviceStatus.REVOKED:
+        raise HTTPException(status_code=400, detail="Cannot rotate key for revoked device")
+
+    new_secret = registry.rotate_key(device_id)
+
+    return {
+        "device_id": device_id,
+        "secret_key": new_secret,
+        "message": "Store the new secret_key securely - it will not be shown again!"
+    }
+
+
+@app.post("/api/v1/auth/signing/verify")
+async def verify_signature_test(
+    request: Request,
+    x_mdx_device_id: str = Header(None, alias="X-MDx-Device-ID"),
+    x_mdx_timestamp: str = Header(None, alias="X-MDx-Timestamp"),
+    x_mdx_signature: str = Header(None, alias="X-MDx-Signature")
+):
+    """
+    Test endpoint to verify request signature.
+
+    Use this to test your signing implementation before using protected endpoints.
+    """
+    if not all([x_mdx_device_id, x_mdx_timestamp, x_mdx_signature]):
+        raise HTTPException(
+            status_code=400,
+            detail="Missing required headers: X-MDx-Device-ID, X-MDx-Timestamp, X-MDx-Signature"
+        )
+
+    verifier = get_signature_verifier()
+    body = await request.body()
+
+    try:
+        device = verifier.verify_request(
+            device_id=x_mdx_device_id,
+            timestamp=x_mdx_timestamp,
+            signature=x_mdx_signature,
+            method=request.method,
+            path=request.url.path,
+            body=body if body else None
+        )
+
+        return {
+            "verified": True,
+            "device_id": device.device_id,
+            "device_name": device.device_name,
+            "device_type": device.device_type,
+            "message": "Signature verified successfully!"
+        }
+    except UnknownDeviceError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except RevokedDeviceError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ExpiredTimestampError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except InvalidSignatureError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+# Dependency for signature-protected endpoints
+async def verify_request_signature(
+    request: Request,
+    x_mdx_device_id: str = Header(None, alias="X-MDx-Device-ID"),
+    x_mdx_timestamp: str = Header(None, alias="X-MDx-Timestamp"),
+    x_mdx_signature: str = Header(None, alias="X-MDx-Signature")
+):
+    """
+    FastAPI dependency to verify request signatures on protected endpoints.
+
+    Usage:
+        @app.get("/api/v1/protected")
+        async def protected_endpoint(device = Depends(verify_request_signature)):
+            return {"device": device.device_id}
+    """
+    # Skip verification if headers not provided (backward compatibility)
+    # TODO: Make mandatory after migration period
+    if not all([x_mdx_device_id, x_mdx_timestamp, x_mdx_signature]):
+        return None
+
+    verifier = get_signature_verifier()
+    body = await request.body()
+
+    try:
+        return verifier.verify_request(
+            device_id=x_mdx_device_id,
+            timestamp=x_mdx_timestamp,
+            signature=x_mdx_signature,
+            method=request.method,
+            path=request.url.path,
+            body=body if body else None
+        )
+    except SignatureError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+# ============================================================================
+# TOKEN REFRESH ENDPOINTS (Issue #65 - OAuth2 Token Management)
+# ============================================================================
+
+@app.get("/api/v1/auth/tokens")
+async def list_tokens():
+    """
+    List all stored OAuth2 tokens with their status.
+
+    Returns token status for each EHR platform including:
+    - Expiration time
+    - Whether refresh is needed
+    - Refresh token availability
+    """
+    service = get_token_service()
+    return {"tokens": service.list_tokens()}
+
+
+@app.get("/api/v1/auth/tokens/{ehr}")
+async def get_token_status(ehr: str):
+    """
+    Get detailed status of a specific EHR token.
+
+    Args:
+        ehr: EHR platform name (epic, cerner, veradigm, etc.)
+    """
+    service = get_token_service()
+    status = service.get_token_status(ehr)
+
+    if status["status"] == "not_found":
+        raise HTTPException(status_code=404, detail=f"No token found for {ehr}")
+
+    return status
+
+
+@app.post("/api/v1/auth/tokens/{ehr}/refresh")
+async def refresh_token(ehr: str):
+    """
+    Manually refresh an OAuth2 token.
+
+    Use this when a token is expiring soon or has expired.
+    Requires a valid refresh token to be stored.
+
+    Args:
+        ehr: EHR platform name (epic, cerner, veradigm, etc.)
+    """
+    service = get_token_service()
+
+    # Check if token exists
+    token = service.get_token(ehr)
+    if not token:
+        raise HTTPException(status_code=404, detail=f"No token found for {ehr}")
+
+    if not token.refresh_token:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No refresh token available for {ehr}. Re-authentication required."
+        )
+
+    # Attempt refresh
+    success, message = await service.refresh_token(ehr)
+
+    if success:
+        return {
+            "success": True,
+            "message": message,
+            "token_status": service.get_token_status(ehr)
+        }
+    else:
+        raise HTTPException(status_code=400, detail=message)
+
+
+@app.post("/api/v1/auth/tokens/refresh-all")
+async def refresh_all_expiring_tokens():
+    """
+    Check all tokens and refresh any that are expiring soon.
+
+    This is called automatically by the background job, but can
+    also be triggered manually.
+    """
+    service = get_token_service()
+    results = await service.check_and_refresh_expiring()
+
+    return {
+        "checked": results["checked"],
+        "refreshed": len(results["refreshed"]),
+        "failed": len(results["failed"]),
+        "skipped": len(results["skipped"]),
+        "details": results
+    }
+
+
+@app.delete("/api/v1/auth/tokens/{ehr}")
+async def revoke_token(ehr: str):
+    """
+    Revoke and remove a stored token.
+
+    Use this on logout or when token should be invalidated.
+
+    Args:
+        ehr: EHR platform name
+    """
+    service = get_token_service()
+
+    if service.revoke_token(ehr):
+        return {"message": f"Token for {ehr} has been revoked"}
+    else:
+        raise HTTPException(status_code=404, detail=f"No token found for {ehr}")
+
+
+# ============================================================================
+# PHI ENCRYPTION ENDPOINTS (Issue #49 - HIPAA-Compliant Field Encryption)
+# ============================================================================
+
+@app.get("/api/v1/encryption/status")
+async def get_encryption_status():
+    """
+    Get PHI encryption service status and key information.
+
+    Returns current key ID, rotation status, and compliance info.
+
+    HIPAA Compliance:
+    - §164.312(a)(2)(iv) - Encryption and Decryption controls
+    """
+    service = get_encryption_service()
+    status = service.get_key_status()
+
+    return {
+        "status": "active",
+        "encryption_enabled": True,
+        "algorithm": "AES-256 (Fernet)",
+        **status,
+        "compliance": {
+            "hipaa": "§164.312(a)(2)(iv) - Encryption and Decryption",
+            "soc2": "Type II - Encryption at Rest",
+            "pci_dss": "Requirement 3.4 - Cryptographic Protection"
+        }
+    }
+
+
+@app.get("/api/v1/encryption/keys")
+async def list_encryption_keys():
+    """
+    List all encryption keys (metadata only, no key data).
+
+    Shows key IDs, creation dates, expiry, and rotation status.
+    Used for key lifecycle management and audit.
+    """
+    service = get_encryption_service()
+    keys = service.key_manager.list_keys()
+
+    return {
+        "keys": keys,
+        "total": len(keys),
+        "rotation_policy": f"{service.key_manager.KEY_ROTATION_DAYS} days"
+    }
+
+
+@app.post("/api/v1/encryption/rotate")
+async def rotate_encryption_key():
+    """
+    Rotate the PHI encryption key.
+
+    Creates a new active key while keeping old keys for decryption.
+    Old encrypted data remains readable; new data uses new key.
+
+    IMPORTANT: After rotation, consider re-encrypting sensitive
+    data with the new key for maximum security.
+
+    Returns:
+        Rotation status with old and new key IDs
+    """
+    service = get_encryption_service()
+
+    try:
+        result = service.rotate_key()
+        return {
+            "success": True,
+            **result
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Key rotation failed: {str(e)}"
+        )
+
+
+class EncryptRequest(BaseModel):
+    """Request body for encryption endpoint."""
+    plaintext: str
+    field_type: str = "generic_phi"
+
+
+@app.post("/api/v1/encryption/encrypt")
+async def encrypt_phi_value(request: EncryptRequest):
+    """
+    Encrypt a PHI value (for testing/development).
+
+    Args:
+        plaintext: Value to encrypt
+        field_type: PHI field type (patient_name, ssn, mrn, etc.)
+
+    Returns:
+        Encrypted value in storage format
+
+    Note: In production, use the Python API directly for better security.
+    """
+    service = get_encryption_service()
+
+    try:
+        # Map string to enum
+        field_type = PHIFieldType(request.field_type)
+        encrypted = service.encrypt_string(request.plaintext, field_type)
+
+        return {
+            "success": True,
+            "encrypted": encrypted,
+            "field_type": request.field_type
+        }
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid field_type. Valid types: {[t.value for t in PHIFieldType]}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Encryption failed: {str(e)}"
+        )
+
+
+class DecryptRequest(BaseModel):
+    """Request body for decryption endpoint."""
+    encrypted: str
+
+
+@app.post("/api/v1/encryption/decrypt")
+async def decrypt_phi_value(request: DecryptRequest):
+    """
+    Decrypt a PHI value (for testing/development).
+
+    Args:
+        encrypted: Encrypted JSON string from encrypt endpoint
+
+    Returns:
+        Decrypted plaintext
+
+    Note: In production, use the Python API directly for better security.
+    """
+    service = get_encryption_service()
+
+    try:
+        plaintext = service.decrypt_string(request.encrypted)
+        return {
+            "success": True,
+            "plaintext": plaintext
+        }
+    except DecryptionError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Decryption failed: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Decryption error: {str(e)}"
+        )
+
+
+# ============================================================================
+# SEARCHABLE ENCRYPTION ENDPOINTS (Issue #50 - HMAC Search Tokens)
+# ============================================================================
+
+class SearchableEncryptRequest(BaseModel):
+    """Request body for searchable encryption endpoint."""
+    plaintext: str
+    field_type: str = "mrn"
+
+
+@app.post("/api/v1/encryption/encrypt-searchable")
+async def encrypt_searchable_value(request: SearchableEncryptRequest):
+    """
+    Encrypt a value and create an HMAC search token (Issue #50).
+
+    Use this for fields that need to be searched without decryption.
+    Store the encrypted value in one column and the search token in another.
+
+    Args:
+        plaintext: Value to encrypt
+        field_type: PHI field type (mrn, ssn, patient_name, etc.)
+
+    Returns:
+        encrypted: The encrypted value (store for data)
+        search_token: HMAC token (store for lookups)
+    """
+    service = get_encryption_service()
+
+    try:
+        field_type = PHIFieldType(request.field_type)
+        encrypted, search_token = service.encrypt_searchable(
+            request.plaintext, field_type
+        )
+
+        return {
+            "success": True,
+            "encrypted": encrypted,
+            "search_token": search_token,
+            "field_type": request.field_type,
+            "usage": {
+                "encrypted": "Store in encrypted_column for data retrieval",
+                "search_token": "Store in search_token_column for lookups"
+            }
+        }
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid field_type. Valid types: {[t.value for t in PHIFieldType]}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Encryption failed: {str(e)}"
+        )
+
+
+class CreateSearchTokenRequest(BaseModel):
+    """Request body for creating search tokens."""
+    plaintext: str
+    field_type: str = "mrn"
+
+
+@app.post("/api/v1/encryption/search-token")
+async def create_search_token(request: CreateSearchTokenRequest):
+    """
+    Create a search token for looking up encrypted values.
+
+    Use this to create tokens for database queries.
+
+    Args:
+        plaintext: Value to create token for
+        field_type: PHI field type
+
+    Returns:
+        search_token: HMAC token to use in WHERE clause
+    """
+    service = get_encryption_service()
+
+    try:
+        field_type = PHIFieldType(request.field_type)
+        token = service.create_search_token(request.plaintext, field_type)
+
+        return {
+            "search_token": token,
+            "field_type": request.field_type
+        }
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid field_type"
+        )
+
+
+@app.get("/api/v1/encryption/sensitivity/{field_type}")
+async def get_sensitivity_tier(field_type: str):
+    """
+    Get sensitivity tier information for a field type (Issue #50).
+
+    Returns tier level and description for compliance documentation.
+    """
+    return get_field_sensitivity(field_type)
+
+
+@app.get("/api/v1/encryption/sensitivity")
+async def list_sensitivity_tiers():
+    """
+    List all field types and their sensitivity tiers.
+    """
+    return {
+        "tiers": {
+            "TIER_1_HIGHEST": {
+                "level": 1,
+                "description": "Highest sensitivity - SSN, patient name, DOB, insurance ID",
+                "fields": [f for f, t in FIELD_SENSITIVITY_MAP.items() if t == SensitivityTier.TIER_1_HIGHEST]
+            },
+            "TIER_2_HIGH": {
+                "level": 2,
+                "description": "High sensitivity - MRN, email, phone, clinical notes",
+                "fields": [f for f, t in FIELD_SENSITIVITY_MAP.items() if t == SensitivityTier.TIER_2_HIGH]
+            },
+            "TIER_3_MODERATE": {
+                "level": 3,
+                "description": "Moderate sensitivity - Emergency contacts",
+                "fields": [f for f, t in FIELD_SENSITIVITY_MAP.items() if t == SensitivityTier.TIER_3_MODERATE]
+            }
+        },
+        "compliance": "Per HIPAA §164.308(a)(3)(i) - Workforce Access Controls"
+    }
+
+
+# ============================================================================
+# RATE LIMITING & AUDIT ENDPOINTS (Issue #50 - Anti-Exfiltration)
+# ============================================================================
+
+@app.get("/api/v1/encryption/rate-limit/{user_id}")
+async def get_rate_limit_status(user_id: str):
+    """
+    Get rate limit status for a user (Issue #50).
+
+    Shows decryption counts and remaining quota.
+    """
+    service = get_encryption_service()
+    return service.get_rate_limit_stats(user_id)
+
+
+@app.get("/api/v1/encryption/audit/stats")
+async def get_audit_stats(hours: int = 24):
+    """
+    Get decryption audit statistics (Issue #50).
+
+    Shows aggregated decryption activity for compliance monitoring.
+    """
+    service = get_encryption_service()
+    return service.get_audit_stats(hours)
+
+
+@app.get("/api/v1/encryption/audit/recent")
+async def get_recent_audit_entries(user_id: Optional[str] = None, limit: int = 100):
+    """
+    Get recent decryption audit entries (Issue #50).
+
+    Shows detailed audit log for compliance review.
+    """
+    service = get_encryption_service()
+    entries = service.get_recent_audit_entries(user_id, min(limit, 1000))
+    return {
+        "entries": entries,
+        "count": len(entries),
+        "filter": {"user_id": user_id} if user_id else None
+    }
+
+
 # Minimal patient endpoint for Samsung (returns compact data from actual EHR)
 @app.get("/api/v1/patient/{patient_id}/quick")
 async def get_patient_quick(patient_id: str, ehr: str = "cerner"):
@@ -1934,13 +3038,13 @@ async def get_patient_quick(patient_id: str, ehr: str = "cerner"):
         }
     except Exception as e:
         print(f"Error in quick patient fetch: {e}")
-        # Return error response
+        # Return error response (sanitized - no internal details)
         return {
             "patient_id": patient_id,
             "name": "Error loading patient",
-            "error": str(e),
+            "error": "Unable to load patient data",
             "ehr": ehr,
-            "display_text": f"Error loading patient from {ehr.upper()}:\n{str(e)}"
+            "display_text": f"Unable to load patient from {ehr.upper()}. Please try again."
         }
 
 
@@ -2095,12 +3199,38 @@ class CheckInRequest(BaseModel):
     room: Optional[str] = None
     chief_complaint: Optional[str] = None
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('room', 'chief_complaint')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
 class UpdateWorklistStatusRequest(BaseModel):
     """Request to update patient status in worklist"""
     patient_id: str
     status: str  # checked_in, in_room, in_progress, completed, no_show
     room: Optional[str] = None
     notes: Optional[str] = None
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v):
+        valid = {'scheduled', 'checked_in', 'in_room', 'in_progress', 'completed', 'no_show'}
+        return validate_status(v, valid)
+
+    @field_validator('room', 'notes')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
 
 class OrderUpdateRequest(BaseModel):
     """Request to update an existing order"""
@@ -2111,6 +3241,24 @@ class OrderUpdateRequest(BaseModel):
     frequency: Optional[str] = None
     notes: Optional[str] = None
     cancel: bool = False
+
+    @field_validator('patient_id', 'order_id')
+    @classmethod
+    def validate_ids(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('priority')
+    @classmethod
+    def validate_priority(cls, v):
+        if v:
+            valid = {'routine', 'urgent', 'stat'}
+            return validate_status(v, valid)
+        return v
+
+    @field_validator('dose', 'frequency', 'notes')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
 
 
 # Differential Diagnosis Models
@@ -2124,6 +3272,38 @@ class DdxRequest(BaseModel):
     medical_history: List[str] = []
     medications: List[str] = []
     allergies: List[str] = []
+
+    @field_validator('chief_complaint')
+    @classmethod
+    def sanitize_chief_complaint(cls, v):
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH)
+
+    @field_validator('symptoms', 'medical_history', 'medications', 'allergies')
+    @classmethod
+    def sanitize_lists(cls, v):
+        return sanitize_list(v, max_items=50, max_item_length=500)
+
+    @field_validator('vitals')
+    @classmethod
+    def sanitize_vitals(cls, v):
+        return sanitize_dict(v) if v else v
+
+    @field_validator('gender')
+    @classmethod
+    def validate_gender(cls, v):
+        if v:
+            valid = {'male', 'female', 'other', 'unknown', 'm', 'f'}
+            if v.lower().strip() not in valid:
+                return 'unknown'
+            return v.lower().strip()
+        return v
+
+    @field_validator('age')
+    @classmethod
+    def validate_age(cls, v):
+        if v is not None and (v < 0 or v > 150):
+            raise ValueError("Age must be between 0 and 150")
+        return v
 
 
 class DifferentialDiagnosis(BaseModel):
@@ -2893,6 +4073,35 @@ class NoteRequest(BaseModel):
     note_type: str = "SOAP"
     chief_complaint: Optional[str] = None
 
+    @field_validator('transcript')
+    @classmethod
+    def sanitize_transcript(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Transcript is required")
+        return sanitize_text(v, MAX_NOTE_LENGTH)
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v) if v else v
+
+    @field_validator('note_type')
+    @classmethod
+    def validate_note_type(cls, v):
+        valid = {'soap', 'soap_note', 'progress', 'progress_note', 'hp', 'consult'}
+        normalized = validate_status(v, valid)
+        # Normalize to standard names
+        if normalized in ('soap', 'soap_note'):
+            return 'SOAP'
+        elif normalized in ('progress', 'progress_note'):
+            return 'PROGRESS'
+        return normalized.upper()
+
+    @field_validator('chief_complaint')
+    @classmethod
+    def sanitize_chief_complaint(cls, v):
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH) if v else v
+
 
 class SOAPNote(BaseModel):
     subjective: str
@@ -2956,13 +4165,77 @@ class ConsultNote(BaseModel):
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 
 
-# Token storage for EHR OAuth sessions (persisted to file)
+# Token storage for EHR OAuth sessions (persisted to file with encryption)
 TOKENS_FILE = os.path.join(os.path.dirname(__file__), ".ehr_tokens.json")
+TOKENS_FILE_ENCRYPTED = os.path.join(os.path.dirname(__file__), ".ehr_tokens.enc")
 ehr_tokens: Dict[str, Dict[str, Any]] = {}
 
-def save_tokens():
-    """Save EHR tokens to file for persistence across restarts"""
+# Encryption key from environment variable
+EHR_TOKEN_ENCRYPTION_KEY = os.getenv("EHR_TOKEN_ENCRYPTION_KEY", "")
+
+def _get_fernet_key() -> Optional[bytes]:
+    """Derive Fernet key from environment variable using PBKDF2"""
+    if not EHR_TOKEN_ENCRYPTION_KEY or not ENCRYPTION_AVAILABLE:
+        return None
     try:
+        # Use PBKDF2 to derive a proper Fernet key from the password
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=b"mdxvision_ehr_tokens_v1",  # Static salt (key should be unique per deployment)
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(EHR_TOKEN_ENCRYPTION_KEY.encode()))
+        return key
+    except Exception as e:
+        print(f"⚠️ Failed to derive encryption key: {e}")
+        return None
+
+def _encrypt_tokens(data: dict) -> Optional[bytes]:
+    """Encrypt token data using Fernet (AES-128-CBC with HMAC)"""
+    key = _get_fernet_key()
+    if not key:
+        return None
+    try:
+        f = Fernet(key)
+        json_data = json.dumps(data, default=str).encode()
+        return f.encrypt(json_data)
+    except Exception as e:
+        print(f"⚠️ Encryption failed: {e}")
+        return None
+
+def _decrypt_tokens(encrypted_data: bytes) -> Optional[dict]:
+    """Decrypt token data using Fernet"""
+    key = _get_fernet_key()
+    if not key:
+        return None
+    try:
+        f = Fernet(key)
+        decrypted = f.decrypt(encrypted_data)
+        return json.loads(decrypted.decode())
+    except Exception as e:
+        print(f"⚠️ Decryption failed: {e}")
+        return None
+
+def save_tokens():
+    """Save EHR tokens to file for persistence across restarts (encrypted if key available)"""
+    try:
+        # Try encrypted storage first
+        if EHR_TOKEN_ENCRYPTION_KEY and ENCRYPTION_AVAILABLE:
+            encrypted = _encrypt_tokens(ehr_tokens)
+            if encrypted:
+                with open(TOKENS_FILE_ENCRYPTED, "wb") as f:
+                    f.write(encrypted)
+                # Remove plaintext file if it exists
+                if os.path.exists(TOKENS_FILE):
+                    os.remove(TOKENS_FILE)
+                    print(f"🔒 Migrated tokens to encrypted storage")
+                print(f"🔒 Saved encrypted EHR tokens")
+                return
+
+        # Fallback to plaintext (with warning)
+        if not EHR_TOKEN_ENCRYPTION_KEY:
+            print(f"⚠️ EHR_TOKEN_ENCRYPTION_KEY not set - storing tokens unencrypted (HIPAA risk!)")
         with open(TOKENS_FILE, "w") as f:
             json.dump(ehr_tokens, f, indent=2, default=str)
         print(f"✅ Saved EHR tokens to {TOKENS_FILE}")
@@ -2970,15 +4243,33 @@ def save_tokens():
         print(f"⚠️ Failed to save tokens: {e}")
 
 def load_tokens():
-    """Load EHR tokens from file on startup"""
+    """Load EHR tokens from file on startup (supports both encrypted and plaintext)"""
     global ehr_tokens
     try:
+        # Try encrypted file first
+        if os.path.exists(TOKENS_FILE_ENCRYPTED) and EHR_TOKEN_ENCRYPTION_KEY and ENCRYPTION_AVAILABLE:
+            with open(TOKENS_FILE_ENCRYPTED, "rb") as f:
+                encrypted_data = f.read()
+            decrypted = _decrypt_tokens(encrypted_data)
+            if decrypted:
+                ehr_tokens = decrypted
+                valid = [k for k, v in ehr_tokens.items() if v.get("access_token")]
+                print(f"🔒 Loaded encrypted EHR tokens: {', '.join(valid) if valid else 'none'}")
+                return
+
+        # Fallback to plaintext file (migration path)
         if os.path.exists(TOKENS_FILE):
             with open(TOKENS_FILE, "r") as f:
                 ehr_tokens = json.load(f)
-            # Check which tokens are still valid
             valid = [k for k, v in ehr_tokens.items() if v.get("access_token")]
-            print(f"✅ Loaded EHR tokens: {', '.join(valid) if valid else 'none'}")
+            print(f"✅ Loaded EHR tokens (plaintext): {', '.join(valid) if valid else 'none'}")
+
+            # Auto-migrate to encrypted if key is available
+            if EHR_TOKEN_ENCRYPTION_KEY and ENCRYPTION_AVAILABLE:
+                print(f"🔄 Migrating tokens to encrypted storage...")
+                save_tokens()  # This will encrypt and remove plaintext
+            elif not EHR_TOKEN_ENCRYPTION_KEY:
+                print(f"⚠️ Set EHR_TOKEN_ENCRYPTION_KEY to enable token encryption (HIPAA compliance)")
     except Exception as e:
         print(f"⚠️ Failed to load tokens: {e}")
         ehr_tokens = {}
@@ -3764,6 +5055,40 @@ async def get_ehr_status():
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FHIR Retry Statistics (Issue #24 - Monitoring)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/fhir/retry-stats")
+async def get_fhir_retry_stats():
+    """Get FHIR API retry statistics for monitoring"""
+    from fhir_retry import get_stats, get_config
+
+    stats = get_stats()
+    config = get_config()
+
+    return {
+        "stats": stats.to_dict(),
+        "config": {
+            "max_attempts": config.max_attempts,
+            "min_wait_seconds": config.min_wait,
+            "max_wait_seconds": config.max_wait,
+            "multiplier": config.multiplier,
+            "timeout_seconds": config.timeout,
+            "retryable_status_codes": list(config.retryable_status_codes),
+            "non_retryable_status_codes": list(config.non_retryable_status_codes),
+        }
+    }
+
+
+@app.post("/api/v1/fhir/retry-stats/reset")
+async def reset_fhir_retry_stats():
+    """Reset FHIR API retry statistics"""
+    from fhir_retry import reset_stats
+    reset_stats()
+    return {"status": "reset", "message": "Retry statistics have been reset"}
+
+
 @app.get("/api/v1/patient/search", response_model=List[SearchResult])
 async def search_patients(name: str, request: Request, ehr: str = "cerner"):
     """Search patients by name - for voice command 'Find patient...'
@@ -3800,6 +5125,7 @@ async def search_patients(name: str, request: Request, ehr: str = "cerner"):
 
 
 @app.get("/api/v1/patient/{patient_id}", response_model=PatientSummary)
+@limiter.limit(RATE_LIMIT_FHIR)
 async def get_patient(patient_id: str, request: Request, ehr: str = "cerner"):
     """Get patient summary by ID - optimized for AR glasses
 
@@ -4013,6 +5339,16 @@ async def get_patient(patient_id: str, request: Request, ehr: str = "cerner"):
         user_agent=user_agent
     )
 
+    # FHIR AuditEvent: Log patient access (Issue #108)
+    fhir_audit_logger.log_patient_access(
+        patient_id=patient_id,
+        success=True,
+        clinician_id=user_id,
+        clinician_name=user_name,
+        device_id=request.headers.get("X-Device-ID"),
+        ip_address=ip_address
+    )
+
     return summary
 
 
@@ -4203,21 +5539,53 @@ def _init_worklist_for_today():
                 },
                 {
                     "patient_id": "12724067",
-                    "name": "JOHNSON, MARIA",
-                    "date_of_birth": "1978-07-10",
+                    "name": "JACKSON, TANYA",
+                    "date_of_birth": "1992-03-15",
                     "gender": "female",
                     "mrn": "MRN-12724067",
                     "room": None,
                     "appointment_time": "10:00",
-                    "appointment_type": "Follow-up",
-                    "chief_complaint": "Diabetes management",
+                    "appointment_type": "OB Follow-up",
+                    "chief_complaint": "Prenatal visit - 32 weeks",
                     "provider": "Dr. Smith",
                     "status": "scheduled",
                     "checked_in_at": None,
                     "encounter_started_at": None,
-                    "has_critical_alerts": False,
-                    "priority": 0,
-                    "ehr": "cerner"
+                    "has_critical_alerts": True,
+                    "priority": 1,
+                    "ehr": "cerner",
+                    "health_equity": {
+                        "fitzpatrick_skin_type": 5,
+                        "ancestry": "African American",
+                        "pregnancy": {
+                            "gestational_age_weeks": 32,
+                            "gravida": 2,
+                            "para": 1
+                        },
+                        "alerts": [
+                            {
+                                "type": "maternal_mortality",
+                                "severity": "critical",
+                                "title": "Elevated Maternal Risk",
+                                "message": "Black women face 3-4x higher maternal mortality rate. Lower threshold for escalation. Document ALL patient-reported symptoms. Monitor closely for: preeclampsia, hemorrhage, cardiomyopathy, infection.",
+                                "source": "CDC MMWR, KFF 2023, Johns Hopkins"
+                            },
+                            {
+                                "type": "pulse_oximeter",
+                                "severity": "warning",
+                                "title": "Pulse Oximeter Accuracy",
+                                "message": "SpO2 readings may be 1-4% higher than actual. Critical during labor/delivery - consider ABG.",
+                                "source": "NEJM 2020, FDA Guidance 2025"
+                            },
+                            {
+                                "type": "clinical_bias",
+                                "severity": "warning",
+                                "title": "Symptom Dismissal Risk",
+                                "message": "Research shows Black women's symptoms are more likely to be dismissed. Listen to and document ALL concerns, even if initially reassured.",
+                                "source": "PMC Listen to the Whispers 2023"
+                            }
+                        ]
+                    }
                 },
                 {
                     "patient_id": "12724068",
@@ -4235,7 +5603,27 @@ def _init_worklist_for_today():
                     "encounter_started_at": None,
                     "has_critical_alerts": True,
                     "priority": 2,
-                    "ehr": "cerner"
+                    "ehr": "cerner",
+                    "health_equity": {
+                        "fitzpatrick_skin_type": 5,
+                        "ancestry": "African American",
+                        "alerts": [
+                            {
+                                "type": "pulse_oximeter",
+                                "severity": "warning",
+                                "title": "Pulse Oximeter Accuracy",
+                                "message": "SpO2 readings may be 1-4% higher than actual. Consider ABG for critical decisions.",
+                                "source": "NEJM 2020, FDA Guidance 2025"
+                            },
+                            {
+                                "type": "medication",
+                                "severity": "info",
+                                "title": "Medication Response",
+                                "message": "ACE inhibitors may have reduced efficacy. Consider thiazide diuretic or CCB as first-line for HTN.",
+                                "source": "AHA/ACC Guidelines"
+                            }
+                        ]
+                    }
                 },
                 {
                     "patient_id": "12724069",
@@ -4271,7 +5659,26 @@ def _init_worklist_for_today():
                     "encounter_started_at": None,
                     "has_critical_alerts": False,
                     "priority": 0,
-                    "ehr": "epic"
+                    "ehr": "epic",
+                    "health_equity": {
+                        "religion": "Jehovah's Witness",
+                        "cultural_preferences": {
+                            "blood_products": {
+                                "refuses": ["whole_blood", "rbc", "wbc", "platelets", "plasma"],
+                                "individual_conscience": ["albumin", "immunoglobulins", "cell_salvage"],
+                                "note": "Confirm individual preferences with patient"
+                            }
+                        },
+                        "alerts": [
+                            {
+                                "type": "blood_products",
+                                "severity": "critical",
+                                "title": "Blood Product Restriction",
+                                "message": "Patient is Jehovah's Witness. Refuses whole blood and primary components. Confirm preferences for fractions. Contact JW Hospital Liaison if needed.",
+                                "source": "Patient-reported religious preference"
+                            }
+                        ]
+                    }
                 },
                 {
                     "patient_id": "erXuFYUfucBZaryVksYEcMg3",
@@ -4289,7 +5696,34 @@ def _init_worklist_for_today():
                     "encounter_started_at": None,
                     "has_critical_alerts": True,
                     "priority": 1,
-                    "ehr": "epic"
+                    "ehr": "epic",
+                    "health_equity": {
+                        "ethnicity": "Hispanic/Latino",
+                        "language_preference": "Spanish",
+                        "interpreter_needed": True,
+                        "cultural_preferences": {
+                            "family_involvement": "family_centered",
+                            "decision_making": "Include family in medical decisions",
+                            "communication_style": "indirect",
+                            "primary_family_contact": "Husband - Carlos Lopez"
+                        },
+                        "alerts": [
+                            {
+                                "type": "cultural",
+                                "severity": "info",
+                                "title": "Family-Centered Care",
+                                "message": "Patient prefers family involvement in healthcare decisions (familismo). Include husband Carlos in care discussions.",
+                                "source": "Patient-reported preference"
+                            },
+                            {
+                                "type": "language",
+                                "severity": "info",
+                                "title": "Language Services",
+                                "message": "Spanish interpreter recommended. Avoid medical jargon; use teach-back method.",
+                                "source": "Patient preference"
+                            }
+                        ]
+                    }
                 }
             ]
         }
@@ -4390,6 +5824,12 @@ async def check_in_patient(req: CheckInRequest, request: Request):
         ip_address=ip_address
     )
 
+    # Broadcast to connected clients
+    try:
+        await broadcast_worklist_update(patient, "check_in")
+    except Exception as e:
+        print(f"Broadcast error: {e}")
+
     return {
         "success": True,
         "message": f"Patient {patient['name']} checked in",
@@ -4442,11 +5882,72 @@ async def update_worklist_status(req: UpdateWorklistStatusRequest, request: Requ
         ip_address=ip_address
     )
 
+    # Broadcast to connected clients
+    try:
+        await broadcast_worklist_update(patient, "status_change")
+    except Exception as e:
+        print(f"Broadcast error: {e}")
+
     return {
         "success": True,
         "message": f"Patient {patient['name']} status updated to {req.status}",
         "patient": patient
     }
+
+
+@app.get("/api/v1/health-equity/{patient_id}")
+async def get_health_equity_alerts(patient_id: str, request: Request):
+    """
+    Get health equity alerts and cultural care preferences for a patient.
+
+    Returns racial medicine awareness alerts and cultural care considerations
+    based on patient demographics and preferences.
+    """
+    worklist = _init_worklist_for_today()
+    patients = worklist.get("patients", [])
+
+    # Find patient
+    patient = None
+    for p in patients:
+        if p.get("patient_id") == patient_id:
+            patient = p
+            break
+
+    if not patient:
+        raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found")
+
+    health_equity = patient.get("health_equity", {})
+
+    # Build response
+    response = {
+        "patient_id": patient_id,
+        "patient_name": patient.get("name"),
+        "has_health_equity_alerts": len(health_equity.get("alerts", [])) > 0,
+        "alerts": health_equity.get("alerts", []),
+        "cultural_preferences": health_equity.get("cultural_preferences", {}),
+        "demographics": {
+            "fitzpatrick_skin_type": health_equity.get("fitzpatrick_skin_type"),
+            "ancestry": health_equity.get("ancestry"),
+            "ethnicity": health_equity.get("ethnicity"),
+            "religion": health_equity.get("religion"),
+            "language_preference": health_equity.get("language_preference"),
+            "interpreter_needed": health_equity.get("interpreter_needed", False)
+        }
+    }
+
+    # Audit
+    ip_address = request.client.host if request.client else None
+    audit_logger.log_phi_access(
+        action=AuditAction.VIEW_PATIENT,
+        patient_id=patient_id,
+        patient_name=patient.get("name"),
+        endpoint="/api/v1/health-equity",
+        status="success",
+        details=f"alerts={len(health_equity.get('alerts', []))}",
+        ip_address=ip_address
+    )
+
+    return response
 
 
 @app.get("/api/v1/worklist/next")
@@ -5555,7 +7056,7 @@ async def generate_clinical_note(request: NoteRequest):
         return response
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Note generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Note generation temporarily unavailable")
 
 
 @app.post("/api/v1/notes/quick")
@@ -5880,7 +7381,7 @@ async def generate_differential_diagnosis(request: DdxRequest, req: Request):
                 details=str(fallback_error)[:100],
                 ip_address=ip_address
             )
-            raise HTTPException(status_code=500, detail=f"DDx generation failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Differential diagnosis service temporarily unavailable")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6128,7 +7629,7 @@ async def copilot_chat(request: CopilotRequest, req: Request):
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Co-pilot error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Clinical co-pilot temporarily unavailable")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6430,7 +7931,7 @@ async def copilot_multiturn_reason(request: MultiTurnRequest, req: Request):
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Reasoning error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Reasoning service temporarily unavailable")
 
 
 @app.post("/api/v1/copilot/teach")
@@ -6478,6 +7979,23 @@ class MinervaRequest(BaseModel):
     patient_id: Optional[str] = None
     conversation_id: Optional[str] = None
     patient_context: Optional[Dict[str, Any]] = None
+
+    @field_validator('message')
+    @classmethod
+    def sanitize_message(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Message is required")
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH)
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v) if v else v
+
+    @field_validator('conversation_id')
+    @classmethod
+    def sanitize_conversation_id(cls, v):
+        return sanitize_text(v, 100) if v else v
 
 class MinervaCitation(BaseModel):
     """Citation from RAG knowledge base"""
@@ -6707,7 +8225,8 @@ async def generate_minerva_response(
 
 
 @app.post("/api/v1/minerva/chat", response_model=MinervaResponse)
-async def minerva_chat(request: MinervaRequest, req: Request):
+@limiter.limit(RATE_LIMIT_AI)
+async def minerva_chat(body: MinervaRequest, request: Request):
     """
     Minerva AI Clinical Assistant chat endpoint (Feature #97).
 
@@ -6726,11 +8245,11 @@ async def minerva_chat(request: MinervaRequest, req: Request):
         }
     """
     # Validate input
-    if not request.message or not request.message.strip():
+    if not body.message or not body.message.strip():
         raise HTTPException(status_code=400, detail="Message is required")
 
     # Generate or use conversation ID
-    conversation_id = request.conversation_id or str(uuid.uuid4())[:8]
+    conversation_id = body.conversation_id or str(uuid.uuid4())[:8]
 
     # Get conversation history
     conversation_history = minerva_conversations.get(conversation_id, [])
@@ -6739,26 +8258,26 @@ async def minerva_chat(request: MinervaRequest, req: Request):
     audit_logger._log_event(
         event_type="AI",
         action="MINERVA_CHAT",
-        patient_id=request.patient_id,
+        patient_id=body.patient_id,
         status="processing",
         details={
-            "message_length": len(request.message),
+            "message_length": len(body.message),
             "conversation_id": conversation_id,
-            "has_patient_context": bool(request.patient_context or request.patient_id)
+            "has_patient_context": bool(body.patient_context or body.patient_id)
         }
     )
 
     try:
         # Generate response
         result = await generate_minerva_response(
-            message=request.message,
-            patient_context=request.patient_context,
+            message=body.message,
+            patient_context=body.patient_context,
             conversation_history=conversation_history
         )
 
         # Store conversation history
         minerva_conversations[conversation_id] = conversation_history + [
-            {"role": "user", "content": request.message},
+            {"role": "user", "content": body.message},
             {"role": "assistant", "content": result["response"]}
         ]
 
@@ -6770,7 +8289,7 @@ async def minerva_chat(request: MinervaRequest, req: Request):
         audit_logger._log_event(
             event_type="AI",
             action="MINERVA_CHAT",
-            patient_id=request.patient_id,
+            patient_id=body.patient_id,
             status="success",
             details={
                 "conversation_id": conversation_id,
@@ -6794,11 +8313,11 @@ async def minerva_chat(request: MinervaRequest, req: Request):
         audit_logger._log_event(
             event_type="AI",
             action="MINERVA_CHAT",
-            patient_id=request.patient_id,
+            patient_id=body.patient_id,
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Minerva error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Minerva AI temporarily unavailable")
 
 
 # Minerva status tracking (for web dashboard sync)
@@ -6986,7 +8505,7 @@ async def minerva_get_context(patient_id: str, ehr: str = "cerner", req: Request
             status="failure",
             details={"error": str(e)[:100]}
         )
-        raise HTTPException(status_code=500, detail=f"Failed to get patient context: {str(e)}")
+        raise HTTPException(status_code=500, detail="Unable to retrieve patient context")
 
 
 @app.delete("/api/v1/minerva/conversation/{conversation_id}")
@@ -7144,7 +8663,7 @@ async def minerva_proactive_alerts(patient_id: str, request: Request):
         if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
             raise HTTPException(status_code=404, detail="Patient not found")
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Patient not found")
 
     # Extract patient name
     patient_name = extract_patient_name(patient_data)
@@ -7435,6 +8954,464 @@ async def minerva_proactive_alerts(patient_id: str, request: Request):
         display_summary=display_summary,
         acknowledgment_phrase="Got it, Minerva"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CRITICAL VALUE ALERTS - VOICE ANNOUNCEMENTS (Issue #105)
+# Real-time proactive voice announcements for critical lab values and vital signs
+# with acknowledgment tracking and escalation workflow
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from critical_alerts import (
+    CriticalAlertManager, CriticalAlert, AlertSeverity, AlertCategory,
+    AcknowledgmentMethod, CriticalAlertVoiceResponse, CriticalAlertResponse,
+    CriticalAlertRequest, CriticalAlertAcknowledgment,
+    get_alert_manager
+)
+
+
+@app.post("/api/v1/critical-alerts/voice/{patient_id}", response_model=CriticalAlertVoiceResponse)
+async def get_critical_alert_voice(patient_id: str):
+    """
+    Get Minerva voice announcement for pending critical alerts.
+
+    This endpoint returns TTS-ready speech for any critical values that
+    need immediate clinician attention. Called automatically when:
+    - Patient is loaded
+    - New critical lab results arrive
+    - Critical vital signs are recorded
+
+    The response includes:
+    - spoken_message: Full TTS script for Minerva
+    - has_critical: True if life-threatening values present
+    - acknowledgment_phrase: How to acknowledge ("Got it, Minerva")
+
+    Example spoken output:
+        "Critical alert for Nancy. Potassium is 6.8 mEq/L. Consider
+        repletion protocol. Say 'got it Minerva' to acknowledge."
+    """
+    manager = await get_alert_manager()
+
+    # Get patient name
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        patient_name = extract_patient_name(patient_data) if patient_data else "the patient"
+    except Exception:
+        patient_name = "the patient"
+
+    return await manager.get_voice_announcement(patient_id, patient_name)
+
+
+@app.post("/api/v1/critical-alerts/detect/{patient_id}")
+async def detect_critical_values(patient_id: str):
+    """
+    Scan patient's latest labs and vitals for critical values.
+
+    Automatically creates alerts for any values exceeding critical thresholds.
+    Returns list of newly detected critical alerts.
+
+    Call this endpoint:
+    - On patient load
+    - When new lab results are received
+    - Periodically for real-time monitoring
+    """
+    manager = await get_alert_manager()
+    new_alerts: List[dict] = []
+
+    # Fetch patient data
+    try:
+        patient_data = await fetch_fhir(f"Patient/{patient_id}")
+        if not patient_data:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        patient_name = extract_patient_name(patient_data)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    # Fetch recent labs
+    try:
+        lab_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=laboratory&_count=20&_sort=-date")
+        labs = extract_labs(lab_bundle)
+    except Exception:
+        labs = []
+
+    # Check each lab for critical values
+    for lab in labs:
+        if not isinstance(lab, dict):
+            continue
+
+        name = lab.get("name", "")
+        value = lab.get("value", "")
+        unit = lab.get("unit", "")
+
+        is_critical, is_abnormal, interpretation = check_critical_value(name, value)
+
+        if is_critical:
+            # Create alert
+            alert = await manager.create_and_queue_alert(
+                patient_id=patient_id,
+                patient_name=patient_name,
+                category=AlertCategory.LAB,
+                severity=AlertSeverity.CRITICAL,
+                value_name=name,
+                value=str(value),
+                unit=unit,
+            )
+            new_alerts.append(alert.to_dict())
+
+    # Fetch recent vitals
+    try:
+        vital_bundle = await fetch_fhir(f"Observation?patient={patient_id}&category=vital-signs&_count=10&_sort=-date")
+        vitals = extract_vitals(vital_bundle)
+    except Exception:
+        vitals = []
+
+    # Check each vital for critical values
+    for vital in vitals:
+        if not isinstance(vital, dict):
+            continue
+
+        name = vital.get("name", "")
+        value = vital.get("value", "")
+        unit = vital.get("unit", "")
+
+        is_critical, is_abnormal, interpretation = check_critical_vital(name, value)
+
+        if is_critical:
+            alert = await manager.create_and_queue_alert(
+                patient_id=patient_id,
+                patient_name=patient_name,
+                category=AlertCategory.VITAL,
+                severity=AlertSeverity.CRITICAL,
+                value_name=name,
+                value=str(value),
+                unit=unit,
+            )
+            new_alerts.append(alert.to_dict())
+
+    # Audit log
+    if new_alerts:
+        audit_logger._log_event(
+            event_type="CLINICAL",
+            action="CRITICAL_VALUE_DETECTED",
+            patient_id=patient_id,
+            status="alert",
+            details={
+                "alert_count": len(new_alerts),
+                "values": [a["value_name"] for a in new_alerts]
+            }
+        )
+
+    return {
+        "patient_id": patient_id,
+        "new_alerts": len(new_alerts),
+        "alerts": new_alerts,
+        "message": f"Detected {len(new_alerts)} critical values" if new_alerts else "No critical values detected"
+    }
+
+
+@app.post("/api/v1/critical-alerts/acknowledge")
+async def acknowledge_critical_alert(request: CriticalAlertAcknowledgment):
+    """
+    Acknowledge a specific critical alert.
+
+    Can be triggered by:
+    - Voice command: "Got it, Minerva"
+    - UI button press
+
+    Returns success status.
+    """
+    manager = await get_alert_manager()
+
+    method = AcknowledgmentMethod.VOICE if request.method == "voice" else AcknowledgmentMethod.BUTTON
+
+    success = await manager.acknowledge_alert(
+        request.alert_id,
+        request.clinician_id,
+        method
+    )
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found or already acknowledged")
+
+    # Audit log
+    audit_logger._log_event(
+        event_type="CLINICAL",
+        action="CRITICAL_ALERT_ACKNOWLEDGED",
+        status="success",
+        details={
+            "alert_id": request.alert_id,
+            "clinician_id": request.clinician_id,
+            "method": request.method
+        }
+    )
+
+    return {"status": "acknowledged", "alert_id": request.alert_id}
+
+
+@app.post("/api/v1/critical-alerts/acknowledge-all/{patient_id}")
+async def acknowledge_all_patient_alerts(patient_id: str, clinician_id: str = "unknown"):
+    """
+    Acknowledge all pending critical alerts for a patient.
+
+    This is called when the clinician says "Got it, Minerva" to
+    acknowledge all current alerts at once.
+    """
+    manager = await get_alert_manager()
+
+    count = await manager.acknowledge_patient_alerts(
+        patient_id,
+        clinician_id,
+        AcknowledgmentMethod.VOICE
+    )
+
+    # Audit log
+    if count > 0:
+        audit_logger._log_event(
+            event_type="CLINICAL",
+            action="CRITICAL_ALERTS_BULK_ACKNOWLEDGED",
+            patient_id=patient_id,
+            status="success",
+            details={
+                "count": count,
+                "clinician_id": clinician_id
+            }
+        )
+
+    return {
+        "status": "acknowledged",
+        "patient_id": patient_id,
+        "alerts_acknowledged": count
+    }
+
+
+@app.get("/api/v1/critical-alerts/pending/{patient_id}")
+async def get_pending_critical_alerts(patient_id: str):
+    """
+    Get all pending (unacknowledged) critical alerts for a patient.
+
+    Used by UI to display alert badges and dashboard.
+    """
+    manager = await get_alert_manager()
+    pending = await manager.get_pending_alerts(patient_id)
+
+    return {
+        "patient_id": patient_id,
+        "pending_count": len(pending),
+        "has_critical": any(a.severity == AlertSeverity.CRITICAL for a in pending),
+        "alerts": [a.to_dict() for a in pending]
+    }
+
+
+@app.get("/api/v1/critical-alerts/stats")
+async def get_critical_alert_stats():
+    """Get critical alert system statistics for monitoring"""
+    manager = await get_alert_manager()
+    return manager.stats
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DIFFERENTIAL DIAGNOSIS WITH RAG (Issue #116)
+# "Minerva, what do you think?" - AI-assisted differential diagnosis with citations
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Import differential diagnosis module
+try:
+    from differential_diagnosis import (
+        DifferentialDiagnosisEngine,
+        get_differential_engine,
+        shutdown_differential_engine,
+        PatientContext,
+        DifferentialRequest,
+        DifferentialResponse,
+        FollowUpRequest,
+        FollowUpResponse
+    )
+    DIFFERENTIAL_AVAILABLE = True
+except ImportError:
+    DIFFERENTIAL_AVAILABLE = False
+    print("Warning: differential_diagnosis module not available")
+
+
+@app.post("/api/v1/minerva/differential", response_model=DifferentialResponse)
+async def minerva_differential_diagnosis(
+    request: DifferentialRequest,
+    req: Request
+):
+    """
+    "Minerva, what do you think?" - Generate differential diagnosis with RAG (Issue #116).
+
+    Analyzes patient's clinical context (symptoms, vitals, labs, history) to generate
+    a ranked differential diagnosis using RAG to incorporate relevant medical literature.
+
+    Features:
+    - Ranked differential with likelihood percentages
+    - Supporting and against features for each diagnosis
+    - Recommended tests to distinguish between diagnoses
+    - Red flags and "can't miss" diagnoses prominently displayed
+    - Citations from clinical guidelines via RAG
+    - Voice-friendly spoken summary for Minerva TTS
+
+    Usage:
+        POST /api/v1/minerva/differential
+        {
+            "patient_context": {
+                "patient_id": "12724066",
+                "chief_complaint": "chest pain",
+                "symptoms": ["chest pain", "shortness of breath", "diaphoresis"],
+                "vital_signs": {"heart_rate": {"value": 110, "unit": "bpm"}},
+                "past_medical_history": ["hypertension", "diabetes"]
+            },
+            "include_citations": true,
+            "include_cant_miss": true
+        }
+    """
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    # Audit log
+    ip_address = req.client.host if req.client else None
+    audit_logger.log_note_operation(
+        action="GENERATE_DIFFERENTIAL",
+        note_type="DDX_RAG",
+        status="processing",
+        details=f"Patient: {request.patient_context.patient_id}, CC: {request.patient_context.chief_complaint[:50]}",
+        ip_address=ip_address
+    )
+
+    try:
+        engine = await get_differential_engine()
+        result = await engine.generate_differential(
+            patient_context=request.patient_context,
+            max_diagnoses=request.max_diagnoses,
+            include_citations=request.include_citations
+        )
+
+        # Audit success
+        audit_logger.log_note_operation(
+            action="GENERATE_DIFFERENTIAL",
+            note_type="DDX_RAG",
+            status="success",
+            details=f"Generated {len(result.diagnoses)} diagnoses, RAG={result.rag_enhanced}",
+            ip_address=ip_address
+        )
+
+        return DifferentialResponse(
+            patient_id=result.patient_id,
+            chief_complaint=result.chief_complaint,
+            diagnoses=[d.to_dict() for d in result.diagnoses],
+            clinical_summary=result.clinical_summary,
+            spoken_summary=result.spoken_summary,
+            confidence=result.confidence,
+            rag_enhanced=result.rag_enhanced,
+            timestamp=result.timestamp,
+            follow_up_suggestions=result.follow_up_suggestions,
+            red_flag_summary=result.red_flag_summary
+        )
+
+    except Exception as e:
+        audit_logger.log_note_operation(
+            action="GENERATE_DIFFERENTIAL",
+            note_type="DDX_RAG",
+            status="failure",
+            details=str(e)[:100],
+            ip_address=ip_address
+        )
+        raise HTTPException(status_code=500, detail=f"Differential diagnosis error: {str(e)}")
+
+
+@app.post("/api/v1/minerva/differential/follow-up", response_model=FollowUpResponse)
+async def minerva_differential_follow_up(
+    request: FollowUpRequest,
+    req: Request
+):
+    """
+    Answer follow-up questions about the differential diagnosis.
+
+    Supports:
+    - "Why do you think that?" - Explain clinical reasoning
+    - "What else could this be?" - Additional considerations
+    - Custom clinical questions
+
+    Usage:
+        POST /api/v1/minerva/differential/follow-up
+        {
+            "patient_id": "12724066",
+            "question": "Why do you think that?"
+        }
+    """
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    try:
+        engine = await get_differential_engine()
+        result = await engine.answer_follow_up(
+            patient_id=request.patient_id,
+            question=request.question,
+            previous_differential=None  # Engine will use cache
+        )
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Follow-up error: {str(e)}")
+
+
+@app.get("/api/v1/minerva/differential/{patient_id}")
+async def get_cached_differential(patient_id: str):
+    """
+    Get cached differential diagnosis for a patient.
+
+    Returns the most recent differential generated for this patient
+    during the current session.
+    """
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    engine = await get_differential_engine()
+    cached = engine.get_cached_differential(patient_id)
+
+    if not cached:
+        raise HTTPException(
+            status_code=404,
+            detail="No cached differential found. Ask 'What do you think?' to generate one."
+        )
+
+    return DifferentialResponse(
+        patient_id=cached.patient_id,
+        chief_complaint=cached.chief_complaint,
+        diagnoses=[d.to_dict() for d in cached.diagnoses],
+        clinical_summary=cached.clinical_summary,
+        spoken_summary=cached.spoken_summary,
+        confidence=cached.confidence,
+        rag_enhanced=cached.rag_enhanced,
+        timestamp=cached.timestamp,
+        follow_up_suggestions=cached.follow_up_suggestions,
+        red_flag_summary=cached.red_flag_summary
+    )
+
+
+@app.delete("/api/v1/minerva/differential/{patient_id}")
+async def clear_differential_cache(patient_id: str):
+    """Clear cached differential for a patient"""
+    if not DIFFERENTIAL_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Differential diagnosis service not available"
+        )
+
+    engine = await get_differential_engine()
+    engine.clear_cache(patient_id)
+
+    return {"status": "cleared", "patient_id": patient_id}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -8708,7 +10685,7 @@ async def get_pre_visit_prep(patient_id: str, request: Request):
         if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
             raise HTTPException(status_code=404, detail="Patient not found")
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Patient not found")
 
     # Extract basic info
     name = extract_patient_name(patient_data)
@@ -8838,7 +10815,7 @@ async def get_care_gaps(
         if not patient_data or patient_data.get("resourceType") == "OperationOutcome":
             raise HTTPException(status_code=404, detail="Patient not found")
     except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Patient not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="Patient not found")
 
     # Extract basic info
     name = extract_patient_name(patient_data)
@@ -9281,6 +11258,25 @@ class RAGQueryRequest(BaseModel):
     specialty: Optional[str] = None
     include_sources: bool = True
 
+    @field_validator('query')
+    @classmethod
+    def sanitize_query(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Query is required")
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH)
+
+    @field_validator('n_results')
+    @classmethod
+    def validate_n_results(cls, v):
+        if v < 1 or v > 50:
+            raise ValueError("n_results must be between 1 and 50")
+        return v
+
+    @field_validator('specialty')
+    @classmethod
+    def sanitize_specialty(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
 
 class RAGQueryResponse(BaseModel):
     """Response from RAG query"""
@@ -9299,6 +11295,36 @@ class RAGAddDocumentRequest(BaseModel):
     source_url: Optional[str] = None
     specialty: Optional[str] = None
     keywords: Optional[List[str]] = None
+
+    @field_validator('title')
+    @classmethod
+    def sanitize_title(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Title is required")
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH)
+
+    @field_validator('content')
+    @classmethod
+    def sanitize_content(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Content is required")
+        return sanitize_text(v, MAX_NOTE_LENGTH)
+
+    @field_validator('source_type')
+    @classmethod
+    def validate_source_type(cls, v):
+        valid = {'custom', 'guideline', 'research', 'textbook', 'protocol', 'formulary'}
+        return validate_status(v, valid)
+
+    @field_validator('source_name', 'source_url', 'specialty')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
+    @field_validator('keywords')
+    @classmethod
+    def sanitize_keywords(cls, v):
+        return sanitize_list(v, max_items=20, max_item_length=50) if v else []
 
 
 class RAGStatsResponse(BaseModel):
@@ -10171,10 +12197,11 @@ async def check_rss_feed(feed_name: str):
                 "note": "Use /api/v1/knowledge/pubmed/ingest to add relevant articles"
             }
     except Exception as e:
+        print(f"Feed check error: {e}")
         return {
             "feed": feed_name,
             "status": "error",
-            "error": str(e)
+            "error": "Unable to check feed status"
         }
 
 
@@ -14391,6 +16418,22 @@ class VitalWriteRequest(BaseModel):
     performer_name: str = ""
     device_type: str = "AR_GLASSES"
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('vital_type')
+    @classmethod
+    def validate_vital_type(cls, v):
+        valid = {'blood_pressure', 'heart_rate', 'temperature', 'respiratory_rate', 'oxygen_saturation', 'weight', 'height', 'pain_level'}
+        return validate_status(v, valid)
+
+    @field_validator('value', 'unit', 'performer_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
 
 class OrderWriteRequest(BaseModel):
     """Request model for pushing orders to EHR as FHIR ServiceRequest or MedicationRequest"""
@@ -14414,6 +16457,33 @@ class OrderWriteRequest(BaseModel):
     requester_name: str = ""
     notes: str = ""
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('order_type')
+    @classmethod
+    def validate_order_type(cls, v):
+        valid = {'lab', 'imaging', 'medication'}
+        return validate_status(v, valid).upper()
+
+    @field_validator('priority')
+    @classmethod
+    def validate_priority(cls, v):
+        valid = {'routine', 'urgent', 'stat', 'asap'}
+        return validate_status(v, valid)
+
+    @field_validator('code', 'display_name', 'body_site', 'dose', 'frequency', 'duration', 'route', 'requester_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
+    @field_validator('notes')
+    @classmethod
+    def sanitize_notes(cls, v):
+        return sanitize_text(v, MAX_MEDIUM_TEXT_LENGTH) if v else v
+
 
 class AllergyWriteRequest(BaseModel):
     """Request model for pushing allergies to EHR as FHIR AllergyIntolerance"""
@@ -14426,6 +16496,39 @@ class AllergyWriteRequest(BaseModel):
     recorder_name: str = ""
     reactions: List[str] = []  # List of reaction manifestations
 
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('substance', 'recorder_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
+
+    @field_validator('reaction_type')
+    @classmethod
+    def validate_reaction_type(cls, v):
+        valid = {'allergy', 'intolerance'}
+        return validate_status(v, valid)
+
+    @field_validator('criticality')
+    @classmethod
+    def validate_criticality(cls, v):
+        valid = {'low', 'high', 'unable-to-assess'}
+        return validate_status(v, valid)
+
+    @field_validator('category')
+    @classmethod
+    def validate_category(cls, v):
+        valid = {'food', 'medication', 'environment', 'biologic'}
+        return validate_status(v, valid)
+
+    @field_validator('reactions')
+    @classmethod
+    def sanitize_reactions(cls, v):
+        return sanitize_list(v, max_items=20, max_item_length=200) if v else []
+
 
 class MedicationUpdateRequest(BaseModel):
     """Request model for updating medication status (HIPAA-compliant soft delete)"""
@@ -14434,6 +16537,29 @@ class MedicationUpdateRequest(BaseModel):
     new_status: str  # active, on-hold, cancelled, stopped, completed, entered-in-error
     reason: str = ""
     performer_name: str = ""
+
+    @field_validator('patient_id')
+    @classmethod
+    def validate_patient_id(cls, v):
+        return validate_patient_id(v)
+
+    @field_validator('medication_id')
+    @classmethod
+    def validate_medication_id(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Medication ID is required")
+        return sanitize_text(v, MAX_PATIENT_ID_LENGTH)
+
+    @field_validator('new_status')
+    @classmethod
+    def validate_status(cls, v):
+        valid = {'active', 'on-hold', 'cancelled', 'stopped', 'completed', 'entered-in-error'}
+        return validate_status(v, valid)
+
+    @field_validator('reason', 'performer_name')
+    @classmethod
+    def sanitize_text_fields(cls, v):
+        return sanitize_text(v, MAX_SHORT_TEXT_LENGTH) if v else v
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -14783,14 +16909,14 @@ async def push_resource_to_ehr(resource_type: str, resource: dict) -> dict:
                 error_body = response.text
                 return {
                     "success": False,
-                    "error": f"EHR returned status {response.status_code}",
-                    "status_code": response.status_code,
-                    "details": error_body[:500]
+                    "error": "EHR service temporarily unavailable",
+                    "status_code": response.status_code
                 }
     except httpx.TimeoutException:
         return {"success": False, "error": "EHR request timed out"}
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        print(f"EHR request error: {e}")
+        return {"success": False, "error": "Unable to complete EHR request"}
 
 
 @app.post("/api/v1/notes/save")
@@ -14966,6 +17092,7 @@ async def push_note_endpoint(note_id: str, request: Request, x_device_id: Option
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.post("/api/v1/vitals/push")
+@limiter.limit(RATE_LIMIT_WRITE)
 async def push_vital(request: VitalWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a captured vital sign to the EHR as a FHIR Observation.
@@ -14996,10 +17123,23 @@ async def push_vital(request: VitalWriteRequest, http_request: Request, x_device
         ip_address=ip_address
     )
 
+    # FHIR AuditEvent: Log observation create (Issue #108)
+    fhir_audit_logger.log_resource_write(
+        action=AuditEventAction.CREATE,
+        resource_type="Observation",
+        patient_id=request.patient_id,
+        resource_id=result.get("fhir_id"),
+        success=result.get("success", False),
+        clinician_id=http_request.headers.get("X-User-Id"),
+        ip_address=ip_address,
+        description=f"Created vital sign: {request.vital_type}"
+    )
+
     return result
 
 
 @app.post("/api/v1/orders/push")
+@limiter.limit(RATE_LIMIT_WRITE)
 async def push_order(request: OrderWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push an order to the EHR as a FHIR ServiceRequest (lab/imaging) or MedicationRequest (meds).
@@ -15032,10 +17172,23 @@ async def push_order(request: OrderWriteRequest, http_request: Request, x_device
         ip_address=ip_address
     )
 
+    # FHIR AuditEvent: Log order create (Issue #108)
+    fhir_audit_logger.log_resource_write(
+        action=AuditEventAction.CREATE,
+        resource_type=resource_type,
+        patient_id=request.patient_id,
+        resource_id=result.get("fhir_id"),
+        success=result.get("success", False),
+        clinician_id=http_request.headers.get("X-User-Id"),
+        ip_address=ip_address,
+        description=f"Created order: {request.order_type} - {request.display_name}"
+    )
+
     return result
 
 
 @app.post("/api/v1/allergies/push")
+@limiter.limit(RATE_LIMIT_WRITE)
 async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_device_id: Optional[str] = Header(None)):
     """
     Push a new allergy to the EHR as a FHIR AllergyIntolerance.
@@ -15061,6 +17214,18 @@ async def push_allergy(request: AllergyWriteRequest, http_request: Request, x_de
         status="success" if result.get("success") else "failure",
         details=f"Allergy: {request.substance} (criticality: {request.criticality})",
         ip_address=ip_address
+    )
+
+    # FHIR AuditEvent: Log allergy create (Issue #108)
+    fhir_audit_logger.log_resource_write(
+        action=AuditEventAction.CREATE,
+        resource_type="AllergyIntolerance",
+        patient_id=request.patient_id,
+        resource_id=result.get("fhir_id"),
+        success=result.get("success", False),
+        clinician_id=http_request.headers.get("X-User-Id"),
+        ip_address=ip_address,
+        description=f"Created allergy: {request.substance}"
     )
 
     return result
@@ -15123,11 +17288,12 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
             else:
                 result = {
                     "success": False,
-                    "error": f"EHR returned status {response.status_code}",
+                    "error": "EHR service temporarily unavailable",
                     "status_code": response.status_code
                 }
     except Exception as e:
-        result = {"success": False, "error": str(e)}
+        print(f"Medication update error: {e}")
+        result = {"success": False, "error": "Unable to update medication status"}
 
     # HIPAA Audit: Log medication status change
     ip_address = http_request.client.host if http_request.client else None
@@ -15141,6 +17307,83 @@ async def update_medication_status(med_id: str, request: MedicationUpdateRequest
     )
 
     return result
+
+
+# ============ Real-Time Sync WebSocket (Glasses ↔ Dashboard) ============
+
+class SyncConnectionManager:
+    """Manages WebSocket connections for real-time sync between glasses and dashboard."""
+
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        print(f"🔗 Sync WebSocket connected. Total: {len(self.active_connections)}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        print(f"🔌 Sync WebSocket disconnected. Total: {len(self.active_connections)}")
+
+    async def broadcast(self, event_type: str, data: dict):
+        """Broadcast event to all connected clients."""
+        message = {
+            "type": event_type,
+            "data": data,
+            "timestamp": datetime.now().isoformat()
+        }
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                print(f"Failed to send to client: {e}")
+                disconnected.append(connection)
+
+        # Clean up disconnected clients
+        for conn in disconnected:
+            self.disconnect(conn)
+
+sync_manager = SyncConnectionManager()
+
+
+@app.websocket("/ws/sync")
+async def websocket_sync(websocket: WebSocket):
+    """
+    Real-time sync WebSocket for glasses ↔ dashboard communication.
+
+    Events broadcasted:
+    - worklist_update: Patient status changed
+    - patient_loaded: Patient loaded on glasses
+    - minerva_response: Minerva AI response
+    """
+    await sync_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, listen for client messages
+            data = await websocket.receive_json()
+
+            # Client can send events too (e.g., glasses loading a patient)
+            event_type = data.get("type")
+            if event_type:
+                # Broadcast to all other clients
+                await sync_manager.broadcast(event_type, data.get("data", {}))
+
+    except WebSocketDisconnect:
+        sync_manager.disconnect(websocket)
+    except Exception as e:
+        print(f"Sync WebSocket error: {e}")
+        sync_manager.disconnect(websocket)
+
+
+async def broadcast_worklist_update(patient: dict, action: str):
+    """Helper to broadcast worklist updates."""
+    await sync_manager.broadcast("worklist_update", {
+        "action": action,
+        "patient": patient
+    })
 
 
 # ============ Real-Time Transcription WebSocket ============
@@ -15517,7 +17760,7 @@ async def websocket_transcribe_with_provider(websocket: WebSocket, provider: str
     except Exception as e:
         print(f"Transcription error: {e}")
         try:
-            await websocket.send_json({"type": "error", "message": str(e)})
+            await websocket.send_json({"type": "error", "message": "Transcription service temporarily unavailable"})
         except:
             pass
         if session:
@@ -15790,6 +18033,98 @@ async def get_patient_audit_trail(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# FHIR AUDITEVENT API (Issue #108 - HIPAA §164.312(b))
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/v1/fhir/AuditEvent")
+async def query_fhir_audit_events(
+    patient: Optional[str] = Query(None, description="Filter by patient ID"),
+    action: Optional[str] = Query(None, description="Filter by action (C, R, U, D, E)"),
+    outcome: Optional[str] = Query(None, description="Filter by outcome (0, 4, 8, 12)"),
+    date_ge: Optional[str] = Query(None, alias="date", description="Start date (ISO 8601)"),
+    date_le: Optional[str] = Query(None, description="End date (ISO 8601)"),
+    _count: int = Query(100, ge=1, le=1000, description="Maximum results"),
+    _offset: int = Query(0, ge=0, description="Skip first N results")
+):
+    """
+    Query FHIR R4 AuditEvent resources.
+
+    Returns a FHIR Bundle of AuditEvent resources matching the query parameters.
+    Implements FHIR Search for AuditEvent as per https://www.hl7.org/fhir/auditevent.html
+
+    HIPAA: §164.312(b) requires audit controls to record and examine activity.
+    """
+    bundle = fhir_audit_logger.query_events(
+        patient_id=patient,
+        action=action,
+        outcome=outcome,
+        start_date=date_ge,
+        end_date=date_le,
+        limit=_count,
+        offset=_offset
+    )
+
+    return bundle
+
+
+@app.get("/api/v1/fhir/AuditEvent/_stats")
+async def get_fhir_audit_stats():
+    """
+    Get FHIR AuditEvent statistics.
+
+    Returns counts of audit events by type, action, and outcome.
+    Note: Using _stats instead of $stats for URL compatibility.
+    """
+    total = fhir_audit_logger.get_event_count()
+    bundle = fhir_audit_logger.query_events(limit=10000)
+
+    # Calculate stats
+    by_action = {}
+    by_outcome = {}
+    by_resource = {}
+
+    for entry in bundle.get("entry", []):
+        resource = entry.get("resource", {})
+
+        action = resource.get("action", "unknown")
+        by_action[action] = by_action.get(action, 0) + 1
+
+        outcome = resource.get("outcome", "unknown")
+        by_outcome[outcome] = by_outcome.get(outcome, 0) + 1
+
+        # Extract resource type from entity
+        for entity in resource.get("entity", []):
+            ref = entity.get("what", {}).get("reference", "")
+            if "/" in ref:
+                res_type = ref.split("/")[0]
+                by_resource[res_type] = by_resource.get(res_type, 0) + 1
+
+    return {
+        "total_events": total,
+        "by_action": by_action,
+        "by_outcome": by_outcome,
+        "by_resource_type": by_resource,
+        "retention_policy": "7 years (HIPAA requirement)",
+        "immutable": True
+    }
+
+
+@app.get("/api/v1/fhir/AuditEvent/{event_id}")
+async def get_fhir_audit_event(event_id: str):
+    """
+    Get a specific FHIR AuditEvent by ID.
+    """
+    # Search in recent events
+    bundle = fhir_audit_logger.query_events(limit=10000)
+    for entry in bundle.get("entry", []):
+        resource = entry.get("resource", {})
+        if resource.get("id") == event_id:
+            return resource
+
+    raise HTTPException(status_code=404, detail="AuditEvent not found")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # TEXT-TO-SPEECH API - Server-side TTS for devices without TTS engines
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -15828,12 +18163,13 @@ async def text_to_speech(request: TTSRequest):
         # gTTS not installed - try pyttsx3 or return error
         return {
             "success": False,
-            "error": "TTS library not available. Install with: pip install gTTS"
+            "error": "Text-to-speech service not available"
         }
     except Exception as e:
+        print(f"TTS error: {e}")
         return {
             "success": False,
-            "error": str(e)
+            "error": "Text-to-speech service temporarily unavailable"
         }
 
 @app.get("/api/v1/tts/status")
@@ -15853,6 +18189,16 @@ async def tts_status():
 if __name__ == "__main__":
     print("🏥 MDx Vision EHR Proxy starting...")
     print("═" * 50)
+
+    # Security status
+    print("🔒 Security Configuration:")
+    print(f"   • Environment: {ENVIRONMENT}")
+    print(f"   • HTTPS: {'✅ Enabled' if (IS_PRODUCTION and SSL_CERTFILE) else '⚠️  Development (HTTP)'}")
+    if IS_PRODUCTION:
+        print(f"   • HSTS: ✅ Enabled (max-age=1 year)")
+        print(f"   • Security Headers: ✅ Enabled")
+    print("─" * 50)
+
     print("📡 EHR Integrations:")
     print(f"   • Cerner/Oracle: {'✅ READY' if CERNER_CLIENT_ID else '⚠️  Open sandbox'}")
     if CERNER_CLIENT_ID:
@@ -15876,7 +18222,27 @@ if __name__ == "__main__":
         print(f"     URL: {HAPI_FHIR_BASE_URL}")
         print("     ↳ CREATE, READ, UPDATE, DELETE supported")
     print("═" * 50)
-    print("🔗 API: http://localhost:8002")
-    print("📱 Android emulator: http://10.0.2.2:8002")
-    print(f"🎤 Transcription: {TRANSCRIPTION_PROVIDER} (ws://localhost:8002/ws/transcribe)")
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+
+    # HTTPS in production, HTTP in development
+    if IS_PRODUCTION and SSL_CERTFILE and SSL_KEYFILE:
+        # Production: HTTPS with TLS certificates
+        print(f"🔗 API: https://0.0.0.0:{HTTPS_PORT}")
+        print(f"📱 Android: https://your-server:{HTTPS_PORT}")
+        print(f"🎤 Transcription: wss://your-server:{HTTPS_PORT}/ws/transcribe")
+        print("🔒 Running in PRODUCTION mode with HTTPS")
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=HTTPS_PORT,
+            ssl_keyfile=SSL_KEYFILE,
+            ssl_certfile=SSL_CERTFILE
+        )
+    else:
+        # Development: HTTP (no TLS)
+        print("🔗 API: http://localhost:8002")
+        print("📱 Android emulator: http://10.0.2.2:8002")
+        print(f"🎤 Transcription: {TRANSCRIPTION_PROVIDER} (ws://localhost:8002/ws/transcribe)")
+        if IS_PRODUCTION:
+            print("⚠️  WARNING: Production mode without SSL certificates!")
+            print("   Set SSL_KEYFILE and SSL_CERTFILE environment variables.")
+        uvicorn.run(app, host="0.0.0.0", port=8002)

@@ -49,7 +49,7 @@ class AudioStreamingService(
         // For physical devices: Set via SharedPreferences or use cloud URL
         // Local development: Your Mac's IP on the network
         // Production: Use cloud endpoint (e.g., wss://api.mdxvision.com/ws/transcribe)
-        private var wsUrlDevice: String = "ws://192.168.1.243:8002/ws/transcribe?noise_reduction=true"
+        private var wsUrlDevice: String = "ws://10.251.30.181:8002/ws/transcribe?noise_reduction=false"
 
         /**
          * Configure the WebSocket URL for physical devices
@@ -287,11 +287,10 @@ class AudioStreamingService(
         ) * BUFFER_SIZE_FACTOR
 
         try {
-            // Use VOICE_RECOGNITION source for better speech capture on Vuzix/HMDs
-            // This applies automatic gain control and noise suppression
+            // Use DEFAULT source for Vuzix - let the system choose optimal
             val audioSource = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) {
-                Log.d(TAG, "Using VOICE_RECOGNITION audio source for Vuzix")
-                MediaRecorder.AudioSource.VOICE_RECOGNITION
+                Log.d(TAG, "Using DEFAULT audio source for Vuzix")
+                MediaRecorder.AudioSource.DEFAULT
             } else {
                 MediaRecorder.AudioSource.MIC
             }
@@ -342,8 +341,8 @@ class AudioStreamingService(
                         }
 
                         // Apply software gain boost for Vuzix (low mic sensitivity)
-                        // 50x boost (~34dB) - balance between too quiet and clipping
-                        val gainFactor = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) 50 else 1
+                        // 100x boost (~40dB) for very quiet Vuzix mic
+                        val gainFactor = if (android.os.Build.MANUFACTURER.lowercase().contains("vuzix")) 100 else 1
 
                         // Convert shorts to bytes (little-endian PCM) with gain
                         val byteBuffer = ByteBuffer.allocate(readCount * 2)
