@@ -443,31 +443,31 @@ async def lifespan(app: FastAPI):
     # Startup: Initialize TTL-based session managers (Issue #10)
     from session_manager import get_transcription_session_manager, shutdown_session_managers as shutdown_managers
     await get_transcription_session_manager()
-    logger.info("Session managers initialized with TTL-based cleanup")
+    print("✅ Session managers initialized with TTL-based cleanup (Issue #10)")
 
     # Startup: Initialize FHIR retry client (Issue #24)
     from fhir_retry import get_fhir_client, close_fhir_client
     await get_fhir_client()
-    logger.info("FHIR client initialized with retry logic")
+    print("✅ FHIR client initialized with retry logic (Issue #24)")
 
     # Startup: Initialize critical alert manager (Issue #105)
     from critical_alerts import get_alert_manager, shutdown_alert_manager
     await get_alert_manager()
-    logger.info("Critical alert manager initialized with escalation workflow")
+    print("✅ Critical alert manager initialized (Issue #105)")
 
     yield  # Application runs here
 
     # Shutdown: Cleanup critical alert manager
     await shutdown_alert_manager()
-    logger.info("Critical alert manager shut down")
+    print("🛑 Critical alert manager shut down")
 
     # Shutdown: Cleanup FHIR client
     await close_fhir_client()
-    logger.info("FHIR client shut down")
+    print("🛑 FHIR client shut down")
 
     # Shutdown: Cleanup session managers
     await shutdown_managers()
-    logger.info("Session managers shut down")
+    print("🛑 Session managers shut down")
 
 
 app = FastAPI(
