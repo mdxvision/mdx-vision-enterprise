@@ -82,47 +82,63 @@ class TranscriptionProvider(ABC):
 
 class AssemblyAIProvider(TranscriptionProvider):
     """
-    AssemblyAI Real-Time Transcription with Speaker Diarization & Medical Vocabulary
-    Docs: https://www.assemblyai.com/docs/speech-to-text/streaming
+    AssemblyAI Universal Streaming v3 API with Medical Vocabulary
+    Docs: https://www.assemblyai.com/docs/universal-streaming
+
+    Migrated from v2 (deprecated Jan 31, 2026) to Universal Streaming v3.
+    Key changes:
+    - New endpoint: wss://streaming.assemblyai.com/v3/ws
+    - Audio sent as raw binary (not base64 JSON)
+    - Message types: Begin, Turn, Termination
+    - Keyterms prompting for medical vocabulary (max 100 terms)
     """
 
-    WEBSOCKET_URL = "wss://api.assemblyai.com/v2/realtime/ws"
+    # Universal Streaming v3 endpoint (replaces deprecated v2/realtime/ws)
+    WEBSOCKET_URL = "wss://streaming.assemblyai.com/v3/ws"
 
     def __init__(self, api_key: str = None, sample_rate: int = 16000,
                  enable_diarization: bool = True, enable_medical_vocab: bool = True,
                  specialties: List[str] = None):
         self.api_key = api_key or ASSEMBLYAI_API_KEY
         self.sample_rate = sample_rate
-        self.enable_diarization = enable_diarization
+        self.enable_diarization = enable_diarization  # Note: v3 uses end_of_turn detection instead
         self.enable_medical_vocab = enable_medical_vocab and ENABLE_MEDICAL_VOCAB
         self.specialties = specialties
         self.websocket = None
         self._receive_task = None
         self._transcript_queue = asyncio.Queue()
         self._current_speaker = None
+        self._current_turn_order = -1  # Track turn order for speaker detection
 
     async def connect(self) -> bool:
-        """Connect to AssemblyAI real-time WebSocket"""
+        """Connect to AssemblyAI Universal Streaming v3 WebSocket"""
         if not self.api_key:
             raise ValueError("ASSEMBLYAI_API_KEY not set")
 
-        # Build URL with parameters
-        params = [f"sample_rate={self.sample_rate}"]
-        if self.enable_diarization:
-            params.append("speaker_labels=true")
+        # Build URL with v3 required parameters
+        params = [
+            f"sample_rate={self.sample_rate}",
+            "encoding=pcm_s16le",  # Required for v3: 16-bit little-endian PCM
+            "format_turns=true",   # Enable formatted final transcripts with punctuation
+        ]
 
-        # Add word_boost for medical vocabulary (AssemblyAI allows up to 1000 words)
+        # Add keyterms_prompt for medical vocabulary (v3 supports up to 100 terms, 50 chars each)
         if self.enable_medical_vocab:
             vocab = get_vocabulary(self.specialties)
             if vocab:
-                # AssemblyAI word_boost is sent in the connection config, not URL
-                # We'll send it after connection
-                pass
+                # Limit to 100 terms per AssemblyAI v3 limits, max 50 chars each
+                filtered_vocab = [term[:50] for term in vocab[:100]]
+                keyterms_json = json.dumps(filtered_vocab)
+                # URL encode the JSON
+                from urllib.parse import quote
+                params.append(f"keyterms_prompt={quote(keyterms_json)}")
 
         url = f"{self.WEBSOCKET_URL}?{'&'.join(params)}"
         headers = {"Authorization": self.api_key}
-        vocab_status = f", medical_vocab={len(get_vocabulary(self.specialties))} terms" if self.enable_medical_vocab else ""
-        print(f"🔌 AssemblyAI: Connecting with diarization={self.enable_diarization}{vocab_status}...")
+
+        vocab_count = len(get_vocabulary(self.specialties)[:100]) if self.enable_medical_vocab else 0
+        vocab_status = f", keyterms={vocab_count} terms" if vocab_count > 0 else ""
+        print(f"🔌 AssemblyAI v3: Connecting to Universal Streaming{vocab_status}...")
 
         try:
             # Add 10-second timeout to prevent hanging
@@ -130,121 +146,122 @@ class AssemblyAIProvider(TranscriptionProvider):
                 websockets.connect(url, additional_headers=headers),
                 timeout=10.0
             )
-            print("✅ AssemblyAI: WebSocket connected!")
+            print("✅ AssemblyAI v3: WebSocket connected!")
 
-            # Note: word_boost for AssemblyAI real-time must be sent via URL params
-            # The real-time API doesn't support post-connection config messages
-            # Medical vocabulary is informational only for now
-            if self.enable_medical_vocab:
-                vocab = get_vocabulary(self.specialties)
-                if vocab:
-                    print(f"📚 AssemblyAI: Medical vocabulary loaded ({len(vocab)} terms) - using default recognition")
+            if vocab_count > 0:
+                print(f"📚 AssemblyAI v3: Medical keyterms loaded ({vocab_count} terms)")
 
             # Start background receiver
             self._receive_task = asyncio.create_task(self._receive_loop())
-            print("AssemblyAI: Connected with medical vocabulary boost")
+            print("AssemblyAI v3: Connected with Universal Streaming")
             return True
         except asyncio.TimeoutError:
-            print(f"❌ AssemblyAI connection timeout (10s) - check API key and network")
+            print(f"❌ AssemblyAI v3 connection timeout (10s) - check API key and network")
             return False
         except Exception as e:
-            print(f"❌ AssemblyAI connection error: {e}")
+            print(f"❌ AssemblyAI v3 connection error: {e}")
             return False
 
     async def _receive_loop(self):
-        """Background task to receive transcriptions"""
+        """Background task to receive transcriptions from Universal Streaming v3"""
         try:
             async for message in self.websocket:
                 data = json.loads(message)
-                msg_type = data.get("message_type", "")
+                msg_type = data.get("type", "")
 
                 # Debug: log ALL message types
-                print(f"📩 AssemblyAI message: {msg_type} - {str(data)[:200]}")
+                print(f"📩 AssemblyAI v3 message: {msg_type} - {str(data)[:200]}")
 
-                if msg_type == "SessionBegins":
-                    session_id = data.get("session_id", "unknown")
-                    print(f"AssemblyAI session started: {session_id} (diarization enabled)")
-                elif msg_type == "SessionTerminated":
-                    print("AssemblyAI: Session terminated")
-                elif msg_type == "Error":
-                    error = data.get("error", "Unknown error")
-                    print(f"❌ AssemblyAI error: {error}")
+                if msg_type == "Begin":
+                    # v3 session started
+                    session_id = data.get("id", "unknown")
+                    expires_at = data.get("expires_at", "")
+                    print(f"AssemblyAI v3 session started: {session_id} (expires: {expires_at})")
 
-                if msg_type == "PartialTranscript":
-                    text = data.get("text", "")
-                    if text:
-                        print(f"📝 Partial: {text[:50]}...")
-                    result = TranscriptionResult(
-                        text=text,
-                        is_final=False,
-                        confidence=data.get("confidence", 0.0),
-                        speaker=self._current_speaker  # Use last known speaker
-                    )
-                    await self._transcript_queue.put(result)
+                elif msg_type == "Turn":
+                    # v3 combines partial and final transcripts into Turn messages
+                    transcript = data.get("transcript", "")
+                    end_of_turn = data.get("end_of_turn", False)
+                    turn_is_formatted = data.get("turn_is_formatted", False)
+                    turn_order = data.get("turn_order", 0)
+                    confidence = data.get("end_of_turn_confidence", 0.0)
 
-                elif msg_type == "FinalTranscript":
+                    # Track turn order for pseudo-speaker detection
+                    # In v3, different turn_orders can represent different speakers
+                    if turn_order != self._current_turn_order:
+                        self._current_turn_order = turn_order
+                        # Alternate speaker assumption based on turn order
+                        speaker_num = turn_order % 2
+                        self._current_speaker = f"Speaker {speaker_num}"
+
+                    # Extract words with timing info
                     words = []
-                    speaker = None
-
                     for word in data.get("words", []):
-                        word_speaker = word.get("speaker")
-                        if word_speaker is not None:
-                            speaker = f"Speaker {word_speaker}"
-                            self._current_speaker = speaker
-
                         words.append({
                             "text": word.get("text", ""),
                             "start": word.get("start", 0),
                             "end": word.get("end", 0),
                             "confidence": word.get("confidence", 0.0),
-                            "speaker": word_speaker
+                            "word_is_final": word.get("word_is_final", False),
+                            "speaker": None  # v3 doesn't have per-word speaker labels
                         })
 
-                    text = data.get("text", "")
-                    if text:
-                        print(f"✅ Final: {text[:80]}")
-                    result = TranscriptionResult(
-                        text=text,
-                        is_final=True,
-                        confidence=data.get("confidence", 0.0),
-                        words=words,
-                        speaker=speaker or self._current_speaker
-                    )
-                    await self._transcript_queue.put(result)
+                    # Determine if this is a final transcript
+                    # In v3, end_of_turn=True with turn_is_formatted=True is the final
+                    is_final = end_of_turn and turn_is_formatted
 
-                elif msg_type == "SessionTerminated":
-                    print("AssemblyAI session ended")
+                    if transcript:
+                        if is_final:
+                            print(f"✅ Final (turn {turn_order}): {transcript[:80]}")
+                        else:
+                            print(f"📝 Partial (turn {turn_order}): {transcript[:50]}...")
+
+                        result = TranscriptionResult(
+                            text=transcript,
+                            is_final=is_final,
+                            confidence=confidence,
+                            words=words,
+                            speaker=self._current_speaker
+                        )
+                        await self._transcript_queue.put(result)
+
+                elif msg_type == "Termination":
+                    # v3 session ended
+                    audio_duration = data.get("audio_duration_seconds", 0)
+                    session_duration = data.get("session_duration_seconds", 0)
+                    print(f"AssemblyAI v3 session ended (audio: {audio_duration}s, session: {session_duration}s)")
                     break
 
-                elif msg_type == "error" or "error" in data:
-                    error_msg = data.get("error", data)
-                    print(f"❌ AssemblyAI ERROR: {error_msg}")
+                elif msg_type == "Error":
+                    error = data.get("error", data.get("message", "Unknown error"))
+                    print(f"❌ AssemblyAI v3 error: {error}")
                     break
 
                 else:
                     # Log unknown message types for debugging
-                    print(f"📩 AssemblyAI message: {msg_type} - {str(data)[:200]}")
+                    print(f"📩 AssemblyAI v3 unknown: {msg_type} - {str(data)[:200]}")
 
         except websockets.exceptions.ConnectionClosed as e:
-            print(f"AssemblyAI: Connection closed - code={e.code}, reason={e.reason}")
-            print("AssemblyAI: Connection closed")
+            print(f"AssemblyAI v3: Connection closed - code={e.code}, reason={e.reason}")
         except Exception as e:
-            print(f"AssemblyAI receive error: {e}")
+            print(f"AssemblyAI v3 receive error: {e}")
 
     _audio_chunk_count = 0
 
     async def send_audio(self, audio_data: bytes) -> None:
-        """Send audio chunk (base64 encoded)"""
+        """Send audio chunk as raw binary (v3 API)
+
+        Universal Streaming v3 expects raw PCM bytes sent as binary WebSocket frames.
+        This is different from v2 which used base64-encoded JSON.
+        """
         if self.websocket:
             self._audio_chunk_count += 1
             if self._audio_chunk_count == 1:
-                print(f"📤 AssemblyAI: Receiving audio (first chunk: {len(audio_data)} bytes)")
+                print(f"📤 AssemblyAI v3: Receiving audio (first chunk: {len(audio_data)} bytes)")
             elif self._audio_chunk_count % 50 == 0:
-                print(f"📤 AssemblyAI: Sent {self._audio_chunk_count} audio chunks")
-            # AssemblyAI expects base64 encoded audio
-            encoded = base64.b64encode(audio_data).decode("utf-8")
-            message = json.dumps({"audio_data": encoded})
-            await self.websocket.send(message)
+                print(f"📤 AssemblyAI v3: Sent {self._audio_chunk_count} audio chunks")
+            # v3 API: Send raw binary audio (NOT base64 encoded JSON like v2)
+            await self.websocket.send(audio_data)
 
     async def receive_transcription(self) -> AsyncGenerator[TranscriptionResult, None]:
         """Yield transcription results from the queue"""
@@ -265,13 +282,13 @@ class AssemblyAIProvider(TranscriptionProvider):
         if self._receive_task:
             self._receive_task.cancel()
         if self.websocket:
-            # Send terminate message
+            # Send v3 terminate message
             try:
-                await self.websocket.send(json.dumps({"terminate_session": True}))
+                await self.websocket.send(json.dumps({"type": "Terminate"}))
                 await self.websocket.close()
             except:
                 pass
-        print("AssemblyAI: Disconnected")
+        print("AssemblyAI v3: Disconnected")
 
 
 class DeepgramProvider(TranscriptionProvider):

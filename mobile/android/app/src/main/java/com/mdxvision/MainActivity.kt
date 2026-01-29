@@ -143,7 +143,7 @@ class MainActivity : AppCompatActivity() {
         // For production: Use cloud URL (e.g., https://api.mdxvision.com)
         // Development: Use Mac IP on same network as Vuzix glasses
         private const val PREF_SERVER_URL = "server_url"
-        private const val DEFAULT_SERVER_URL = "http://192.168.7.182:8002"
+        private const val DEFAULT_SERVER_URL = "http://192.168.1.42:8002"
         private var serverUrl: String = DEFAULT_SERVER_URL
 
         val EHR_PROXY_URL: String
