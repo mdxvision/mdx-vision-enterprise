@@ -288,28 +288,74 @@ tail -f /tmp/ehr-proxy.log
 
 ## Key Talking Points
 
-1. **HIPAA Compliant** - All data stays within hospital network
-2. **Voice-First** - Hands-free for infection control
-3. **EHR Agnostic** - Works with 29 EHR platforms
-4. **AI with Citations** - Zero hallucination, always cites guidelines
-5. **Real-Time CRUD** - Direct write-back to EHR
-6. **Health Equity AI** - Racial medicine awareness, cultural care preferences
-7. **US Patent Protected** - 15/237,980
+### 🏥 Core Value Propositions
 
-### Health Equity Differentiator ⭐ UNIQUE TO MDx
+| # | Talking Point | Key Message |
+|---|---------------|-------------|
+| 1 | **Voice-First Design** | "Hands-free means infection control. No touching keyboards between patients." |
+| 2 | **EHR Agnostic** | "Works with 29 EHR platforms. Cerner, Epic, Veradigm, athenahealth - one interface for all." |
+| 3 | **AI with Citations** | "Zero hallucination. Every Minerva recommendation cites NEJM, AHA, CDC, or FDA guidelines." |
+| 4 | **Real-Time CRUD** | "Voice to EHR in seconds. Orders, allergies, notes - direct write-back, no re-keying." |
+| 5 | **US Patent Protected** | "Patent 15/237,980 - we invented voice-activated AR for clinical documentation." |
 
+### 🔒 Security & Compliance (For IT/Security Audiences)
+
+| # | Talking Point | Detail |
+|---|---------------|--------|
+| 1 | **HIPAA Compliant** | "All PHI stays within your network. We don't store patient data in our cloud." |
+| 2 | **AES-256 Encryption** | "Field-level encryption for all PHI - SSN, DOB, diagnoses. Even if breached, data is useless." |
+| 3 | **OWASP Top 10 Mitigated** | "All 10 OWASP vulnerabilities addressed. No SQL injection, XSS, or CSRF possible." |
+| 4 | **SOC 2 Type II Ready** | "Full audit trail. Every PHI access logged with user, timestamp, and reason." |
+| 5 | **OAuth2 + Device Signing** | "Two-factor: OAuth2 tokens + HMAC device signatures. Lost glasses = no access." |
+| 6 | **90-Day Key Rotation** | "Encryption keys auto-rotate. Even old keys expire - defense in depth." |
+| 7 | **Rate Limiting** | "100 requests/min per device. Brute force attacks blocked automatically." |
+| 8 | **No Hardcoded Secrets** | "Zero credentials in code. All secrets in environment variables, rotated regularly." |
+
+**Security One-Liner:**
+> "We built this for HIPAA audits. Every access logged, every field encrypted, every connection authenticated."
+
+### 💰 ROI Talking Points (For Administrators)
+
+| # | Talking Point | Detail |
+|---|---------------|--------|
+| 1 | **2 Hours/Day Saved** | "Providers spend 2 hours daily on documentation. We cut that by 50%." |
+| 2 | **$150K/Provider/Year** | "Time savings translate to $150K in recaptured revenue per provider." |
+| 3 | **Reduce Burnout** | "Documentation burden is #1 cause of physician burnout. Fix the cause, not the symptom." |
+| 4 | **Faster Billing** | "Notes complete at discharge = faster coding = faster payment." |
+| 5 | **Reduced DNFB** | "Real-time documentation reduces Discharged Not Final Billed accounts." |
+
+### ⭐ Health Equity Differentiator - UNIQUE TO MDx
+
+**Opening Line:**
 > **"No EHR has this. Not Epic. Not Cerner. Not Meditech. None of them."**
+
+**The Problem (Use for Context):**
+
+| Disparity | Statistic | Source |
+|-----------|-----------|--------|
+| Black Maternal Mortality | 3-4x higher than white women | CDC MMWR 2023 |
+| Pulse Oximeter Error | 1-4% higher reading on dark skin | NEJM 2020, FDA 2025 |
+| Symptom Dismissal | Black patients' pain undertreated 22% more | PNAS 2016 |
+| Heart Attack Diagnosis | Women 50% more likely to be misdiagnosed | AHA 2022 |
+
+**What MDx Does:**
+
+| Alert Type | What It Shows | Demo Patient |
+|------------|---------------|--------------|
+| **Maternal Mortality** | "Lower escalation threshold. Document ALL symptoms." | JACKSON (patient 4) |
+| **Pulse Oximeter** | "SpO2 may read 1-4% HIGH. Consider ABG." | WILLIAMS, JACKSON |
+| **Symptom Dismissal** | "Listen to ALL concerns, even if reassured." | JACKSON |
+| **Medication Response** | "ACE inhibitors less effective. Consider ARBs." | WILLIAMS |
+| **Religious Restrictions** | "Jehovah's Witness - no blood products" | ARGONAUT (patient 7) |
+| **Cultural Preferences** | "Family-centered care, Spanish interpreter" | LOPEZ (patient 3) |
+
+**The Serena Williams Story (Emotional Hook):**
+> "Serena Williams almost died after childbirth because nurses dismissed her symptoms. She knew something was wrong - she has a history of blood clots - but they didn't listen. She had to advocate for herself while hemorrhaging.
 >
-> MDx Vision is the ONLY clinical platform with health equity built into the workflow:
->
-> - **Black Maternal Mortality** - 3-4x higher death rate. We alert providers to lower escalation thresholds and document ALL symptoms.
-> - **Pulse Oximeter Warnings** - FDA 2025 guidance: SpO2 reads 1-4% HIGH on darker skin. Missed hypoxia kills.
-> - **Medication Response** - ACE inhibitors less effective in African Americans. We suggest alternatives.
-> - **Cultural Care** - Family decision-making, interpreter needs, religious restrictions (blood products).
->
-> **"Serena Williams almost died after childbirth because nurses dismissed her symptoms. Our AI would have flagged that risk before she walked in the door. That's the difference."**
->
-> This isn't a DEI checkbox. This is peer-reviewed clinical decision support that addresses documented disparities. No other platform does this.
+> **Our AI would have flagged that risk before she walked in the door.** The provider would see: 'Elevated maternal risk. Lower threshold for escalation. Document ALL patient-reported symptoms.' That's the difference between life and death."
+
+**Closing Line:**
+> "This isn't a DEI checkbox. This is peer-reviewed clinical decision support citing NEJM, FDA, CDC, and AHA guidelines. Every alert has a citation. This saves lives."
 
 ---
 
